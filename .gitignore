@@ -1,0 +1,17 @@
+*.o
+
+*.bin
+*.elf
+*.qex
+
+*.iso
+*.img
+
+kernel
+
+hello.txt
+
+build/
+
+.DS_Store
+Thumbs.db
