@@ -31,11 +31,17 @@ static int prev_win_y = 0;
 static int force_redraw = 1;
 static Texture *current_wallpaper = 0;
 
-static int dirty_win_x = 0;
-static int dirty_win_y = 0;
-static int dirty_win_w = 0;
-static int dirty_win_h = 0;
-static int has_dirty_win = 0;
+#define MAX_DIRTY_RECTS 32
+
+typedef struct {
+    int x;
+    int y;
+    int w;
+    int h;
+} DirtyRect;
+
+static DirtyRect dirty_rects[MAX_DIRTY_RECTS];
+static int dirty_count = 0;
 
 static inline int min_i(int a, int b) {
     return (a < b) ? a : b;
@@ -67,15 +73,78 @@ void compositor_init() {
 
 void invalidate_screen() {
     force_redraw = 1;
+    dirty_count = 0;
     needs_redraw = 1;
 }
 
+static int rects_overlap(DirtyRect *a, int x, int y, int w, int h) {
+    int ax2 = a->x + a->w;
+    int ay2 = a->y + a->h;
+    int bx2 = x + w;
+    int by2 = y + h;
+
+    if (ax2 < x || bx2 < a->x)
+        return 0;
+    if (ay2 < y || by2 < a->y)
+        return 0;
+    return 1;
+}
+
+static void merge_rect(DirtyRect *dst, int x, int y, int w, int h) {
+    int nx1 = min_i(dst->x, x);
+    int ny1 = min_i(dst->y, y);
+    int nx2 = max_i(dst->x + dst->w, x + w);
+    int ny2 = max_i(dst->y + dst->h, y + h);
+
+    dst->x = nx1;
+    dst->y = ny1;
+    dst->w = nx2 - nx1;
+    dst->h = ny2 - ny1;
+}
+
+static void add_dirty_rect(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0)
+        return;
+
+    if (x < 0) {
+        w += x;
+        x = 0;
+    }
+    if (y < 0) {
+        h += y;
+        y = 0;
+    }
+
+    if (x >= (int)fb_width || y >= (int)fb_height)
+        return;
+
+    if (x + w > (int)fb_width)
+        w = (int)fb_width - x;
+    if (y + h > (int)fb_height)
+        h = (int)fb_height - y;
+
+    for (int i = 0; i < dirty_count; i++) {
+        if (rects_overlap(&dirty_rects[i], x, y, w, h)) {
+            merge_rect(&dirty_rects[i], x, y, w, h);
+            return;
+        }
+    }
+
+    if (dirty_count < MAX_DIRTY_RECTS) {
+        dirty_rects[dirty_count].x = x;
+        dirty_rects[dirty_count].y = y;
+        dirty_rects[dirty_count].w = w;
+        dirty_rects[dirty_count].h = h;
+        dirty_count++;
+    } else {
+        force_redraw = 1;
+        dirty_count = 0;
+    }
+}
+
 void invalidate_window(int x, int y, int w, int h) {
-    dirty_win_x = x;
-    dirty_win_y = y;
-    dirty_win_w = w;
-    dirty_win_h = h;
-    has_dirty_win = 1;
+    int margin = WIN_SHADOW_SIZE;
+    add_dirty_rect(x - margin, y - margin, w + margin * 2, h + margin * 2);
     needs_redraw = 1;
 }
 
@@ -119,7 +188,7 @@ void compositor_paint() {
     if (sys_time.second != prev_time.second)
         moved = 1;
 
-    if (has_dirty_win)
+    if (dirty_count > 0)
         moved = 1;
 
     if (!moved && !force_redraw)
@@ -164,14 +233,17 @@ void compositor_paint() {
         swap_buffers();
         force_redraw = 0;
         prev_drawn_fps = fps;
-        has_dirty_win = 0;
+        dirty_count = 0;
     } else {
-        int margin = WIN_SHADOW_SIZE;
-
-        if (has_dirty_win) {
-            safe_swap(dirty_win_x - margin, dirty_win_y - margin, dirty_win_w + margin * 2, dirty_win_h + margin * 2);
-            has_dirty_win = 0;
+        if (dirty_count > 0) {
+            for (int i = 0; i < dirty_count; i++) {
+                DirtyRect *rect = &dirty_rects[i];
+                safe_swap(rect->x, rect->y, rect->w, rect->h);
+            }
+            dirty_count = 0;
         }
+
+        int margin = WIN_SHADOW_SIZE;
 
         if (sys_time.second != prev_time.second)
             safe_swap(20, 20, 150, 40);

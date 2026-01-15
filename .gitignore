@@ -7,11 +7,9 @@
 *.iso
 *.img
 
-kernel
-
 hello.txt
 
 build/
 
-.DS_Store
-Thumbs.db
+.clang-format
+

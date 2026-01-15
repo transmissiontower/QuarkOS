@@ -7,6 +7,7 @@
 #include "util/util.h"
 #include "video/compositor.h"
 #include "video/texture.h"
+#include "lib/stdbool.h"
 
 Window windows[MAX_WINDOWS];
 Window *window_stack[MAX_WINDOWS];
@@ -199,8 +200,6 @@ void draw_window_content(Window *win) {
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                
-                
                 if (x < r && y >= h - r) {
                     int dx = r - 1 - x;
                     int dy = y - (h - r);
@@ -221,8 +220,32 @@ void draw_window_content(Window *win) {
             }
         }
     }
-    if (win->text_buffer)
-        draw_string_vector(win->x + 10, win->y + 45, win->text_buffer, COLOR_WHITE);
+
+    if (win->text_buffer) {
+        int current_x = win->x + 10;
+        int current_y = win->y + 45;
+        int start_x = current_x;
+        int max_x = win->x + win->w - 10; 
+        int max_y = win->y + win->h - 10; 
+
+        char *str = win->text_buffer;
+        while (*str) {
+            char c = *str;
+            if (c == '\n') {
+                current_y += get_font_height();
+                current_x = start_x;
+            } else {
+                int w = get_char_width(c);
+                
+                if (current_x + w < max_x && current_y + get_font_height() < max_y) {
+                    current_x = draw_char_vector(current_x, current_y, c, COLOR_WHITE);
+                } else {
+                    current_x += w;
+                }
+            }
+            str++;
+        }
+    }
 }
 
 void draw_window_head(int x, int y, int w, int h, uint32_t color) {

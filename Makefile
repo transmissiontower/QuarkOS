@@ -1,76 +1,143 @@
-gcc = /usr/opt/cross/bin/i686-elf-gcc
-ld = /usr/opt/cross/bin/i686-elf-ld
-objcopy = /usr/opt/cross/bin/i686-elf-objcopy
-MCOPY = mcopy
+# ==================================================
+# Toolchain
+# ==================================================
+CROSS ?= i686-elf-
+CC      = $(CROSS)gcc
+LD      = $(CROSS)ld
+OBJCOPY = $(CROSS)objcopy
+AS      = nasm
+MCOPY   = mcopy
+GRUB_MKRESCUE = $(shell if which grub2-mkrescue > /dev/null 2>&1; then echo grub2-mkrescue; else echo grub-mkrescue; fi)
 
-CFLAGS = -ffreestanding -Wall -Wextra -Isrc -O2 -g
-USER_CFLAGS = -ffreestanding -Wall -Wextra -Isrc -m32
+# ==================================================
+# Flags
+# ==================================================
+CFLAGS = -ffreestanding -Wall -Wextra -O2 -g -m32 -Isrc
+USER_CFLAGS = -ffreestanding -Wall -Wextra -O2 -m32 -Isrc
+FONT_ATLAS = Asm/boot/font_atlas.bin
 
-all: kernel user_bin boot image
+LDFLAGS = -m elf_i386 -T linker.ld -nostdlib
 
-clean:
-	rm -rf *.o src/kernel/*.o src/user/*.o src/user/lib/*.o Asm/boot/*.qex *.bin *.elf kernel hello.txt
+# ==================================================
+# Files
+# ==================================================
+KERNEL_C = \
+	src/kernel/kernel.c \
+	src/video/vga.c \
+	src/arch/x86/gdt.c \
+	src/util/util.c \
+	src/arch/x86/idt.c \
+	src/drivers/timer.c \
+	src/drivers/ps2/keyboard.c \
+	src/mm/memory.c \
+	src/mm/kmalloc.c \
+	src/drivers/GUI/framebuffer.c \
+	src/video/font.c \
+	src/drivers/ps2/mouse.c \
+	src/video/window.c \
+	src/gfx/events.c \
+	src/arch/x86/fpu.c \
+	src/lib/math.c \
+	src/lib/stdlib.c \
+	src/video/texture.c \
+	src/video/compositor.c \
+	src/gfx/bmp.c \
+	src/gfx/font_atlas.c \
+	src/drivers/rtc.c \
+	src/kernel/shell.c \
+	src/kernel/scheduler.c \
+	src/kernel/syscalls.c \
+	src/fs/fat.c \
+	src/drivers/ata.c
 
-kernel:
-	$(gcc) $(CFLAGS) -c src/kernel/kernel.c -o kernel.o
-	$(gcc) $(CFLAGS) -c src/video/vga.c -o vga.o
-	$(gcc) $(CFLAGS) -c src/arch/x86/gdt.c -o gdt.o
-	$(gcc) $(CFLAGS) -c src/util/util.c -o util.o
-	$(gcc) $(CFLAGS) -c src/arch/x86/idt.c -o idt.o
-	$(gcc) $(CFLAGS) -c src/drivers/timer.c -o timer.o
-	$(gcc) $(CFLAGS) -c src/drivers/ps2/keyboard.c -o keyboard.o
-	$(gcc) $(CFLAGS) -c src/mm/memory.c -o memory.o
-	$(gcc) $(CFLAGS) -c src/mm/kmalloc.c -o kmalloc.o
-	$(gcc) $(CFLAGS) -c src/drivers/GUI/framebuffer.c -o framebuffer.o
-	$(gcc) $(CFLAGS) -c src/video/font.c -o font.o
-	$(gcc) $(CFLAGS) -c src/drivers/ps2/mouse.c -o mouse.o
-	$(gcc) $(CFLAGS) -c src/video/window.c -o window.o
-	$(gcc) $(CFLAGS) -c src/gfx/events.c -o events.o
-	$(gcc) $(CFLAGS) -c src/arch/x86/fpu.c -o fpu.o
-	$(gcc) $(CFLAGS) -c src/lib/math.c -o math.o
-	$(gcc) $(CFLAGS) -c src/lib/stdlib.c -o stdlib.o
-	$(gcc) $(CFLAGS) -c src/video/texture.c -o texture.o
-	$(gcc) $(CFLAGS) -c src/video/compositor.c -o compositor.o
-	$(gcc) $(CFLAGS) -c src/gfx/bmp.c -o bmp.o
-	$(gcc) $(CFLAGS) -c src/gfx/font_atlas.c -o font_atlas.o
-	$(gcc) $(CFLAGS) -c src/drivers/rtc.c -o rtc.o
-	$(gcc) $(CFLAGS) -c src/kernel/shell.c -o shell.o
-	$(gcc) $(CFLAGS) -c src/kernel/scheduler.c -o scheduler.o
-	$(gcc) $(CFLAGS) -c src/kernel/syscalls.c -o syscalls.o
-	$(gcc) $(CFLAGS) -c src/fs/fat.c -o fat.o
-	$(gcc) $(CFLAGS) -c src/drivers/ata.c -o ata.o
-	nasm -f elf32 src/kernel/process.s -o process.o
+KERNEL_OBJ = $(KERNEL_C:.c=.o) \
+	src/kernel/process.o \
+	boot.o gdts.o idts.o
 
-user_bin:
+USER_OBJ = \
+	src/user/lib/crt0.o \
+	src/user/lib/libapi.o \
+	src/user/test.o
+
+# ==================================================
+# Default target
+# ==================================================
+all: image
+
+# ==================================================
+# Kernel
+# ==================================================
+kernel: $(KERNEL_OBJ)
+	$(LD) $(LDFLAGS) -o kernel $(KERNEL_OBJ)
+
+# ==================================================
+# Compile rules
+# ==================================================
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+src/kernel/process.o: src/kernel/process.s
+	$(AS) -f elf32 $< -o $@
+
+boot.o: src/boot/boot.s
+	$(AS) -f elf32 $< -o $@
+
+gdts.o: src/arch/x86/gdt.s
+	$(AS) -f elf32 $< -o $@
+
+idts.o: src/arch/x86/idt.s
+	$(AS) -f elf32 $< -o $@
+
+$(FONT_ATLAS): tools/font_baker.py
 	mkdir -p Asm/boot
-	nasm -f elf32 src/user/lib/crt0.s -o src/user/lib/crt0.o
-	$(gcc) $(USER_CFLAGS) -c src/user/lib/libapi.c -o src/user/lib/libapi.o
-	
-	$(gcc) $(USER_CFLAGS) -c src/user/test.c -o src/user/test.o
-	
-	$(ld) -m elf_i386 -T src/user/linker.ld -o test.elf src/user/lib/crt0.o src/user/test.o src/user/lib/libapi.o
-	
-	$(objcopy) -O binary test.elf test.bin
+	python3 tools/font_baker.py
+
+# ==================================================
+# Userland
+# ==================================================
+user_bin: $(USER_OBJ)
+	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_OBJ)
+	$(OBJCOPY) -O binary test.elf test.bin
+	mkdir -p Asm/boot
 	python3 tools/qex_builder.py test.bin Asm/boot/test.qex
 
-boot:
-	nasm -f elf32 src/boot/boot.s -o boot.o
-	nasm -f elf32 src/arch/x86/gdt.s -o gdts.o
-	nasm -f elf32 src/arch/x86/idt.s -o idts.o
+src/user/lib/crt0.o: src/user/lib/crt0.s
+	$(AS) -f elf32 $< -o $@
 
-image: kernel boot user_bin
-	$(ld) -m elf_i386 -T linker.ld -o kernel boot.o kernel.o vga.o gdt.o gdts.o util.o idt.o idts.o timer.o keyboard.o memory.o kmalloc.o framebuffer.o font.o mouse.o window.o events.o fpu.o math.o stdlib.o texture.o compositor.o bmp.o font_atlas.o rtc.o shell.o process.o scheduler.o syscalls.o fat.o ata.o
-	
+src/user/lib/libapi.o: src/user/lib/libapi.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+src/user/test.o: src/user/test.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+# ==================================================
+# Image
+# ==================================================
+image: kernel user_bin $(FONT_ATLAS)
+	mkdir -p Asm/boot
 	mv kernel Asm/boot/kernel
-	
 	dd if=/dev/zero of=disk.img bs=1M count=32
 	mkfs.fat -F 16 disk.img
-	
 	$(MCOPY) -i disk.img Asm/boot/test.qex ::TEST.QEX
-	
-	echo "Success!" > hello.txt
-	$(MCOPY) -i disk.img hello.txt ::HELLO.TXT
-	rm hello.txt
-	
-	grub2-mkrescue -o kernel.iso Asm/
-	make clean
+	$(GRUB_MKRESCUE) -o kernel.iso Asm/
+
+# ==================================================
+# Run
+# ==================================================
+run: image
+	qemu-system-i386 \
+		-enable-kvm \
+		-cpu host \
+		-drive file=disk.img,format=raw,if=ide,index=0,media=disk \
+		-cdrom kernel.iso \
+		-boot order=d
+
+# ==================================================
+# Clean
+# ==================================================
+clean:
+	rm -f $(KERNEL_OBJ) $(USER_OBJ) \
+	      *.elf *.bin kernel disk.img kernel.iso
+	rm -f Asm/boot/*.qex Asm/boot/*.bin
+
+.PHONY: all clean kernel image run user_bin

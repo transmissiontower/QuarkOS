@@ -2,6 +2,7 @@
 #define KMALLOC_H
 
 #include "lib/stdint.h"
+#include "lib/stdbool.h"
 
 typedef struct Header {
     struct Header *next;

@@ -2,6 +2,7 @@
 #include "arch/x86/idt.h"
 #include "gfx/events.h"
 #include "lib/stdint.h"
+#include "lib/stdbool.h"
 #include "util/util.h"
 #include "video/vga.h"
 
