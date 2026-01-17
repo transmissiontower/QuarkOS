@@ -40,30 +40,46 @@ uint16_t fat_read_entry(uint16_t cluster) {
 }
 
 uint8_t* fat_read_file(const char *filename_8_3, uint32_t *out_size) {
-    ata_read_sector(root_dir_lba, sector_buffer);
-    fat_dir_entry_t *entry = (fat_dir_entry_t *)sector_buffer;
+    uint32_t entries_per_sector = 512 / sizeof(fat_dir_entry_t);
+    uint32_t root_dir_sectors = (root_dir_entries * sizeof(fat_dir_entry_t) + 511) / 512;
 
-    int found = -1;
-    for (int i = 0; i < 16; i++) {
-        if (entry[i].filename[0] == 0) break;
-        
-        if (memcmp(entry[i].filename, filename_8_3, 11) == 0) {
-            found = i;
-            break;
+    fat_dir_entry_t found_entry;
+    int found = 0;
+
+    for (uint32_t sector = 0; sector < root_dir_sectors && !found; sector++) {
+        ata_read_sector(root_dir_lba + sector, sector_buffer);
+        fat_dir_entry_t *entry = (fat_dir_entry_t *)sector_buffer;
+
+        for (uint32_t i = 0; i < entries_per_sector; i++) {
+            uint8_t first_char = (uint8_t)entry[i].filename[0];
+            if (first_char == 0)
+                break;
+            if (first_char == 0xE5)
+                continue;
+            if (entry[i].attributes == 0x0F)
+                continue;
+
+            if (memcmp(entry[i].filename, filename_8_3, 11) == 0) {
+                found_entry = entry[i];
+                found = 1;
+                break;
+            }
         }
     }
 
-    if (found == -1) return 0;
+    if (!found)
+        return 0;
 
-    uint32_t size = entry[found].file_size;
-    if (out_size) *out_size = size;
+    uint32_t size = found_entry.file_size;
+    if (out_size)
+        *out_size = size;
     
     uint8_t *buffer = (uint8_t*)kmalloc(size + 512); 
-    if (!buffer) return 0;
+    if (!buffer)
+        return 0;
 
     uint8_t *ptr = buffer;
-
-    uint16_t cluster = entry[found].first_cluster_low;
+    uint16_t cluster = found_entry.first_cluster_low;
     
     while (cluster < 0xFFF8) { 
         uint32_t cluster_lba = data_start_lba + (cluster - 2) * sectors_per_cluster;

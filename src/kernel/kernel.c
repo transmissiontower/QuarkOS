@@ -64,7 +64,6 @@ void timer_callback() {
         needs_redraw = 1; 
     }
     
-    out_port_B(0x20, 0x20); 
     schedule();
 }
 
@@ -88,9 +87,10 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info) {
     }
 
     memory_init(boot_info, phys_alloc_start);
+    
     kmalloc_init(0x2000000); 
 
-    framebuffer_init(boot_info);
+    framebuffer_init(boot_info); 
     
     scheduler_init();
     timer_init();
@@ -105,9 +105,8 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info) {
     
     fat_init();
 
-    window_create(100, 100, 300, 200, "Notepad", WIN_TYPE_DEFAULT);
-    Window *term = window_create(450, 400, 400, 300, "Kernel Log", WIN_TYPE_TERMINAL);
-    window_print(term, "QuarkOS Cyclone 0.3 Kernel\n> ");
+    Window *term = window_create(450, 400, 400, 300, "Shell", WIN_TYPE_TERMINAL);
+    window_print(term, "QuarkOS Cyclone 0.3 Kernel\n");
 
     if (boot_info->mods_count > 0) {
         multiboot_module_t *mods = (multiboot_module_t *)boot_info->mods_addr;
@@ -115,10 +114,24 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info) {
         uint32_t font_size = mods[0].mod_end - font_start;
         void *font_ptr = map_module(font_start, font_size);
         font_atlas_init((uint8_t *)font_ptr);
-        window_print(term, "Font loaded from Multiboot.\n");
+        window_print(term, "Font module loaded.\n");
     } else {
-        window_print(term, "WARNING: Font module not found!\n");
+        window_print(term, "Font module not found!\n");
     }
+
+    mem_free_identity_map();
+
+    uint32_t size;
+    uint8_t *data = fat_read_file("TEST    QEX", &size);
+    if (data) {
+        QuarkExec *qex = (QuarkExec *)data;
+        if (qex->magic == 0x5845517F) {
+            process_create(data + sizeof(QuarkExec), qex->code_size);
+        }
+        kfree(data);
+    }
+
+    window_create(100, 100, 300, 200, "Notepad", WIN_TYPE_DEFAULT);
     
     read_rtc((Time *)&sys_time);
     

@@ -116,11 +116,16 @@ src/user/test.o: src/user/test.c
 image: kernel user_bin $(FONT_ATLAS)
 	mkdir -p Asm/boot
 	mv kernel Asm/boot/kernel
+	echo "Hello from fs!" > hello.txt
+	
 	dd if=/dev/zero of=disk.img bs=1M count=32
 	mkfs.fat -F 16 disk.img
+	
 	$(MCOPY) -i disk.img Asm/boot/test.qex ::TEST.QEX
+	$(MCOPY) -i disk.img hello.txt ::HELLO.TXT
+	
 	$(GRUB_MKRESCUE) -o kernel.iso Asm/
-
+		
 # ==================================================
 # Run
 # ==================================================
@@ -128,7 +133,7 @@ run: image
 	qemu-system-i386 \
 		-enable-kvm \
 		-cpu host \
-		-drive file=disk.img,format=raw,if=ide,index=0,media=disk \
+		-hda disk.img \
 		-cdrom kernel.iso \
 		-boot order=d
 

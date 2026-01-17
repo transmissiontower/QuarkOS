@@ -61,6 +61,32 @@ cd QuarkOS
     make run
 ```
 
+## 🖥️ Console (Early Demo)
+
+QuarkOS includes a minimal console for basic commands and filesystem test.
+
+**See list of available commands**
+```bash
+help
+```
+**Clear the console**
+```bash
+clear
+```
+
+**Read a text file from the fs and print it:**
+```bash
+cat hello.txt
+```
+**Load and execute a .qex (Quark Executable) binary from disk:**
+```bash
+exec test.qex
+```
+**Shutdown (currenty unavailable)**
+```bash
+shutdown
+```
+
 ### 📜 License
 
 This project is licensed under the MIT License. Feel free to use the code for your own learning purposes.

@@ -199,7 +199,10 @@ void *map_module(uint32_t phys_addr, uint32_t size) {
 }
 
 void mem_free_identity_map() {
-    initial_page_dir[1] = 0; 
+    initial_page_dir[0] = 0;
+    initial_page_dir[1] = 0;
+    initial_page_dir[2] = 0;
+    initial_page_dir[3] = 0;
 
     uint32_t cr3;
     asm volatile("mov %%cr3, %0" : "=r"(cr3));

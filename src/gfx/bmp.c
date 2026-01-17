@@ -32,16 +32,16 @@ Texture *load_bmp(uint8_t *raw_data) {
 
     uint8_t *pixels = raw_data + file_header->bf_off_bits;
 
-    int bytesPerPixel = bpp / 8;
-    int pitch = (w * bytesPerPixel + 3) & (~3);
+    int bytes_per_pixel = bpp / 8;
+    int pitch = (w * bytes_per_pixel + 3) & (~3);
 
     for (int y = 0; y < h; y++) {
-        int srcY = flip ? (h - 1 - y) : y;
+        int src_y = flip ? (h - 1 - y) : y;
 
-        uint8_t *srcRow = pixels + (srcY * pitch);
+        uint8_t *src_row = pixels + (src_y * pitch);
 
         for (int x = 0; x < w; x++) {
-            uint8_t *px = srcRow + (x * bytesPerPixel);
+            uint8_t *px = src_row + (x * bytes_per_pixel);
 
             uint8_t b = px[0];
             uint8_t g = px[1];
