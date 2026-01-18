@@ -44,7 +44,6 @@ KERNEL_C = \
 	src/gfx/bmp.c \
 	src/gfx/font_atlas.c \
 	src/drivers/rtc.c \
-	src/kernel/shell.c \
 	src/kernel/scheduler.c \
 	src/kernel/syscalls.c \
 	src/fs/fat.c \
@@ -54,10 +53,13 @@ KERNEL_OBJ = $(KERNEL_C:.c=.o) \
 	src/kernel/process.o \
 	boot.o gdts.o idts.o
 
-USER_OBJ = \
+USER_LIB_OBJ = \
 	src/user/lib/crt0.o \
-	src/user/lib/libapi.o \
-	src/user/test.o
+	src/user/lib/libapi.o
+
+USER_TEST_OBJ = $(USER_LIB_OBJ) src/user/test.o
+USER_SHELL_OBJ = $(USER_LIB_OBJ) src/user/shell.o
+USER_NOTEPAD_OBJ = $(USER_LIB_OBJ) src/user/notepad.o
 
 # ==================================================
 # Default target
@@ -95,12 +97,6 @@ $(FONT_ATLAS): tools/font_baker.py
 # ==================================================
 # Userland
 # ==================================================
-user_bin: $(USER_OBJ)
-	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_OBJ)
-	$(OBJCOPY) -O binary test.elf test.bin
-	mkdir -p Asm/boot
-	python3 tools/qex_builder.py test.bin Asm/boot/test.qex
-
 src/user/lib/crt0.o: src/user/lib/crt0.s
 	$(AS) -f elf32 $< -o $@
 
@@ -109,6 +105,27 @@ src/user/lib/libapi.o: src/user/lib/libapi.c
 
 src/user/test.o: src/user/test.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+src/user/shell.o: src/user/shell.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+src/user/notepad.o: src/user/notepad.c  
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+user_bin: $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ)
+	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_TEST_OBJ)
+	$(OBJCOPY) -O binary test.elf test.bin
+	
+	$(LD) -m elf_i386 -T src/user/linker.ld -o shell.elf $(USER_SHELL_OBJ)
+	$(OBJCOPY) -O binary shell.elf shell.bin
+
+	$(LD) -m elf_i386 -T src/user/linker.ld -o notepad.elf $(USER_NOTEPAD_OBJ)
+	$(OBJCOPY) -O binary notepad.elf notepad.bin
+	
+	mkdir -p Asm/boot
+	python3 tools/qex_builder.py test.bin Asm/boot/test.qex
+	python3 tools/qex_builder.py shell.bin Asm/boot/shell.qex
+	python3 tools/qex_builder.py notepad.bin Asm/boot/notepad.qex
 
 # ==================================================
 # Image
@@ -122,6 +139,8 @@ image: kernel user_bin $(FONT_ATLAS)
 	mkfs.fat -F 16 disk.img
 	
 	$(MCOPY) -i disk.img Asm/boot/test.qex ::TEST.QEX
+	$(MCOPY) -i disk.img Asm/boot/shell.qex ::SHELL.QEX
+	$(MCOPY) -i disk.img Asm/boot/notepad.qex ::NOTEPAD.QEX
 	$(MCOPY) -i disk.img hello.txt ::HELLO.TXT
 	
 	$(GRUB_MKRESCUE) -o kernel.iso Asm/
@@ -141,7 +160,7 @@ run: image
 # Clean
 # ==================================================
 clean:
-	rm -f $(KERNEL_OBJ) $(USER_OBJ) \
+	rm -f $(KERNEL_OBJ) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) \
 	      *.elf *.bin kernel disk.img kernel.iso
 	rm -f Asm/boot/*.qex Asm/boot/*.bin
 

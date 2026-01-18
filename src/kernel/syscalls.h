@@ -30,6 +30,9 @@ void sys_draw_rect(draw_rect_args_t *args);
 void sys_draw_text(draw_text_args_t *args);
 uint32_t sys_get_uptime();
 void sys_sleep(uint32_t ms);
+int sys_get_key(int win_id);
+int sys_exec(const char *filename);
+int sys_read_file(const char *filename, char *user_buf);
 void syscall_handler(struct InterruptRegisters *regs);
 
 #endif

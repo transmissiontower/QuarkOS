@@ -67,6 +67,35 @@ void timer_callback() {
     schedule();
 }
 
+void kernel_exec_internal(const char *filename) {
+    char fat_name[12];
+    memset(fat_name, ' ', 11);
+    int i = 0, j = 0;
+    while (filename[i] && filename[i] != '.' && j < 8) {
+        char c = filename[i++];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        fat_name[j++] = c;
+    }
+    if (filename[i] == '.') i++;
+    j = 8;
+    while (filename[i] && j < 11) {
+        char c = filename[i++];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        fat_name[j++] = c;
+    }
+    fat_name[11] = 0;
+
+    uint32_t size;
+    uint8_t *data = fat_read_file(fat_name, &size);
+    if (!data) return;
+
+    QuarkExec *qex = (QuarkExec *)data;
+    if (qex->magic == 0x5845517F) {
+        process_create(data, size);
+    } 
+    kfree(data);
+}
+
 void kmain(uint32_t magic, struct multiboot_info *boot_info) {
     (void)magic;
 
@@ -105,33 +134,17 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info) {
     
     fat_init();
 
-    Window *term = window_create(450, 400, 400, 300, "Shell", WIN_TYPE_TERMINAL);
-    window_print(term, "QuarkOS Cyclone 0.3 Kernel\n");
-
     if (boot_info->mods_count > 0) {
         multiboot_module_t *mods = (multiboot_module_t *)boot_info->mods_addr;
         uint32_t font_start = mods[0].mod_start;
         uint32_t font_size = mods[0].mod_end - font_start;
         void *font_ptr = map_module(font_start, font_size);
         font_atlas_init((uint8_t *)font_ptr);
-        window_print(term, "Font module loaded.\n");
-    } else {
-        window_print(term, "Font module not found!\n");
     }
 
     mem_free_identity_map();
 
-    uint32_t size;
-    uint8_t *data = fat_read_file("TEST    QEX", &size);
-    if (data) {
-        QuarkExec *qex = (QuarkExec *)data;
-        if (qex->magic == 0x5845517F) {
-            process_create(data + sizeof(QuarkExec), qex->code_size);
-        }
-        kfree(data);
-    }
-
-    window_create(100, 100, 300, 200, "Notepad", WIN_TYPE_DEFAULT);
+    kernel_exec_internal("shell.qex");
     
     read_rtc((Time *)&sys_time);
     

@@ -3,12 +3,12 @@
 #include "gfx/font_atlas.h"
 #include "kernel/process.h"
 #include "lib/stdint.h"
-#include "lib/stdint.h"
 #include "util/util.h"
 #include "video/window.h"
 #include "video/compositor.h"
-#include "gfx/font_atlas.h" 
 #include "drivers/timer.h"
+#include "fs/fat.h"
+#include "mm/kmalloc.h"
 
 extern uint8_t font[];
 
@@ -26,7 +26,7 @@ Window *get_window_by_id(int id) {
 }
 
 int sys_window_create(int w, int h, char *title) {
-    Window *win = window_create(50, 50, w, h, title, WIN_TYPE_DEFAULT);
+    Window *win = window_create(50, 50, w, h, title);
     if (!win)
         return -1;
     return win->id;
@@ -34,8 +34,7 @@ int sys_window_create(int w, int h, char *title) {
 
 void sys_draw_rect(draw_rect_args_t *args) {
     Window *win = get_window_by_id(args->id);
-    if (!win)
-        return;
+    if (!win) return;
 
     int buf_w = win->w;
     int buf_h = win->h - TITLE_BAR_HEIGHT;
@@ -112,11 +111,76 @@ void sys_draw_text(draw_text_args_t *args) {
 }
 
 uint32_t sys_get_uptime(){
-    return(uint32_t)get_uptime_ms();
+    return (uint32_t)get_uptime_ms();
 }
 
 void sys_sleep(uint32_t ms){
     sleep(ms);
+}
+
+int sys_get_key(int win_id) {
+    Window *win = get_window_by_id(win_id);
+    if (!win) return 0;
+
+    if (win->input_read_ptr == win->input_write_ptr) {
+        return 0; 
+    }
+
+    char c = win->input_buffer[win->input_read_ptr];
+    win->input_read_ptr = (win->input_read_ptr + 1) % INPUT_BUFFER_SIZE;
+    return (int)c;
+}
+
+void sys_filename_helper(char *out, const char *in) {
+    memset(out, ' ', 11);
+    int i = 0, j = 0;
+    while (in[i] && in[i] != '.' && j < 8) {
+        char c = in[i++];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        out[j++] = c;
+    }
+    if (in[i] == '.') i++;
+    j = 8;
+    while (in[i] && j < 11) {
+        char c = in[i++];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        out[j++] = c;
+    }
+}
+
+int sys_exec(const char *filename) {
+    char fat_name[12];
+    fat_name[11] = 0;
+    sys_filename_helper(fat_name, filename);
+
+    uint32_t size;
+    uint8_t *data = fat_read_file(fat_name, &size);
+    if (!data) return -1; 
+
+    QuarkExec *qex = (QuarkExec *)data;
+    if (qex->magic == 0x5845517F) {
+        process_create(data, size);
+        kfree(data); 
+        return 0; 
+    }
+    kfree(data);
+    return -2;
+}
+
+int sys_read_file(const char *filename, char *user_buf) {
+    char fat_name[12];
+    fat_name[11] = 0;
+    sys_filename_helper(fat_name, filename);
+
+    uint32_t size;
+    uint8_t *data = fat_read_file(fat_name, &size);
+    if (!data) return -1;
+
+    memcpy(user_buf, data, size);
+    user_buf[size] = 0;
+    
+    kfree(data);
+    return size;
 }
 
 void syscall_handler(struct InterruptRegisters *regs) {
@@ -143,6 +207,15 @@ void syscall_handler(struct InterruptRegisters *regs) {
         break;
     case 7:
         sys_sleep((uint32_t)regs->ebx);
+        break;
+    case 8:
+        regs->eax = sys_get_key((int)regs->ebx);
+        break;
+    case 9:
+        regs->eax = sys_exec((const char*)regs->ebx);
+        break;
+    case 10:
+        regs->eax = sys_read_file((const char*)regs->ebx, (char*)regs->ecx);
         break;
     default:
         break;

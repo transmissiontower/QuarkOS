@@ -2,7 +2,6 @@
 #include "drivers/GUI/framebuffer.h"
 #include "drivers/ps2/mouse.h"
 #include "gfx/font_atlas.h"
-#include "kernel/shell.h"
 #include "mm/kmalloc.h"
 #include "util/util.h"
 #include "video/compositor.h"
@@ -36,10 +35,6 @@ void window_manager_init() {
         windows[i].is_dragging = false;
         window_stack[i] = 0;
     }
-
-    tex_close = rhombus_rounded(13, 13, 4, 0xFFD6DBD2);
-    tex_max = rhombus_rounded(13, 13, 4, 0xFFD6DBD2);
-    tex_min = rhombus_rounded(13, 13, 4, 0xFFD6DBD2);
 }
 
 char *get_last_line(Window *win) {
@@ -105,11 +100,10 @@ void to_front(Window *win) {
     invalidate_screen();
 }
 
-Window *window_create(int x, int y, int w, int h, const char *title, int type) {
+Window *window_create(int x, int y, int w, int h, const char *title) {
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (windows[i].id == 0) {
             windows[i].id = i + 1;
-            windows[i].type = type;
             windows[i].x = x;
             windows[i].y = y;
             windows[i].w = w;
@@ -122,7 +116,10 @@ Window *window_create(int x, int y, int w, int h, const char *title, int type) {
             windows[i].max_len = 4096;
             windows[i].text_buffer = (char *)kmalloc(windows[i].max_len);
             windows[i].text_cursor = 0;
-            windows[i].text_buffer[0] = 0;
+            if(windows[i].text_buffer) windows[i].text_buffer[0] = 0;
+
+            windows[i].input_read_ptr = 0;
+            windows[i].input_write_ptr = 0;
 
             int gfx_size = w * (h - TITLE_BAR_HEIGHT) * 4;
             windows[i].gfx_buffer = (uint32_t *)kmalloc(gfx_size);
@@ -259,19 +256,23 @@ void draw_window_head(int x, int y, int w, int h, uint32_t color) {
 }
 
 void draw_window(Window *win, int isActive) {
-    uint32_t title_color = isActive ? 0xFF7FB7BE : 0xFFD6DBD2;
+    uint32_t color = isActive ? 0xFF7FB7BE : 0xFFD6DBD2;
 
     shadow_draw(win->x, win->y, win->w, win->h);
     shadow_draw(win->x, win->y, win->w, win->h);
     draw_window_body(win->x, win->y, win->w, win->h, win->bg_color, win->text_buffer);
     draw_window_content(win);
     draw_window_head(win->x, win->y, win->w, TITLE_BAR_HEIGHT + WIN_RADIUS, 0xFF242622);
-    draw_string_vector(win->x + 9, win->y + 20, win->title, title_color);
+    draw_string_vector(win->x + 9, win->y + 20, win->title, color);
 
     int btnY = win->y + 3;
     int closeX = win->x + win->w - 24;
     int maxX = closeX - 20;
     int minX = maxX - 20;
+
+    tex_close = rhombus_rounded(13, 13, 4, color);
+    tex_max = rhombus_rounded(13, 13, 4, color);
+    tex_min = rhombus_rounded(13, 13, 4, color);
 
     draw_texture(tex_close, closeX, btnY);
     draw_texture(tex_max, maxX, btnY);
@@ -306,7 +307,6 @@ void scroll_buffer(Window *win, int max_h) {
             win->text_cursor = bytes_to_move;
             win->text_buffer[win->text_cursor] = 0;
         } else {
-
             win->text_cursor = 0;
             win->text_buffer[0] = 0;
         }
@@ -379,64 +379,14 @@ void window_event_handle(Event e) {
             return;
         }
         char c = (char)key;
-        int max_h = w->h - 55 - 10;
 
-        if (c == '\b') {
-            if (w->text_cursor > 0) {
-                w->text_cursor--;
-                w->text_buffer[w->text_cursor] = 0;
-                invalidate_window(w->x, w->y, w->w, w->h);
+        // Input buffering logic for all windows
+        if (c > 0) {
+            int next_write = (w->input_write_ptr + 1) % INPUT_BUFFER_SIZE;
+            if (next_write != w->input_read_ptr) {
+                w->input_buffer[w->input_write_ptr] = c;
+                w->input_write_ptr = next_write;
             }
-        } else if (c == '\n') {
-            if (w->type == WIN_TYPE_TERMINAL) {
-                char *cmd = get_last_line(w);
-                char cmd_local[64];
-                cmd_local[0] = 0;
-                
-                char *actual_cmd = cmd;
-                if (actual_cmd) {
-                     while (*actual_cmd && *actual_cmd != '>') {
-                        actual_cmd++;
-                    }
-                    if (*actual_cmd == '>') {
-                        actual_cmd++;
-                    } else {
-                        actual_cmd = cmd;
-                    }
-                    
-                    while (*actual_cmd && *actual_cmd == ' ') {
-                        actual_cmd++;
-                    }
-
-                    int i = 0;
-                    while (*actual_cmd && i < 63) {
-                        cmd_local[i++] = *actual_cmd++;
-                    }
-                    cmd_local[i] = 0;
-                }
-
-                if (w->text_cursor < w->max_len - 1) {
-                    w->text_buffer[w->text_cursor++] = '\n';
-                    w->text_buffer[w->text_cursor] = 0;
-                }
-
-                command_run(w, cmd_local);
-            } else {
-                if (w->text_cursor < w->max_len - 1) {
-                    w->text_buffer[w->text_cursor++] = '\n';
-                    w->text_buffer[w->text_cursor] = 0;
-                }
-            }
-            scroll_buffer(w, max_h);
-            invalidate_window(w->x, w->y, w->w, w->h);
-        } else if (key >= 32 && key <= 126) {
-            if (w->text_cursor < w->max_len - 2) {
-                w->text_buffer[w->text_cursor++] = c;
-                w->text_buffer[w->text_cursor] = 0;
-
-                scroll_buffer(w, max_h);
-            }
-            invalidate_window(w->x, w->y, w->w, w->h);
         }
     }
 }

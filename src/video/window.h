@@ -9,12 +9,10 @@
 #define TITLE_BAR_HEIGHT 28
 #define WIN_RADIUS 10
 
-#define WIN_TYPE_DEFAULT 0
-#define WIN_TYPE_TERMINAL 1
+#define INPUT_BUFFER_SIZE 256
 
 typedef struct {
     int id;
-    int type;
     int x;
     int y;
     int w;
@@ -30,6 +28,10 @@ typedef struct {
     int text_cursor;
     int max_len;
 
+    char input_buffer[INPUT_BUFFER_SIZE];
+    int input_read_ptr;
+    int input_write_ptr;
+
     uint32_t *gfx_buffer;
 } Window;
 
@@ -38,7 +40,7 @@ extern Window *dragging_window;
 
 void window_manager_init();
 void corner_mask_init();
-Window *window_create(int x, int y, int w, int h, const char *title, int type);
+Window *window_create(int x, int y, int w, int h, const char *title);
 void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text);
 void close_window(Window *win);
 

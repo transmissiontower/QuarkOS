@@ -81,6 +81,8 @@ cat hello.txt
 **Load and execute a .qex (Quark Executable) binary from disk:**
 ```bash
 exec test.qex
+exec shell.qex
+exec notepad.qex
 ```
 **Shutdown (currenty unavailable)**
 ```bash
