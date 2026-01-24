@@ -123,15 +123,16 @@ void mem_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
 
     if (!(pd[pd_index] & PAGE_FLAG_PRESENT)) {
         uint32_t pt_phys = pmm_alloc_page_frame();
-        if (!pt_phys)
-            kernel_panic("Out of memory");
+        if (!pt_phys) kernel_panic("Out of memory");
         
         uint32_t pde_flags = PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_OWNER;
-        if (flags & PAGE_FLAG_USER) {
-            pde_flags |= PAGE_FLAG_USER;
-        }
+        if (flags & PAGE_FLAG_USER) pde_flags |= PAGE_FLAG_USER;
 
         pd[pd_index] = pt_phys | pde_flags;
+
+        if (virt >= KERNEL_START) {
+            initial_page_dir[pd_index] = pt_phys | pde_flags;
+        }
 
         uint32_t *pt = Rec_PAGEDIR(pd_index);
         invalidate((uint32_t)pt);

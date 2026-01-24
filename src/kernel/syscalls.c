@@ -186,8 +186,8 @@ int sys_read_file(const char *filename, char *user_buf) {
 void syscall_handler(struct InterruptRegisters *regs) {
     switch (regs->eax) {
     case 0: 
-        for (;;)
-            asm volatile("hlt");
+            process_kill(current_process->pid);
+            schedule();
         break;
     case 1: 
         break;

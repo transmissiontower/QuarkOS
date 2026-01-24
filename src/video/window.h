@@ -13,6 +13,7 @@
 
 typedef struct {
     int id;
+    int owner_pid;
     int x;
     int y;
     int w;

@@ -9,5 +9,6 @@ int strcmp(const char *s1, const char *s2);
 int strlen(const char *str);
 char *strcpy(char *dest, const char *src);
 void bzero(void *dest, int len);
+void uint_to_hex(uint32_t val, char *buf);
 
 #endif

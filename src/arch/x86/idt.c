@@ -5,6 +5,7 @@
 #include "util/util.h"
 #include "video/vga.h"
 #include "kernel/syscalls.h"
+#include "mm/memory.h"  
 
 struct idt_entry_struct idt_entries[256];
 struct idt_ptr_struct idt_ptr;
@@ -128,19 +129,33 @@ void isr_handler(struct InterruptRegisters *regs) {
         uint32_t cr2;
         asm volatile("mov %%cr2, %0" : "=r"(cr2));
         
+        if (cr2 >= 0xC0000000) {
+            uint32_t pd_idx = cr2 >> 22;
+            uint32_t *current_pd = (uint32_t*)0xFFFFF000;
+            
+            if (!(current_pd[pd_idx] & 1) && (initial_page_dir[pd_idx] & 1)) {
+                current_pd[pd_idx] = initial_page_dir[pd_idx];
+                invalidate(cr2);
+                return; 
+            }
+        }
         clear_screen(COLOR_BLUE);
         string_draw(10, 10, "PAGE FAULT DETECTED!", COLOR_WHITE, COLOR_BLUE);
         
-        char buf[32];
+        char buf[16]; 
         
         string_draw(10, 30, "Faulting Address (CR2):", COLOR_WHITE, COLOR_BLUE);
-        int_to_str(cr2, buf, 16); 
-        string_draw(200, 30, buf, COLOR_WHITE, COLOR_BLUE);
+        uint_to_hex(cr2, buf);
+        string_draw(210, 30, buf, COLOR_WHITE, COLOR_BLUE);
 
         string_draw(10, 50, "Error Code:", COLOR_WHITE, COLOR_BLUE);
-        int_to_str(regs->err_code, buf, 16);
-        string_draw(200, 50, buf, COLOR_WHITE, COLOR_BLUE);
+        uint_to_hex(regs->err_code, buf); 
+        string_draw(210, 50, buf, COLOR_WHITE, COLOR_BLUE);
         
+        string_draw(10, 70, "EIP:", COLOR_WHITE, COLOR_BLUE);
+        uint_to_hex(regs->eip, buf); 
+        string_draw(210, 70, buf, COLOR_WHITE, COLOR_BLUE);
+
         swap_buffers();
         asm volatile("cli; hlt");
     }

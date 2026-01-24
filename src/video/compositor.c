@@ -199,9 +199,11 @@ void compositor_paint() {
     prev_time = sys_time;
 
     if (dragging_window) {
+        invalidate_window(dragging_window->x, dragging_window->y, dragging_window->w, dragging_window->h);
         prev_drag_win = dragging_window;
         prev_win_x = dragging_window->x;
         prev_win_y = dragging_window->y;
+        invalidate_window(dragging_window->x, dragging_window->y, dragging_window->w, dragging_window->h);
     } else {
         prev_drag_win = 0;
     }

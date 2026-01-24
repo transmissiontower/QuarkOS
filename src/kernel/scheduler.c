@@ -122,3 +122,24 @@ void process_create(uint8_t *code, uint32_t size) {
     proc->next = ready_queue->next;
     ready_queue->next = proc;
 }
+
+void process_kill(int pid) {
+    if (pid == 0) return;
+
+    process_t *prev = ready_queue;
+    process_t *curr = ready_queue->next;
+
+    while (curr != ready_queue) {
+        if (curr->pid == pid) {
+            prev->next = curr->next;
+
+            if (current_process == curr) {}
+
+            kfree(curr);
+            
+            return;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+}

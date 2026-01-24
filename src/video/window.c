@@ -7,6 +7,7 @@
 #include "video/compositor.h"
 #include "video/texture.h"
 #include "lib/stdbool.h"
+#include "kernel/process.h"
 
 Window windows[MAX_WINDOWS];
 Window *window_stack[MAX_WINDOWS];
@@ -104,6 +105,7 @@ Window *window_create(int x, int y, int w, int h, const char *title) {
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (windows[i].id == 0) {
             windows[i].id = i + 1;
+            windows[i].owner_pid = current_process->pid;
             windows[i].x = x;
             windows[i].y = y;
             windows[i].w = w;
@@ -139,6 +141,8 @@ void close_window(Window *win) {
     if (!win || win->id == 0)
         return;
 
+    int pid_to_kill = win->owner_pid;
+
     int idx = -1;
     for (int i = 0; i < window_count; i++)
         if (window_stack[i] == win) {
@@ -163,6 +167,10 @@ void close_window(Window *win) {
     win->id = 0;
     win->text_buffer = 0;
     win->gfx_buffer = 0;
+
+    if (pid_to_kill != 0) {
+        process_kill(pid_to_kill);
+    }
 
     if (dragging_window == win)
         dragging_window = 0;

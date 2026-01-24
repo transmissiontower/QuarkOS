@@ -1,3 +1,5 @@
+#include "lib/stdint.h"
+
 void reverse(char *str, int len) {
     int i = 0, j = len - 1, temp;
     while (i < j) {
@@ -84,4 +86,16 @@ void bzero(void *dest, int len) {
     char *d = (char *)dest;
     while (len--)
         *d++ = 0;
+}
+
+void uint_to_hex(uint32_t val, char *buf) {
+    char *chars = "0123456789ABCDEF";
+    buf[0] = '0';
+    buf[1] = 'x';
+    
+    for (int i = 7; i >= 0; i--) {
+        buf[i + 2] = chars[val & 0xF];
+        val >>= 4;
+    }
+    buf[10] = '\0';
 }
