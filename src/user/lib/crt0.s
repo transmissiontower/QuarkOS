@@ -1,11 +1,11 @@
 [BITS 32]
 global _start
 extern main
-extern qk_exit
+extern qk_sys_exit
 
 section .text
 _start:
     call main
     push eax
-    call qk_exit
+    call qk_sys_exit
     jmp $

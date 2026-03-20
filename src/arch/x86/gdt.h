@@ -50,10 +50,10 @@ struct tss_entry_struct {
     uint32_t iomap_base;
 } __attribute__((packed));
 
-void gdt_init();
-void set_gdt_gate(uint32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
-void write_tss(uint32_t num, uint16_t ss0, uint32_t esp0);
-void set_tss_stack(uint32_t kernel_stack);
-extern void tss_flush();
+void arch_gdt_init();
+void arch_gdt_set_gate(uint32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
+void arch_tss_init(uint32_t num, uint16_t ss0, uint32_t esp0);
+void arch_tss_set_stack(uint32_t kernel_stack);
+extern void arch_tss_flush();
 
 #endif

@@ -26,32 +26,16 @@ static inline void restore_flags(uint32_t flags) {
 }
 
 void events_init() {
-    head = 0;
-    tail = 0;
+
 }
 
 void event_push(Event e) {
-    uint32_t flags = save_flags_and_cli();
-    int next_head = (head + 1) % MAX_EVENTS;
+    (void)e;
 
-    if (next_head != tail) {
-        event_queue[head] = e;
-        head = next_head;
-        dbg_push_count++;
-    }
-    restore_flags(flags);
 }
 
 int event_pop(Event *e) {
-    uint32_t flags = save_flags_and_cli();
-    if (tail == head) {
-        restore_flags(flags);
-        return 0;
-    }
+    (void)e;
 
-    *e = event_queue[tail];
-    tail = (tail + 1) % MAX_EVENTS;
-    dbg_pop_count++;
-    restore_flags(flags);
-    return 1;
+    return 0;
 }

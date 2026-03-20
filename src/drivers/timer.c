@@ -11,12 +11,12 @@ const uint32_t freq = 100;
 static Timer software_timers[MAX_TIMERS];
 static int next_timer_id = 1;
 
-extern void timer_callback();
+extern void k_tick_handler();
 
 void on_irq_0(struct InterruptRegisters *regs) {
     (void)regs;
     ticks++;
-    timer_callback();
+    k_tick_handler();
 
     for (int i = 0; i < MAX_TIMERS; i++) {
         if (software_timers[i].id != 0) {
@@ -33,7 +33,7 @@ void on_irq_0(struct InterruptRegisters *regs) {
     }
 }
 
-void timer_init() {
+void drv_pit_init() {
     ticks = 0;
 
     for (int i = 0; i < MAX_TIMERS; i++)
@@ -42,9 +42,9 @@ void timer_init() {
     irq_install_handler(0, &on_irq_0);
 
     uint32_t divisor = 1193180 / freq;
-    out_port_B(0x43, 0x36);
-    out_port_B(0x40, (uint8_t)(divisor & 0xFF));
-    out_port_B(0x40, (uint8_t)(divisor >> 8) & 0xFF);
+    outb(0x43, 0x36);
+    outb(0x40, (uint8_t)(divisor & 0xFF));
+    outb(0x40, (uint8_t)(divisor >> 8) & 0xFF);
 }
 
 uint64_t get_uptime_ms() {

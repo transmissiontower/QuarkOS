@@ -15,6 +15,8 @@ GRUB_MKRESCUE = $(shell if which grub2-mkrescue > /dev/null 2>&1; then echo grub
 CFLAGS = -ffreestanding -Wall -Wextra -O2 -g -m32 -Isrc
 USER_CFLAGS = -ffreestanding -Wall -Wextra -O2 -m32 -Isrc
 FONT_ATLAS = Asm/boot/font_atlas.bin
+ICONS_BIN = Asm/boot/icons.bin
+WALLPAPER_BIN = Asm/boot/wallpaper.bin
 
 LDFLAGS = -m elf_i386 -T linker.ld -nostdlib
 
@@ -23,6 +25,7 @@ LDFLAGS = -m elf_i386 -T linker.ld -nostdlib
 # ==================================================
 KERNEL_C = \
 	src/kernel/kernel.c \
+	src/kernel/crash.c \
 	src/video/vga.c \
 	src/arch/x86/gdt.c \
 	src/util/util.c \
@@ -34,43 +37,49 @@ KERNEL_C = \
 	src/drivers/GUI/framebuffer.c \
 	src/video/font.c \
 	src/drivers/ps2/mouse.c \
-	src/video/window.c \
 	src/gfx/events.c \
 	src/arch/x86/fpu.c \
-	src/lib/math.c \
 	src/lib/stdlib.c \
-	src/video/texture.c \
-	src/video/compositor.c \
-	src/gfx/bmp.c \
-	src/gfx/font_atlas.c \
-	src/drivers/rtc.c \
+	src/lib/math.c \
 	src/kernel/scheduler.c \
 	src/kernel/syscalls.c \
 	src/fs/fat.c \
-	src/drivers/ata.c
+	src/drivers/ata.c \
+	src/gfx/bmp.c \
+	src/drivers/rtc.c \
+	src/drivers/acpi.c
 
 KERNEL_OBJ = $(KERNEL_C:.c=.o) \
 	src/kernel/process.o \
 	boot.o gdts.o idts.o
 
 USER_LIB_OBJ = \
-	src/user/lib/crt0.o \
-	src/user/lib/libapi.o
+    src/user/lib/crt0.o \
+    src/user/lib/libapi.o \
+    src/user/lib/lib.o \
+    src/user/lib/gfx.o \
+    src/user/lib/window.o \
+    src/user/lib/font_atlas.o \
+    src/user/lib/math.o \
+    src/user/lib/stdlib.o \
+    src/user/lib/path.o \
+    src/user/lib/storage_client.o 
 
 USER_TEST_OBJ = $(USER_LIB_OBJ) src/user/test.o
 USER_SHELL_OBJ = $(USER_LIB_OBJ) src/user/shell.o
+USER_COMP_OBJ = $(USER_LIB_OBJ) src/user/comp.o
 USER_NOTEPAD_OBJ = $(USER_LIB_OBJ) src/user/notepad.o
+USER_VMAP_OBJ = $(USER_LIB_OBJ) src/user/vmap.o
+USER_SYSINFO_OBJ = $(USER_LIB_OBJ) src/user/sysinfo.o
+USER_STORAGE_SERVER_OBJ = $(USER_LIB_OBJ) src/user/storage_server.o
+USER_INPUT_SERVER_OBJ = $(USER_LIB_OBJ) src/user/input_server.o
+USER_TIME_SERVER_OBJ = $(USER_LIB_OBJ) src/user/time_server.o
+USER_INIT_OBJ = $(USER_LIB_OBJ) src/kernel/init.o
 
 # ==================================================
 # Default target
 # ==================================================
 all: image
-
-# ==================================================
-# Kernel
-# ==================================================
-kernel: $(KERNEL_OBJ)
-	$(LD) $(LDFLAGS) -o kernel $(KERNEL_OBJ)
 
 # ==================================================
 # Compile rules
@@ -94,57 +103,107 @@ $(FONT_ATLAS): tools/font_baker.py
 	mkdir -p Asm/boot
 	python3 tools/font_baker.py
 
-# ==================================================
-# Userland
-# ==================================================
+$(ICONS_BIN): tools/icon_baker.py tools/lucide.ttf
+	python3 tools/icon_baker.py
+
+$(WALLPAPER_BIN): tools/wallpaper_baker.py wallpaper.bmp
+	python3 tools/wallpaper_baker.py wallpaper.bmp Asm/boot/wallpaper.bin
+
 src/user/lib/crt0.o: src/user/lib/crt0.s
 	$(AS) -f elf32 $< -o $@
 
-src/user/lib/libapi.o: src/user/lib/libapi.c
+src/user/%.o: src/user/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-src/user/test.o: src/user/test.c
+src/kernel/init.o: src/kernel/init.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-src/user/shell.o: src/user/shell.c
+src/user/lib/math.o: src/lib/math.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-src/user/notepad.o: src/user/notepad.c  
+src/user/lib/stdlib.o: src/lib/stdlib.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-user_bin: $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ)
+kernel: $(KERNEL_OBJ) linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJ)
+
+# ==================================================
+# Userland
+# ==================================================
+user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
+          $(USER_STORAGE_SERVER_OBJ) $(USER_INPUT_SERVER_OBJ) $(USER_TIME_SERVER_OBJ) \
+          $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ)
 	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_TEST_OBJ)
 	$(OBJCOPY) -O binary test.elf test.bin
-	
 	$(LD) -m elf_i386 -T src/user/linker.ld -o shell.elf $(USER_SHELL_OBJ)
 	$(OBJCOPY) -O binary shell.elf shell.bin
-
 	$(LD) -m elf_i386 -T src/user/linker.ld -o notepad.elf $(USER_NOTEPAD_OBJ)
 	$(OBJCOPY) -O binary notepad.elf notepad.bin
-	
+	$(LD) -m elf_i386 -T src/user/linker.ld -o comp.elf $(USER_COMP_OBJ)
+	$(OBJCOPY) -O binary comp.elf comp.bin
+	$(LD) -m elf_i386 -T src/user/linker.ld -o vmap.elf $(USER_VMAP_OBJ)
+	$(OBJCOPY) -O binary vmap.elf vmap.bin
+	$(LD) -m elf_i386 -T src/user/linker.ld -o sysinfo.elf $(USER_SYSINFO_OBJ)
+	$(OBJCOPY) -O binary sysinfo.elf sysinfo.bin
+	$(LD) -m elf_i386 -T src/user/linker.ld -o storage_server.elf $(USER_STORAGE_SERVER_OBJ)
+	$(OBJCOPY) -O binary storage_server.elf storage_server.bin
+	$(LD) -m elf_i386 -T src/user/linker.ld -o input_server.elf $(USER_INPUT_SERVER_OBJ)
+	$(OBJCOPY) -O binary input_server.elf input_server.bin
+	$(LD) -m elf_i386 -T src/user/linker.ld -o init.elf $(USER_INIT_OBJ)
+	$(OBJCOPY) -O binary init.elf init.bin
+	$(LD) -m elf_i386 -T src/user/linker.ld -o time_server.elf $(USER_TIME_SERVER_OBJ)
+	$(OBJCOPY) -O binary time_server.elf time_server.bin
 	mkdir -p Asm/boot
 	python3 tools/qex_builder.py test.bin Asm/boot/test.qex
 	python3 tools/qex_builder.py shell.bin Asm/boot/shell.qex
 	python3 tools/qex_builder.py notepad.bin Asm/boot/notepad.qex
+	python3 tools/qex_builder.py vmap.bin Asm/boot/vmap.qex
+	python3 tools/qex_builder.py comp.bin Asm/boot/comp.qex
+	python3 tools/qex_builder.py storage_server.bin Asm/boot/storage_server.qex
+	python3 tools/qex_builder.py input_server.bin Asm/boot/input_server.qex
+	python3 tools/qex_builder.py init.bin Asm/boot/init.qex
+	python3 tools/qex_builder.py time_server.bin Asm/boot/time_server.qex
+	python3 tools/qex_builder.py sysinfo.bin Asm/boot/sysinfo.qex
 
 # ==================================================
-# Image
+# Image (используем готовое ядро)
 # ==================================================
-image: kernel user_bin $(FONT_ATLAS)
+image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN)
 	mkdir -p Asm/boot
-	mv kernel Asm/boot/kernel
+	cp kernel Asm/boot/kernel
 	echo "Hello from fs!" > hello.txt
-	
-	dd if=/dev/zero of=disk.img bs=1M count=32
+	dd if=/dev/zero of=disk.img bs=1M count=64
 	mkfs.fat -F 16 disk.img
-	
-	$(MCOPY) -i disk.img Asm/boot/test.qex ::TEST.QEX
-	$(MCOPY) -i disk.img Asm/boot/shell.qex ::SHELL.QEX
-	$(MCOPY) -i disk.img Asm/boot/notepad.qex ::NOTEPAD.QEX
-	$(MCOPY) -i disk.img hello.txt ::HELLO.TXT
-	
+	mmd -i disk.img ::APPS
+	mmd -i disk.img ::SYSTEM
+	mmd -i disk.img ::SYSTEM/SETUP
+	mmd -i disk.img ::SYSTEM/DATA
+	mmd -i disk.img ::SYSTEM/LOGS
+	mmd -i disk.img ::USERS
+	mmd -i disk.img ::USERS/DEFAULT
+	mmd -i disk.img ::USERS/DEFAULT/DESK
+	mmd -i disk.img ::USERS/DEFAULT/DOCS
+	mmd -i disk.img ::TEMP
+	$(MCOPY) -i disk.img Asm/boot/test.qex ::APPS/TEST.QEX
+	$(MCOPY) -i disk.img Asm/boot/shell.qex ::APPS/SHELL.QEX
+	$(MCOPY) -i disk.img Asm/boot/notepad.qex ::APPS/NOTEPAD.QEX
+	$(MCOPY) -i disk.img Asm/boot/sysinfo.qex ::APPS/SYSINFO.QEX
+	$(MCOPY) -i disk.img Asm/boot/vmap.qex ::APPS/VMAP.QEX
+	$(MCOPY) -i disk.img Asm/boot/comp.qex ::APPS/COMP.QEX
+	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYSTEM/DATA/ATL.BIN
+	$(MCOPY) -i disk.img $(ICONS_BIN) ::SYSTEM/DATA/GUI.BIN
+	$(MCOPY) -i disk.img Asm/boot/wallpaper.bin ::SYSTEM/DATA/BG.BIN
+	echo "QuarkOS" > hostname.txt && $(MCOPY) -i disk.img hostname.txt ::SYSTEM/SETUP/HOST
+	echo "0.3.1-blanket" > version.txt && $(MCOPY) -i disk.img version.txt ::SYSTEM/SETUP/VER
+	echo "/dev/ata0 / fat16 defaults 0 0" > fstab.txt && $(MCOPY) -i disk.img fstab.txt ::SYSTEM/SETUP/BOOT
+	echo "[0.000000] Kernel start..." > boot.log && $(MCOPY) -i disk.img boot.log ::SYSTEM/LOGS/BOOT.LOG
+	$(MCOPY) -i disk.img syslog.txt ::SYSTEM/LOGS/SYSLOG
+	echo "Welcome to QuarkOS v0.3.1!" > readme.txt && $(MCOPY) -i disk.img readme.txt ::USERS/DEFAULT/README.TXT
+	echo "User Manual:\n1. Use 'guide' for help.\n2. 'drift' (cd) to change dirs.\n3. 'glimpse' (ls) to list files." > manual.txt && $(MCOPY) -i disk.img manual.txt ::USERS/DEFAULT/DOCS/MANUAL.TXT
+	echo "TODO:\n- Add network driver\n- Support more file formats" > todo.txt && $(MCOPY) -i disk.img todo.txt ::USERS/DEFAULT/DOCS/TODO.TXT
+	touch empty.tmp && $(MCOPY) -i disk.img empty.tmp ::TEMP/.KEEP
 	$(GRUB_MKRESCUE) -o kernel.iso Asm/
-		
+
 # ==================================================
 # Run
 # ==================================================
@@ -154,14 +213,17 @@ run: image
 		-cpu host \
 		-hda disk.img \
 		-cdrom kernel.iso \
-		-boot order=d
+		-boot order=d \
+		-vga virtio \
+		-m 4G \
+		-display gtk,full-screen=on	
 
 # ==================================================
 # Clean
 # ==================================================
 clean:
 	rm -f $(KERNEL_OBJ) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) \
-	      *.elf *.bin kernel disk.img kernel.iso
-	rm -f Asm/boot/*.qex Asm/boot/*.bin
+	      src/user/*.o src/kernel/*.o *.elf *.bin disk.img kernel kernel.iso
+	rm -f Asm/boot/*.qex Asm/boot/*.bin Asm/boot/kernel
 
-.PHONY: all clean kernel image run user_bin
+.PHONY: all clean image run user_bin

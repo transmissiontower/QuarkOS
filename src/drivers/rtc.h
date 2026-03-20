@@ -12,6 +12,6 @@ typedef struct {
     uint32_t year;
 } Time;
 
-void read_rtc(Time *t);
+void drv_rtc_read_datetime(Time *t);
 
 #endif

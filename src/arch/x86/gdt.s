@@ -1,6 +1,6 @@
-global gdt_flush
+global arch_gdt_flush
 
-gdt_flush:
+arch_gdt_flush:
     MOV eax, [esp+4]
     LGDT [eax]
 
@@ -14,9 +14,9 @@ gdt_flush:
 .flush:
     RET
 
-global tss_flush
+global arch_tss_flush
 
-tss_flush:
+arch_tss_flush:
     MOV ax, 0x2B
     LTR ax
     RET

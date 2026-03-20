@@ -1,13 +1,14 @@
 #include "drivers/GUI/framebuffer.h"
 #include "arch/x86/multiboot.h"
-#include "lib/math.h"
 #include "lib/stdint.h"
 #include "lib/stdlib.h"
 #include "mm/kmalloc.h"
 #include "mm/memory.h"
 #include "util/util.h"
 #include "video/font.h"
-#include "video/texture.h"
+#include "lib/math.h"
+
+#define FP_SHIFT 16
 
 uint32_t *fb_ptr = 0;
 uint8_t *back_buffer = 0;
@@ -17,8 +18,14 @@ uint32_t fb_height = 0;
 uint32_t fb_pitch = 0;
 uint32_t fb_bpp = 0;
 uint32_t fb_size_bytes = 0;
+uint32_t fb_phy_addr = 0;
 
-void framebuffer_init(struct multiboot_info *mb_info) {
+uint8_t *shadow_corner = 0;
+uint8_t *shadow_edge = 0;
+int shadow_radius = 0;
+int shadow_size = 0;
+
+void drv_fb_init(struct multiboot_info *mb_info) {
     fb_width = mb_info->framebuffer_width;
     fb_height = mb_info->framebuffer_height;
     fb_pitch = mb_info->framebuffer_pitch;
@@ -28,17 +35,24 @@ void framebuffer_init(struct multiboot_info *mb_info) {
         fb_pitch = fb_width * (fb_bpp / 8);
     }
 
-    uint32_t phys_addr = (uint32_t)mb_info->framebuffer_addr;
+    fb_phy_addr = (uint32_t)mb_info->framebuffer_addr;
     fb_size_bytes = fb_height * fb_pitch;
 
+    uint32_t fb_phys_base = fb_phy_addr & ~0xFFF;
+    uint32_t fb_offset = fb_phy_addr & 0xFFF;
     uint32_t virt_addr_start = 0xF0000000;
-    for (uint32_t offset = 0; offset < fb_size_bytes + 4096; offset += 4096) {
-        mem_map_page(virt_addr_start + offset, phys_addr + offset, PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
+
+    uint32_t total_bytes = fb_size_bytes + fb_offset;
+    uint32_t map_bytes = (total_bytes + 0xFFF) & ~0xFFF;
+
+    for (uint32_t offset = 0; offset < map_bytes; offset += 4096) {
+        mm_vmm_map_page(virt_addr_start + offset, fb_phys_base + offset, PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
     }
-    fb_ptr = (uint32_t *)virt_addr_start;
+
+    fb_ptr = (uint32_t *)(virt_addr_start + fb_offset);
 
     if (back_buffer == 0) {
-        back_buffer = (uint8_t *)kmalloc(fb_size_bytes);
+        back_buffer = (uint8_t *)mm_heap_alloc(fb_size_bytes);
     }
 
     if (back_buffer != 0) {
@@ -54,10 +68,9 @@ uint32_t fast_dist_fp(int x, int y) {
 }
 
 void put_pixel(int x, int y, uint32_t color) {
-    if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height)
-        return;
-    uint32_t offset = (y * fb_pitch) + (x * 4);
-    *(uint32_t *)(back_buffer + offset) = color;
+    if (x >= 0 && x < (int)fb_width && y >= 0 && y < (int)fb_height) {
+        *(uint32_t*)(back_buffer + (y * fb_pitch) + (x * 4)) = color;
+    }
 }
 
 void put_pixel_AA(int x, int y, uint32_t color, uint8_t alpha) {
@@ -91,29 +104,14 @@ void plot_pixel(int x, int y, uint8_t alpha) {
 }
 
 void rect_fill(int x, int y, int w, int h, uint32_t color) {
-    int x1 = x;
-    int y1 = y;
-    int x2 = x + w;
-    int y2 = y + h;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > fb_width) w = fb_width - x;
+    if (y + h > fb_height) h = fb_height - y;
 
-    if (x1 < 0)
-        x1 = 0;
-    if (y1 < 0)
-        y1 = 0;
-    if (x2 > (int)fb_width)
-        x2 = (int)fb_width;
-    if (y2 > (int)fb_height)
-        y2 = (int)fb_height;
-
-    if (x1 >= x2 || y1 >= y2)
-        return;
-
-    int new_w = x2 - x1;
-    int new_h = y2 - y1;
-
-    for (int i = 0; i < new_h; i++) {
-        uint32_t offset = ((y1 + i) * fb_pitch) + (x1 * 4);
-        memset32(back_buffer + offset, color, new_w);
+    for (int i = 0; i < h; i++) {
+        uint32_t offset = ((y + i) * fb_pitch) + (x * 4);
+        memset32(back_buffer + offset, color, w);
     }
 }
 
@@ -125,8 +123,8 @@ void rect_draw(int cx, int cy, int w, int h, int32_t d, uint32_t color) {
         rect_fill(cx + w / 2, cy - h / 2, 1, h, color);
         return;
     }
-    int32_t c = i_cos(d);
-    int32_t s = i_sin(d);
+    int32_t c = math_fixed_cos(d);
+    int32_t s = math_fixed_sin(d);
     int limit = (w > h ? w : h);
     int hw = w / 2;
     int hh = h / 2;
@@ -271,7 +269,7 @@ void clear_screen(uint32_t color) {
 
 void swap_rect(int x, int y, int w, int h) {
     if (!fb_ptr || !back_buffer) return;
-    
+
     int x1 = x;
     int y1 = y;
     int x2 = x + w;
@@ -279,8 +277,8 @@ void swap_rect(int x, int y, int w, int h) {
 
     if (x1 < 0) x1 = 0;
     if (y1 < 0) y1 = 0;
-    
-    
+
+
     if (x2 > (int)fb_width) x2 = (int)fb_width;
     if (y2 > (int)fb_height) y2 = (int)fb_height;
 
@@ -293,15 +291,20 @@ void swap_rect(int x, int y, int w, int h) {
         if (y1 + i >= (int)fb_height) break;
 
         uint32_t offset = ((y1 + i) * fb_pitch) + (x1 * 4);
-        
-        memcpy32((void *)(uint8_t *)fb_ptr + offset, (void *)(back_buffer + offset), new_w * 4);
+
+        memcpy32((void *)(uint8_t *)fb_ptr + offset, (void *)(back_buffer + offset), new_w);
     }
 }
 
-void swap_buffers() {
-    if (!fb_ptr || !back_buffer)
-        return;
-    memcpy32(fb_ptr, back_buffer, fb_size_bytes);
+void drv_fb_swap_buffers() {
+    if (!fb_ptr || !back_buffer) return;
+
+    for (uint32_t y = 0; y < fb_height; y++) {
+        uint8_t* dest = (uint8_t*)fb_ptr + (y * fb_pitch);
+        uint8_t* src = (uint8_t*)back_buffer + (y * fb_width * 4);
+        
+        memcpy(dest, src, fb_width * 4);
+    }
 }
 
 void char_draw(int x, int y, char c, uint32_t color, uint32_t bgcolor) {

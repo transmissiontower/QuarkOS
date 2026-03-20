@@ -1,81 +1,32 @@
-#include "lib/math.h"
 #include "lib/stdint.h"
 
-void *memset(void *dest, char val, uint32_t count) {
-    char *temp = (char *)dest;
-    for (; count != 0; count--) {
-        *temp++ = val;
-    }
-    return dest;
+void memset(void *dest, uint8_t val, uint32_t n) {
+    uint8_t *d = dest;
+    while (n--) *d++ = val;
 }
 
-void memset32(void *dest, uint32_t val, uint32_t count) {
-    uint32_t *temp = (uint32_t *)dest;
-
-    while (count >= 8) {
-        temp[0] = val;
-        temp[1] = val;
-        temp[2] = val;
-        temp[3] = val;
-        temp[4] = val;
-        temp[5] = val;
-        temp[6] = val;
-        temp[7] = val;
-        temp += 8;
-        count -= 8;
-    }
-    while (count--) {
-        *temp++ = val;
-    }
-}
-
-void memcpy(void *dest, const void *src, uint32_t count) {
-    const char *sp = (const char *)src;
-    char *dp = (char *)dest;
-    for (; count != 0; count--)
-        *dp++ = *sp++;
+void memcpy(void *dest, const void *src, uint32_t n) {
+    char *d = dest;
+    const char *s = src;
+    while (n--) *d++ = *s++;
 }
 
 void memcpy32(void *dest, const void *src, uint32_t count) {
-    uint32_t *dp = (uint32_t *)dest;
-    const uint32_t *sp = (const uint32_t *)src;
-
-    uint32_t dwords = count >> 2;
-    uint32_t bytes = count & 3;
-
-    while (dwords >= 8) {
-        dp[0] = sp[0];
-        dp[1] = sp[1];
-        dp[2] = sp[2];
-        dp[3] = sp[3];
-        dp[4] = sp[4];
-        dp[5] = sp[5];
-        dp[6] = sp[6];
-        dp[7] = sp[7];
-        dp += 8;
-        sp += 8;
-        dwords -= 8;
-    }
-
-    while (dwords--) {
-        *dp++ = *sp++;
-    }
-
-    uint8_t *db = (uint8_t *)dp;
-    const uint8_t *sb = (const uint8_t *)sp;
-    while (bytes--) {
-        *db++ = *sb++;
-    }
+    asm volatile ("cld; rep movsl" : "+D"(dest), "+S"(src), "+c"(count) : : "memory");
 }
 
-void out_port_B(uint16_t port, uint8_t value) {
-    asm volatile("outb %1, %0" : : "dN"(port), "a"(value));
+void memset32(void *dest, uint32_t val, uint32_t count) {
+    asm volatile ("cld; rep stosl" : "+D"(dest), "+c"(count) : "a"(val) : "memory");
 }
 
-char in_port_B(uint16_t port) {
-    char rv;
-    asm volatile("inb %1, %0" : "=a"(rv) : "dN"(port));
-    return rv;
+void outb(uint16_t port, uint8_t val) {
+    asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
+}
+
+uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
 }
 
 uint32_t blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha) {
@@ -136,8 +87,12 @@ int memcmp(const void *s1, const void *s2, uint32_t n) {
     return 0;
 }
 
-uint16_t in_port_W(uint16_t port) {
+uint16_t inw(uint16_t port) {
     uint16_t rv;
     asm volatile("inw %1, %0" : "=a"(rv) : "dN"(port));
     return rv;
+}
+
+void outw(uint16_t port, uint16_t value) {
+    asm volatile("outw %1, %0" : : "dN"(port), "a"(value));
 }

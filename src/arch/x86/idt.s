@@ -1,5 +1,5 @@
-global idt_flush
-idt_flush:
+global arch_idt_load
+arch_idt_load:
     MOV eax, [esp+4]
     LIDT [eax]
     RET
@@ -85,7 +85,7 @@ IRQ 15, 47
 
 
 
-extern isr_handler
+extern arch_isr_dispatcher
 isr_common_stub:
     pusha
     mov eax,ds
@@ -100,7 +100,7 @@ isr_common_stub:
     MOV gs,ax
 
     PUSH esp
-    CALL isr_handler
+    CALL arch_isr_dispatcher
 
     ADD esp, 8
     POP ebx
@@ -114,7 +114,7 @@ isr_common_stub:
     STI
     IRET
 
-extern irq_handler
+extern arch_irq_dispatcher
 irq_common_stub:
     pusha
     mov eax,ds
@@ -129,7 +129,7 @@ irq_common_stub:
     MOV gs,ax
 
     PUSH esp
-    CALL irq_handler
+    CALL arch_irq_dispatcher
 
     ADD esp, 8
     POP ebx

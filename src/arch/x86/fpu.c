@@ -1,6 +1,6 @@
 #include "lib/stdint.h"
 
-void fpu_init() {
+void arch_fpu_enable() {
     uint32_t cr4;
     asm volatile("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= 0x200;

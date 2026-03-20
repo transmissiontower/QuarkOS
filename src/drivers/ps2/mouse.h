@@ -11,6 +11,6 @@ extern int8_t mouse_left;
 extern int8_t mouse_right;
 extern int8_t mouse_middle;
 
-void mouse_init();
+void drv_input_mouse_init();
 
 #endif

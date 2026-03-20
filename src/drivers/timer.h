@@ -13,7 +13,7 @@ typedef struct {
     TimerCallback callback;
 } Timer;
 
-void timer_init();
+void drv_pit_init();
 void on_irq_0(struct InterruptRegisters *regs);
 
 uint64_t get_uptime_ms();

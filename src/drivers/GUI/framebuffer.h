@@ -20,10 +20,12 @@ extern uint32_t fb_width;
 extern uint32_t fb_height;
 extern uint32_t fb_bpp;
 extern uint32_t fb_pitch;
+extern uint32_t fb_phy_addr;
+extern uint32_t fb_size_bytes;
 
-void framebuffer_init(struct multiboot_info *mb_info);
+void drv_fb_init(struct multiboot_info *mb_info);
 
-void swap_buffers();
+void drv_fb_swap_buffers();
 void swap_rect(int x, int y, int w, int h);
 void wait_vblank();
 void put_pixel(int x, int y, uint32_t color);
@@ -41,6 +43,6 @@ void draw_sprite(int x, int y, int w, int h, const uint8_t *data, const uint32_t
 void draw_corner_mask(int x, int y, int r, uint32_t color, const uint8_t *mask, int quadrant);
 void shadow_draw(int x, int y, int w, int h);
 void clear_screen(uint32_t color);
-void swap_buffers();
+void drv_fb_swap_buffers();
 
 #endif

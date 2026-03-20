@@ -1,76 +1,52 @@
 #include "libapi.h"
+#include "lib/stdlib.h"
 
-void qk_exit(int code){
-    asm volatile("int $0x80" : : "a"(0), "b"(code));
-    while(1);
-}
-
-int qk_window_create(int w, int h, const char* title){
+static inline int syscall(int a, int b, int c, int d) {
     int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(2), "b"(w), "c"(h), "d"(title));
+    asm volatile("int $0x80" : "=a"(ret) : "a"(a), "b"(b), "c"(c), "d"(d) : "memory");
     return ret;
 }
 
-void qk_draw_rect(int id, int x, int y, int w, int h, uint32_t color){
-    draw_rect_args_t args = {id, x, y, w, h, color};
-    asm volatile("int $0x80" : : "a"(4), "b"(&args) : "memory");
+void qk_sys_exit(int code) { syscall(0, code, 0, 0); while(1); }
+uint32_t qk_get_uptime() { return (uint32_t)syscall(6, 0, 0, 0); }
+void qk_sleep(uint32_t ms) { syscall(7, ms, 0, 0); }
+void qk_wait_irq(int irq) { syscall(16, irq, 0, 0); }
+int qk_spawn(void *buffer, uint32_t size) { return syscall(9, (int)buffer, (int)size, 0); }
+int qk_get_server_pid(qk_server_type_t type) { return syscall(46, (int)type, 0, 0); }
+int qk_map_framebuffer(fb_info_t *f) { return syscall(11, (int)f, 0, 0); }
+int qk_ipc_recv_nb(message_t *m) { return syscall(12, (int)m, 0, 0); }
+int qk_sys_ipc_send(int pid, message_t *m) { return syscall(13, pid, (int)m, 0); }
+int qk_ipc_recv(message_t *m) { return syscall(14, (int)m, 0, 0); }
+int qk_sbrk(uint32_t size) { return syscall(26, (int)size, 0, 0); }
+int qk_map_wallpaper(void** ptr) { return syscall(33, (int)ptr, 0, 0); }
+int qk_map_font_atlas(void** ptr) { return syscall(25, (int)ptr, 0, 0); }
+int qk_map_icons_atlas(void** ptr) { return syscall(32, (int)ptr, 0, 0); }
+int qk_get_vmap(vmap_region_t *out) { return syscall(35, (int)out, 0, 0); }
+int qk_get_time(qk_time_t *t) { return syscall(36, (int)t, 0, 0); }
+int qk_get_stats(uint32_t *u, uint32_t *t, uint32_t *cpu) { 
+    return syscall(37, (int)u, (int)t, (int)cpu); 
+}
+int qk_get_procs(process_info_t *out, int max) { return syscall(40, (int)out, max, 0); }
+int qk_set_proc_name(int pid, const char *name) { return syscall(41, pid, (int)name, 0); }
+int qk_sys_kill(int pid) { return syscall(24, pid, 0, 0); }
+void sys_window_close(int id) { syscall(24, id, 0, 0); }
+
+uint8_t  qk_hw_inb(uint16_t p) { return (uint8_t)syscall(20, p, 0, 0); }
+void     qk_hw_outb(uint16_t p, uint8_t v) { syscall(21, p, v, 0); }
+uint16_t qk_inw(uint16_t p) { return (uint16_t)syscall(22, p, 0, 0); }
+void     qk_outw(uint16_t p, uint16_t v) { syscall(23, p, v, 0); }
+
+void qk_print_at(int x, int y, uint32_t color, const char* str) {
+    message_t msg;
+    msg.type = 59; 
+    msg.data1 = x; msg.data2 = y; msg.data3 = color;
+    strncpy((char*)msg.payload, str, 127);
+    static int comp_pid_cache = -1;
+    if (comp_pid_cache < 0) comp_pid_cache = qk_get_server_pid(QK_SERVER_COMPOSITOR);
+    if (comp_pid_cache < 0) return;
+    qk_sys_ipc_send(comp_pid_cache, &msg); 
 }
 
-void qk_draw_text(int id, int x, int y, const char* str, uint32_t color){
-    draw_text_args_t args = {id, x, y, str, color};
-    asm volatile("int $0x80" : : "a"(5), "b"(&args) : "memory");
-}
-
-uint32_t qk_get_uptime(){
-    uint32_t ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(6));
-    return ret;
-}
-
-void qk_sleep(uint32_t ms){
-    asm volatile("int $0x80" : : "a"(7), "b"(ms));
-}
-
-int qk_get_key(int win_id) {
-    int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(8), "b"(win_id));
-    return ret;
-}
-
-int qk_exec(const char *filename) {
-    int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(9), "b"(filename) : "memory");
-    return ret;
-}
-
-int qk_read_file(const char *filename, char *buffer) {
-    int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(10), "b"(filename), "c"(buffer) : "memory");
-    return ret;
-}
-
-void qk_scan(int win_id, char *buffer, int max_len) {
-    int i = 0;
-    char temp[2] = {0, 0}; 
-    
-    while (i < max_len - 1) {
-        int key = qk_get_key(win_id);
-        if (key == 0) {
-            qk_sleep(10); 
-            continue;
-        }
-        
-        char c = (char)key;
-        
-        if (c == '\n') {
-            break;
-        } else if (c == '\b') {
-            if (i > 0) {
-                i--;
-            }
-        } else {
-            buffer[i++] = c;
-        }
-    }
-    buffer[i] = 0;
-}
+void qk_power_shutdown(void) { syscall(45, 0, 0, 0); }
+void qk_power_reboot(void) { syscall(45, 1, 0, 0); }
+void qk_trigger_panic(const char *msg) { syscall(47, (int)msg, 0, 0); }

@@ -22,12 +22,14 @@
 extern uint32_t initial_page_dir[1024];
 
 void memory_init(struct multiboot_info *mboot, uint32_t physAllocStart);
-void invalidate(uint32_t vaddr);
-uint32_t pmm_alloc_page_frame();
+void mm_vmm_tlb_flush_single(uint32_t vaddr);
+uint32_t mm_pmm_alloc_frame();
 uint32_t *mem_get_current_page_dir();
-void mem_change_page_dir(uint32_t *pd);
-void sync_page_dirs();
-void mem_map_page(uint32_t virtualAddr, uint32_t physAddr, uint32_t flags);
+void mm_pmm_free_frame(uint32_t phys);
+void mm_vmm_cleanup_current_dir();
+void mm_vmm_set_active_dir(uint32_t *pd);
+void mm_vmm_sync_dir();
+void mm_vmm_map_page(uint32_t virtualAddr, uint32_t physAddr, uint32_t flags);
 void kernel_panic(const char *msg);
 void *map_module(uint32_t phys_addr, uint32_t size);
 void mem_free_identity_map();

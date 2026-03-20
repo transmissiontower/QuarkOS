@@ -1,7 +1,7 @@
 #include "lib/math.h"
 #include "lib/stdint.h"
 
-static const int32_t sin_lut_90[] = { 0, 1143, 2287, 3429, 4571, 5711, 6850, 7986, 9120, 10252, 11380, 12504, 13625,
+static const int32_t sin_table[] = { 0, 1143, 2287, 3429, 4571, 5711, 6850, 7986, 9120, 10252, 11380, 12504, 13625,
     14742, 15854, 16961, 18064, 19160, 20251, 21336, 22414, 23486, 24550, 25606, 26655, 27696, 28729, 29752, 30767,
     31772, 32768, 33753, 34728, 35693, 36647, 37589, 38521, 39440, 40347, 41243, 42125, 42995, 43852, 44695, 45525,
     46340, 47142, 47930, 48702, 49460, 50203, 50931, 51643, 52339, 53019, 53683, 54331, 54963, 55577, 56175, 56755,
@@ -57,23 +57,20 @@ double sin(double x) {
     return res;
 }
 
-int32_t i_sin(int32_t x) {
-    x %= 360;
-    if (x < 0)
-        x += 360;
-    if (x <= 90)
-        return sin_lut_90[x];
-    if (x <= 180)
-        return sin_lut_90[180 - x];
-    if (x <= 270)
-        return -sin_lut_90[x - 180];
-    return -sin_lut_90[360 - x];
-}
-
 double cos(double x) {
     return sin(x + PI / 2);
 }
 
-int32_t i_cos(int32_t x) {
-    return i_sin(x + 90);
+int32_t math_fixed_sin(int32_t deg) {
+    deg %= 360;
+    if (deg < 0) deg += 360;
+
+    if (deg <= 90) return sin_table[deg];
+    if (deg <= 180) return sin_table[180 - deg];
+    if (deg <= 270) return -sin_table[deg - 180];
+    return -sin_table[360 - deg];
+}
+
+int32_t math_fixed_cos(int32_t deg) {
+    return math_fixed_sin(deg + 90);
 }

@@ -6,13 +6,13 @@
 static Header *head = 0;
 static uint32_t heap_end_virt = HEAP_START;
 
-void kmalloc_init(uint32_t initialHeapSize) {
+void mm_heap_init(uint32_t initialHeapSize) {
     heap_end_virt = HEAP_START;
     head = 0;
-    change_heap_size(initialHeapSize);
+    mm_heap_expand(initialHeapSize);
 }
 
-void change_heap_size(int new_bytes) {
+void mm_heap_expand(int new_bytes) {
     if (new_bytes % 4096 != 0) {
         new_bytes = (new_bytes & ~0xFFF) + 0x1000;
     }
@@ -21,12 +21,12 @@ void change_heap_size(int new_bytes) {
     uint32_t pages = new_bytes / 4096;
 
     for (uint32_t i = 0; i < pages; i++) {
-        uint32_t phys = pmm_alloc_page_frame();
+        uint32_t phys = mm_pmm_alloc_frame();
         if (!phys) {
-            kernel_panic("OOM in change_heap_size");
+            kernel_panic("OOM in mm_heap_expand");
             return;
         }
-        mem_map_page(old_end + i * 4096, phys, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
+        mm_vmm_map_page(old_end + i * 4096, phys, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
     }
 
     heap_end_virt += new_bytes;
@@ -48,7 +48,7 @@ void change_heap_size(int new_bytes) {
     }
 }
 
-void *kmalloc(uint32_t size) {
+void *mm_heap_alloc(uint32_t size) {
     if (size == 0)
         return 0;
 
@@ -78,12 +78,12 @@ void *kmalloc(uint32_t size) {
     if (bytes_needed > chunk_size)
         chunk_size = bytes_needed;
 
-    change_heap_size(chunk_size);
+    mm_heap_expand(chunk_size);
 
-    return kmalloc(size);
+    return mm_heap_alloc(size);
 }
 
-void kfree(void *ptr) {
+void mm_heap_free(void *ptr) {
     if (!ptr)
         return;
 

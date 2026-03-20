@@ -35,7 +35,7 @@ typedef struct{
     uint16_t create_time;
     uint16_t create_date;
     uint16_t last_access_date;
-    uint16_t first_cluster_high; 
+    uint16_t first_cluster_high;
     uint16_t write_time;
     uint16_t write_date;
     uint16_t first_cluster_low;

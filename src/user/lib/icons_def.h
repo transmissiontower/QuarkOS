@@ -1,0 +1,19 @@
+#ifndef ICONS_DEF_H
+#define ICONS_DEF_H
+
+#define ICON_CLOSE 32
+#define ICON_UP 33
+#define ICON_DOWN 34
+#define ICON_NOTIFICATION 35
+#define ICON_SAFETY 36
+#define ICON_MONITOR 37
+#define ICON_CPU 38
+#define ICON_FOCUS 39
+#define ICON_KEYBOARD 40
+#define ICON_FULLSCREEN 41
+#define ICON_SHUTDOWN 42
+#define ICON_SEARCH 43
+#define ICON_TERMINAL 44
+#define ICON_SUN 45
+
+#endif

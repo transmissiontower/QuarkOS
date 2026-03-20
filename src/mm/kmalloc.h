@@ -15,9 +15,9 @@ typedef struct Header {
 #define HEADER_SIZE sizeof(Header)
 #define MAGIC_NUM 0x12345678
 
-void kmalloc_init(uint32_t initialHeapSize);
-void change_heap_size(int newBytes);
-void *kmalloc(uint32_t size);
-void kfree(void *ptr);
+void mm_heap_init(uint32_t initialHeapSize);
+void mm_heap_expand(int newBytes);
+void *mm_heap_alloc(uint32_t size);
+void mm_heap_free(void *ptr);
 
 #endif

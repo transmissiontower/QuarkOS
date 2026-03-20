@@ -2,7 +2,6 @@
 #define BMP_H
 
 #include "lib/stdint.h"
-#include "video/texture.h"
 
 #pragma pack(push, 1)
 
@@ -28,8 +27,8 @@ typedef struct {
     uint32_t bi_clr_important;
 } BITMAPINFOHEADER;
 
-Texture *load_bmp(uint8_t *fileData);
-
 #pragma pack(pop)
+
+void draw_bmp(void* bmp_data, int x, int y);
 
 #endif

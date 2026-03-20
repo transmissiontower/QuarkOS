@@ -17,12 +17,12 @@ struct idt_ptr_struct {
     uint32_t base;
 } __attribute__((packed));
 
-void idt_init();
-void set_idt_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags);
+void arch_idt_init();
+void arch_set_idt_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags);
 void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r));
 void irq_uninstall_handler(int irq);
 
-void isr_handler(struct InterruptRegisters *resgs);
+void arch_isr_dispatcher(struct InterruptRegisters *resgs);
 
 extern void isr0();
 extern void isr1();

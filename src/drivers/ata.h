@@ -3,8 +3,8 @@
 
 #include "lib/stdint.h"
 
-void ata_init();
-void ata_read_sector(uint32_t lba, uint8_t *buffer);
-void ata_write_sector(uint32_t lba, uint8_t *buffer);
+void drv_stor_ata_init();
+void drv_stor_ata_read(uint32_t lba, uint8_t *buffer);
+void drv_stor_ata_write(uint32_t lba, uint8_t *buffer);
 
 #endif
