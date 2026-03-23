@@ -507,35 +507,35 @@ void render_debug_overlay(void) {
 
     draw_string_vector(&ctx, x, y, "--- SYSTEM DEBUG ---", 0xFFFFFFFF);
 
-    // CPU - Green
+    
     memset(buf, 0, 64);
     strcat(buf, "CPU Load: "); 
     int_to_str(cpu_load, val, 10); 
     strcat(buf, val); strcat(buf, "%");
     draw_string_vector(&ctx, x, y + 25, buf, 0xFF55FF55);
 
-    // RAM - Cyan
+    
     memset(buf, 0, 64);
     strcat(buf, "Memory: "); 
     int_to_str(used_mem / 1024 / 1024, val, 10); 
     strcat(buf, val); strcat(buf, " MB used");
     draw_string_vector(&ctx, x, y + 45, buf, 0xFF55FFFF);
 
-    // Uptime - Yellow
+    
     memset(buf, 0, 64);
     strcat(buf, "Uptime: "); 
     int_to_str(uptime / 1000, val, 10); 
     strcat(buf, val); strcat(buf, "s");
     draw_string_vector(&ctx, x, y + 65, buf, 0xFFFFFF55);
 
-    // Tasks - Pink
+    
     memset(buf, 0, 64);
     strcat(buf, "Tasks: "); 
     int_to_str(task_count, val, 10); 
     strcat(buf, val);
     draw_string_vector(&ctx, x, y + 85, buf, 0xFFFF55FF);
 
-    // IPC - White/Grey
+    
     memset(buf, 0, 64);
     strcat(buf, "IPC Events: "); 
     int_to_str(total_ipc_messages, val, 10); 
@@ -556,7 +556,20 @@ static void process_message(message_t *msg) {
             mx = e->x; my = e->y; consumed = handle_mouse_for_ui(e);
         }
         if (!consumed) window_event_handle(*e);
-        if ((e->type == EVENT_KEY_PRESS || e->type == EVENT_KEY_RELEASE) && window_count > 0) qk_sys_ipc_send(window_stack[window_count - 1]->owner_pid, msg);
+        if (window_count > 0) {
+            Window* top = window_stack[window_count - 1];
+            if (e->type == EVENT_KEY_PRESS || e->type == EVENT_KEY_RELEASE) {
+                qk_sys_ipc_send(top->owner_pid, msg);
+            } else if (e->type == EVENT_MOUSE_DOWN || e->type == EVENT_MOUSE_UP || e->type == EVENT_MOUSE_MOVE) {
+                message_t m_mouse = *msg;
+                Event* em = (Event*)m_mouse.payload;
+                em->x -= top->x;
+                em->y -= top->y;
+                m_mouse.data2 = em->x;
+                m_mouse.data3 = em->y;
+                qk_sys_ipc_send(top->owner_pid, &m_mouse);
+            }
+        }
     } else if (msg->type == MSG_WIN_CREATE) {
         Window* new_win = window_create(msg->sender_pid, 100, 100, msg->data1, msg->data2, (char*)msg->payload);
         if (new_win) { message_t reply = {.type = MSG_WIN_CREATED, .data1 = new_win->id}; qk_sys_ipc_send(msg->sender_pid, &reply); }

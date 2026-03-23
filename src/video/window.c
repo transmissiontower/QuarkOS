@@ -388,7 +388,7 @@ void window_event_handle(Event e) {
         }
         char c = (char)key;
 
-        // Input buffering logic for all windows
+        
         if (c > 0) {
             int next_write = (w->input_write_ptr + 1) % INPUT_BUFFER_SIZE;
             if (next_write != w->input_read_ptr) {

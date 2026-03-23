@@ -75,12 +75,12 @@ int qk_path_resolve_ext(uint16_t start_cluster, const char *path, uint16_t *out_
     const char *p = path;
 
     if (*p == '/') {
-        current_cluster = 0; // Absolute path
+        current_cluster = 0; 
         while (*p == '/') p++;
     }
 
     if (!*p) {
-        // Path was just "/"
+        
         if (out_dir_cluster) *out_dir_cluster = 0;
         if (out_name) out_name[0] = 0;
         return 0;

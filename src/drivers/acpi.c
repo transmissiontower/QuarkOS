@@ -77,19 +77,19 @@ static uint32_t acpi_parse_pkg_value(uint8_t **ptr, uint8_t *end) {
     uint8_t prefix = **ptr;
     (*ptr)++;
     switch (prefix) {
-        case 0x0A: { // BytePrefix
+        case 0x0A: { 
             if (*ptr >= end) return 0;
             uint32_t val = **ptr;
             (*ptr)++;
             return val;
         }
-        case 0x0B: { // WordPrefix
+        case 0x0B: { 
             if (*ptr + 1 >= end) return 0;
             uint32_t val = (*ptr)[0] | ((*ptr)[1] << 8);
             (*ptr) += 2;
             return val;
         }
-        case 0x0C: { // DWordPrefix
+        case 0x0C: { 
             if (*ptr + 3 >= end) return 0;
             uint32_t val = (*ptr)[0] | ((*ptr)[1] << 8) | ((*ptr)[2] << 16) | ((*ptr)[3] << 24);
             (*ptr) += 4;
@@ -118,7 +118,7 @@ static void acpi_extract_s5(void) {
                 ptr += 4;
                 continue;
             }
-            pkg++; // skip PackageOp
+            pkg++; 
             acpi_parse_pkg_length(&pkg, end);
             if (pkg >= end) break;
             uint8_t elements = *pkg++;
@@ -229,10 +229,10 @@ void acpi_shutdown(void) {
 void acpi_reboot(void) {
     asm volatile("cli");
     if (reset_capable && reset_reg.address) {
-        if (reset_reg.address_space == 1) { // System I/O
+        if (reset_reg.address_space == 1) { 
             outb((uint16_t)reset_reg.address, reset_value);
             for (;;) asm volatile("hlt");
-        } else if (reset_reg.address_space == 0) { // System memory
+        } else if (reset_reg.address_space == 0) { 
             uint8_t *reg = (uint8_t *)map_module((uint32_t)reset_reg.address, 1);
             if (reg) {
                 *reg = reset_value;

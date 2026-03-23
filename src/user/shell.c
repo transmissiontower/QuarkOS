@@ -368,7 +368,7 @@ static int shell_read_line_blocking(char *out, int max_len, uint8_t *special_sca
             if (special_scancode) *special_scancode = code;
             return 1;
         }
-        if (ctrl_down && code == 0x2E) { // 'c'
+        if (ctrl_down && code == 0x2E) { 
             if (special_scancode) *special_scancode = SPECIAL_CTRL_C;
             return 2;
         }

@@ -18,6 +18,8 @@ typedef struct process {
     uint32_t kernel_stack;
     uint32_t pd_phys;
     uint32_t heap_end;
+    uint32_t image_base;
+    uint32_t image_end;
     struct process *next;
 
     process_state_t state;
@@ -47,7 +49,7 @@ extern process_t *current_process;
 
 void k_scheduler_init();
 void k_scheduler_update_sleeps();
-void k_proc_spawn(uint8_t *code, uint32_t size);
+process_t* k_proc_spawn(uint8_t *code, uint32_t size);
 void k_scheduler_yield();
 void block_current_process(uint32_t ms);
 process_t* k_proc_find_by_id(int pid);

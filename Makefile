@@ -42,6 +42,7 @@ KERNEL_C = \
 	src/lib/stdlib.c \
 	src/lib/math.c \
 	src/kernel/scheduler.c \
+	src/kernel/elf.c \
 	src/kernel/syscalls.c \
 	src/fs/fat.c \
 	src/drivers/ata.c \
@@ -75,6 +76,7 @@ USER_STORAGE_SERVER_OBJ = $(USER_LIB_OBJ) src/user/storage_server.o
 USER_INPUT_SERVER_OBJ = $(USER_LIB_OBJ) src/user/input_server.o
 USER_TIME_SERVER_OBJ = $(USER_LIB_OBJ) src/user/time_server.o
 USER_INIT_OBJ = $(USER_LIB_OBJ) src/kernel/init.o
+USER_ELFDEMO_OBJ = $(USER_LIB_OBJ) src/user/elfdemo.o
 
 # ==================================================
 # Default target
@@ -132,28 +134,40 @@ kernel: $(KERNEL_OBJ) linker.ld
 # ==================================================
 user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
           $(USER_STORAGE_SERVER_OBJ) $(USER_INPUT_SERVER_OBJ) $(USER_TIME_SERVER_OBJ) \
-          $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ)
+          $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ) $(USER_ELFDEMO_OBJ)
+	mkdir -p Asm/boot
 	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_TEST_OBJ)
+	cp test.elf Asm/boot/test.elf
 	$(OBJCOPY) -O binary test.elf test.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o shell.elf $(USER_SHELL_OBJ)
+	cp shell.elf Asm/boot/shell.elf
 	$(OBJCOPY) -O binary shell.elf shell.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o notepad.elf $(USER_NOTEPAD_OBJ)
+	cp notepad.elf Asm/boot/notepad.elf
 	$(OBJCOPY) -O binary notepad.elf notepad.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o comp.elf $(USER_COMP_OBJ)
+	cp comp.elf Asm/boot/comp.elf
 	$(OBJCOPY) -O binary comp.elf comp.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o vmap.elf $(USER_VMAP_OBJ)
+	cp vmap.elf Asm/boot/vmap.elf
 	$(OBJCOPY) -O binary vmap.elf vmap.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o sysinfo.elf $(USER_SYSINFO_OBJ)
+	cp sysinfo.elf Asm/boot/sysinfo.elf
 	$(OBJCOPY) -O binary sysinfo.elf sysinfo.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o storage_server.elf $(USER_STORAGE_SERVER_OBJ)
+	cp storage_server.elf Asm/boot/storage_server.elf
 	$(OBJCOPY) -O binary storage_server.elf storage_server.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o input_server.elf $(USER_INPUT_SERVER_OBJ)
+	cp input_server.elf Asm/boot/input_server.elf
 	$(OBJCOPY) -O binary input_server.elf input_server.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o init.elf $(USER_INIT_OBJ)
+	cp init.elf Asm/boot/init.elf
 	$(OBJCOPY) -O binary init.elf init.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o time_server.elf $(USER_TIME_SERVER_OBJ)
+	cp time_server.elf Asm/boot/time_server.elf
 	$(OBJCOPY) -O binary time_server.elf time_server.bin
-	mkdir -p Asm/boot
+	$(LD) -m elf_i386 -T src/user/linker.ld -o elfdemo.elf $(USER_ELFDEMO_OBJ)
+	cp elfdemo.elf Asm/boot/elfdemo.elf
 	python3 tools/qex_builder.py test.bin Asm/boot/test.qex
 	python3 tools/qex_builder.py shell.bin Asm/boot/shell.qex
 	python3 tools/qex_builder.py notepad.bin Asm/boot/notepad.qex
@@ -186,10 +200,11 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN)
 	mmd -i disk.img ::TEMP
 	$(MCOPY) -i disk.img Asm/boot/test.qex ::APPS/TEST.QEX
 	$(MCOPY) -i disk.img Asm/boot/shell.qex ::APPS/SHELL.QEX
-	$(MCOPY) -i disk.img Asm/boot/notepad.qex ::APPS/NOTEPAD.QEX
+	$(MCOPY) -i disk.img Asm/boot/notepad.elf ::APPS/NOTEPAD.ELF
 	$(MCOPY) -i disk.img Asm/boot/sysinfo.qex ::APPS/SYSINFO.QEX
 	$(MCOPY) -i disk.img Asm/boot/vmap.qex ::APPS/VMAP.QEX
 	$(MCOPY) -i disk.img Asm/boot/comp.qex ::APPS/COMP.QEX
+	$(MCOPY) -i disk.img Asm/boot/elfdemo.elf ::APPS/ELFDEMO.ELF
 	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYSTEM/DATA/ATL.BIN
 	$(MCOPY) -i disk.img $(ICONS_BIN) ::SYSTEM/DATA/GUI.BIN
 	$(MCOPY) -i disk.img Asm/boot/wallpaper.bin ::SYSTEM/DATA/BG.BIN
