@@ -1,0 +1,97 @@
+ Volume in drive : has no label
+ Volume Serial Number is F8AE-680E
+Directory for ::/
+
+APPS         <DIR>     2026-03-11  23:32 
+SYSTEM       <DIR>     2026-03-11  23:32 
+USERS        <DIR>     2026-03-11  23:32 
+TEMP         <DIR>     2026-03-11  23:32 
+        4 files                   0 bytes
+
+Directory for ::/APPS
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+TEST     QEX     15200 2026-03-11  23:32 
+SHELL    QEX     27624 2026-03-11  23:32 
+NOTEPAD  QEX     17064 2026-03-11  23:32 
+VMAP     QEX     15328 2026-03-11  23:32 
+COMP     QEX     22624 2026-03-11  23:32 
+        7 files              97 840 bytes
+
+Directory for ::/SYSTEM
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+SETUP        <DIR>     2026-03-11  23:32 
+DATA         <DIR>     2026-03-11  23:32 
+LOGS         <DIR>     2026-03-11  23:32 
+        5 files                   0 bytes
+
+Directory for ::/SYSTEM/SETUP
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+HOST                 8 2026-03-11  23:32 
+VER                 14 2026-03-11  23:32 
+BOOT                31 2026-03-11  23:32 
+        5 files                  53 bytes
+
+Directory for ::/SYSTEM/DATA
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+ATL      BIN     83274 2026-03-11  23:32 
+GUI      BIN     43228 2026-03-11  23:32 
+BG       BIN   8294400 2026-03-11  23:32 
+        5 files           8 420 902 bytes
+
+Directory for ::/SYSTEM/LOGS
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+BOOT     LOG        27 2026-03-11  23:32 
+SYSLOG             108 2026-03-11  23:32 
+        4 files                 135 bytes
+
+Directory for ::/USERS
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+DEFAULT      <DIR>     2026-03-11  23:32 
+        3 files                   0 bytes
+
+Directory for ::/USERS/DEFAULT
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+DESK         <DIR>     2026-03-11  23:32 
+DOCS         <DIR>     2026-03-11  23:32 
+README   TXT        27 2026-03-11  23:32 
+        5 files                  27 bytes
+
+Directory for ::/USERS/DEFAULT/DESK
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+        2 files                   0 bytes
+
+Directory for ::/USERS/DEFAULT/DOCS
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+MANUAL   TXT       106 2026-03-11  23:32 
+TODO     TXT        57 2026-03-11  23:32 
+        4 files                 163 bytes
+
+Directory for ::/TEMP
+
+.            <DIR>     2026-03-11  23:32 
+..           <DIR>     2026-03-11  23:32 
+KEEP~1               0 2026-03-11  23:32  .KEEP
+        3 files                   0 bytes
+
+Total files listed:
+       47 files           8 519 120 bytes
+                         58 394 624 bytes free
+

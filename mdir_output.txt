@@ -1,0 +1,59 @@
+ Volume in drive : has no label
+ Volume Serial Number is D17B-999F
+Directory for ::/
+
+BIN          <DIR>     2026-03-11  23:22 
+SYS          <DIR>     2026-03-11  23:22 
+DOCS         <DIR>     2026-03-11  23:22 
+HOME         <DIR>     2026-03-11  23:22 
+TMP          <DIR>     2026-03-11  23:22 
+        5 files                   0 bytes
+
+Directory for ::/BIN
+
+.            <DIR>     2026-03-11  23:22 
+..           <DIR>     2026-03-11  23:22 
+TEST     QEX     15200 2026-03-11  23:22 
+SHELL    QEX     27624 2026-03-11  23:22 
+NOTEPAD  QEX     17064 2026-03-11  23:22 
+VMAP     QEX     15328 2026-03-11  23:22 
+COMP     QEX     22624 2026-03-11  23:22 
+        7 files              97 840 bytes
+
+Directory for ::/SYS
+
+.            <DIR>     2026-03-11  23:22 
+..           <DIR>     2026-03-11  23:22 
+FONT_ATL BIN     83274 2026-03-11  23:22 
+ICONS    BIN     43228 2026-03-11  23:22 
+WALL_P   BIN   8294400 2026-03-11  23:22 
+README   TXT        34 2026-03-11  23:22 
+        6 files           8 420 936 bytes
+
+Directory for ::/DOCS
+
+.            <DIR>     2026-03-11  23:22 
+..           <DIR>     2026-03-11  23:22 
+HELLO    TXT        15 2026-03-11  23:22 
+MANUAL   TXT       106 2026-03-11  23:22 
+TODO     TXT        57 2026-03-11  23:22 
+        5 files                 178 bytes
+
+Directory for ::/HOME
+
+.            <DIR>     2026-03-11  23:22 
+..           <DIR>     2026-03-11  23:22 
+README   TXT        27 2026-03-11  23:22 
+        3 files                  27 bytes
+
+Directory for ::/TMP
+
+.            <DIR>     2026-03-11  23:22 
+..           <DIR>     2026-03-11  23:22 
+KEEP~1               0 2026-03-11  23:22  .KEEP
+        3 files                   0 bytes
+
+Total files listed:
+       29 files           8 518 981 bytes
+                         58 411 008 bytes free
+
