@@ -1,5 +1,5 @@
-#ifndef QK_KERNEL_ELF_H
-#define QK_KERNEL_ELF_H
+#ifndef KERNEL_ELF_H
+#define KERNEL_ELF_H
 
 #include "lib/stdint.h"
 
