@@ -1,0 +1,1 @@
+User Manual:\n1. Use 'guide' for help.\n2. 'drift' (cd) to change dirs.\n3. 'glimpse' (ls) to list files.

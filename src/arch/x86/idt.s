@@ -48,7 +48,7 @@ ISR_ERRCODE 13
 ISR_ERRCODE 14
 ISR_NOERRCODE 15
 ISR_NOERRCODE 16
-ISR_NOERRCODE 17
+ISR_ERRCODE 17
 ISR_NOERRCODE 18
 ISR_NOERRCODE 19
 ISR_NOERRCODE 20
@@ -111,7 +111,6 @@ isr_common_stub:
 
     POPA
     ADD esp, 8
-    STI
     IRET
 
 extern arch_irq_dispatcher
@@ -140,6 +139,5 @@ irq_common_stub:
 
     POPA
     ADD esp, 8
-    STI
     IRET
 

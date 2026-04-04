@@ -10,34 +10,34 @@ typedef struct {
     uint8_t payload[128];
 } message_t;
 
-#define MSG_OK          100
-#define MSG_ERROR       101
-#define MSG_WIN_CREATE  50
-#define MSG_WIN_PRINT   51
-#define MSG_WIN_CLEAR   52
+#define MSG_OK 100
+#define MSG_ERROR 101
+#define MSG_WIN_CREATE 50
+#define MSG_WIN_PRINT 51
+#define MSG_WIN_CLEAR 52
 #define MSG_WIN_CREATED 53
-#define MSG_KEY_EVENT   200
+#define MSG_KEY_EVENT 200
 #define MSG_MOUSE_EVENT 201
 
-#define MSG_FILE_OPEN        300
-#define MSG_FILE_SIZE        301
-#define MSG_REQ_DATA         302
-#define MSG_FILE_DATA        303
-#define MSG_FILE_SAVE        304
-#define MSG_DIR_REQ          305
-#define MSG_DIR_REPLY        306
-#define MSG_DIR_CREATE       307
-#define MSG_FILE_SAVE_BEGIN  308
-#define MSG_FILE_SAVE_CHUNK  309
-#define MSG_FILE_SAVE_END    310
-#define MSG_FILE_READ        311
+#define MSG_FILE_OPEN 300
+#define MSG_FILE_SIZE 301
+#define MSG_REQ_DATA 302
+#define MSG_FILE_DATA 303
+#define MSG_FILE_SAVE 304
+#define MSG_DIR_REQ 305
+#define MSG_DIR_REPLY 306
+#define MSG_DIR_CREATE 307
+#define MSG_FILE_SAVE_BEGIN 308
+#define MSG_FILE_SAVE_CHUNK 309
+#define MSG_FILE_SAVE_END 310
+#define MSG_FILE_READ 311
 
 #define MSG_WIN_SET_PIXEL 55
 #define MSG_WIN_DRAW_LINE 56
 #define MSG_WIN_DRAW_RECT 57
 #define MSG_WIN_DRAW_RECT_ROUNDED 58
-#define MSG_WIN_PRINT_AT  59
-#define MSG_WIN_COLOR     60
+#define MSG_WIN_PRINT_AT 59
+#define MSG_WIN_COLOR 60
 #define MSG_PROCESS_TERMINATED 61
 
 #define IPC_QUEUE_SIZE 128

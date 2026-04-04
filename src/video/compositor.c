@@ -36,20 +36,31 @@ static int dirty_win_w = 0;
 static int dirty_win_h = 0;
 static int has_dirty_win = 0;
 
-static inline int min_i(int a, int b) { return (a < b) ? a : b; }
-static inline int max_i(int a, int b) { return (a > b) ? a : b; }
-static inline int clamp(int val, int min, int max) {
-    if (val < min) return min;
-    if (val > max) return max;
+static inline int min_i(int a, int b)
+{
+    return (a < b) ? a : b;
+}
+static inline int max_i(int a, int b)
+{
+    return (a > b) ? a : b;
+}
+static inline int clamp(int val, int min, int max)
+{
+    if (val < min)
+        return min;
+    if (val > max)
+        return max;
     return val;
 }
 
-void set_background(Texture *tex) {
+void set_background(Texture *tex)
+{
     current_wallpaper = tex;
     force_redraw = 1;
 }
 
-void compositor_init() {
+void compositor_init()
+{
     prev_mx = mouse_x;
     prev_my = mouse_y;
     prev_counter = counter;
@@ -58,12 +69,14 @@ void compositor_init() {
     prev_time.second = 99;
 }
 
-void invalidate_screen() {
+void invalidate_screen()
+{
     force_redraw = 1;
     needs_redraw = 1;
 }
 
-void invalidate_window(int x, int y, int w, int h) {
+void invalidate_window(int x, int y, int w, int h)
+{
     if (!has_dirty_win) {
         dirty_win_x = x;
         dirty_win_y = y;
@@ -89,7 +102,8 @@ void invalidate_window(int x, int y, int w, int h) {
     needs_redraw = 1;
 }
 
-void safe_swap(int x, int y, int w, int h) {
+void safe_swap(int x, int y, int w, int h)
+{
     int pad = 4;
     int x1 = clamp(x - pad, 0, fb_width);
     int y1 = clamp(y - pad, 0, fb_height);
@@ -104,7 +118,8 @@ void safe_swap(int x, int y, int w, int h) {
     }
 }
 
-void compositor_paint() {
+void compositor_paint()
+{
     uint64_t now = get_uptime_ms();
     if (now >= last_time + 1000) {
         fps = frames;
@@ -116,14 +131,21 @@ void compositor_paint() {
     int32_t cur_my = mouse_y;
     int moved = 0;
 
-    if (cur_mx != prev_mx || cur_my != prev_my) moved = 1;
-    if (prev_drag_win || dragging_window) moved = 1;
-    if (counter != prev_counter) moved = 1;
-    if (fps != prev_drawn_fps) moved = 1;
-    if (sys_time.second != prev_time.second) moved = 1;
-    if (has_dirty_win) moved = 1;
+    if (cur_mx != prev_mx || cur_my != prev_my)
+        moved = 1;
+    if (prev_drag_win || dragging_window)
+        moved = 1;
+    if (counter != prev_counter)
+        moved = 1;
+    if (fps != prev_drawn_fps)
+        moved = 1;
+    if (sys_time.second != prev_time.second)
+        moved = 1;
+    if (has_dirty_win)
+        moved = 1;
 
-    if (!moved && !force_redraw) return;
+    if (!moved && !force_redraw)
+        return;
 
     frames++;
 
@@ -136,11 +158,17 @@ void compositor_paint() {
     char time_buf[16];
     char num_buf[4];
     time_to_str(sys_time.hour, num_buf);
-    time_buf[0] = num_buf[0]; time_buf[1] = num_buf[1]; time_buf[2] = ':';
+    time_buf[0] = num_buf[0];
+    time_buf[1] = num_buf[1];
+    time_buf[2] = ':';
     time_to_str(sys_time.minute, num_buf);
-    time_buf[3] = num_buf[0]; time_buf[4] = num_buf[1]; time_buf[5] = ':';
+    time_buf[3] = num_buf[0];
+    time_buf[4] = num_buf[1];
+    time_buf[5] = ':';
     time_to_str(sys_time.second, num_buf);
-    time_buf[6] = num_buf[0]; time_buf[7] = num_buf[1]; time_buf[8] = 0;
+    time_buf[6] = num_buf[0];
+    time_buf[7] = num_buf[1];
+    time_buf[8] = 0;
     draw_string_vector(35, 30, time_buf, 0xFFFFFFFF);
 
     int fps_x = fb_width - 120;
@@ -163,25 +191,27 @@ void compositor_paint() {
         int margin = WIN_SHADOW_SIZE;
 
         if (has_dirty_win) {
-            safe_swap(dirty_win_x - margin, dirty_win_y - margin, 
-                      dirty_win_w + margin * 2, dirty_win_h + margin * 2);
+            safe_swap(dirty_win_x - margin, dirty_win_y - margin, dirty_win_w + margin * 2,
+                      dirty_win_h + margin * 2);
             has_dirty_win = 0;
         }
 
-        if (sys_time.second != prev_time.second) safe_swap(20, 20, 150, 40);
-        if (counter != prev_counter) safe_swap(20, 20, 150, 40);
+        if (sys_time.second != prev_time.second)
+            safe_swap(20, 20, 150, 40);
+        if (counter != prev_counter)
+            safe_swap(20, 20, 150, 40);
         if (fps != prev_drawn_fps) {
             safe_swap(fps_x, fps_y, 100, 40);
             prev_drawn_fps = fps;
         }
 
         if (prev_drag_win) {
-            safe_swap(prev_win_x - margin, prev_win_y - margin, 
-                      prev_drag_win->w + margin * 2, prev_drag_win->h + margin * 2);
+            safe_swap(prev_win_x - margin, prev_win_y - margin, prev_drag_win->w + margin * 2,
+                      prev_drag_win->h + margin * 2);
         }
 
         if (dragging_window) {
-            safe_swap(dragging_window->x - margin, dragging_window->y - margin, 
+            safe_swap(dragging_window->x - margin, dragging_window->y - margin,
                       dragging_window->w + margin * 2, dragging_window->h + margin * 2);
         }
 
@@ -199,11 +229,13 @@ void compositor_paint() {
     prev_time = sys_time;
 
     if (dragging_window) {
-        invalidate_window(dragging_window->x, dragging_window->y, dragging_window->w, dragging_window->h);
+        invalidate_window(dragging_window->x, dragging_window->y, dragging_window->w,
+                          dragging_window->h);
         prev_drag_win = dragging_window;
         prev_win_x = dragging_window->x;
         prev_win_y = dragging_window->y;
-        invalidate_window(dragging_window->x, dragging_window->y, dragging_window->w, dragging_window->h);
+        invalidate_window(dragging_window->x, dragging_window->y, dragging_window->w,
+                          dragging_window->h);
     } else {
         prev_drag_win = 0;
     }

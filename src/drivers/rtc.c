@@ -6,17 +6,20 @@
 #define CMOS_ADDRESS 0x70
 #define CMOS_DATA 0x71
 
-int get_update_in_progress_flag() {
+int get_update_in_progress_flag()
+{
     outb(CMOS_ADDRESS, 0x0A);
     return (inb(CMOS_DATA) & 0x80);
 }
 
-uint8_t get_rtc_register(int reg) {
+uint8_t get_rtc_register(int reg)
+{
     outb(CMOS_ADDRESS, reg);
     return inb(CMOS_DATA);
 }
 
-void drv_rtc_read_datetime(Time *t) {
+void drv_rtc_read_datetime(Time *t)
+{
     uint8_t last_second;
     uint8_t last_minute;
     uint8_t last_hour;
@@ -52,8 +55,8 @@ void drv_rtc_read_datetime(Time *t) {
         t->day = get_rtc_register(0x07);
         t->month = get_rtc_register(0x08);
         t->year = get_rtc_register(0x09);
-    } while ((last_second != t->second) || (last_minute != t->minute) || (last_hour != t->hour) || (last_day != t->day)
-        || (last_month != t->month) || (last_year != t->year));
+    } while ((last_second != t->second) || (last_minute != t->minute) || (last_hour != t->hour) ||
+             (last_day != t->day) || (last_month != t->month) || (last_year != t->year));
 
     register_B = get_rtc_register(0x0B);
 

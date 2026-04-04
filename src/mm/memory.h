@@ -7,6 +7,7 @@
 #define KERNEL_START 0xC0000000
 #define KERNEL_MALLOC 0xD0000000
 #define MODULE_VIRT_START 0xD2000000
+#define MODULE_VIRT_END 0xE0000000
 
 #define REC_PAGEDIR ((uint32_t *)0xFFFFF000)
 #define Rec_PAGEDIR(i) ((uint32_t *)(0xFFC00000 + ((i) << 12)))
@@ -28,7 +29,6 @@ uint32_t *mem_get_current_page_dir();
 void mm_pmm_free_frame(uint32_t phys);
 void mm_vmm_cleanup_current_dir();
 void mm_vmm_set_active_dir(uint32_t *pd);
-void mm_vmm_sync_dir();
 void mm_vmm_map_page(uint32_t virtualAddr, uint32_t physAddr, uint32_t flags);
 void kernel_panic(const char *msg);
 void *map_module(uint32_t phys_addr, uint32_t size);

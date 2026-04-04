@@ -5,7 +5,8 @@
 
 AtlasFont *main_font = 0;
 
-void font_atlas_init(uint8_t *raw_data) {
+void font_atlas_init(uint8_t *raw_data)
+{
     uint32_t *header = (uint32_t *)raw_data;
 
     if (header[0] != 0x464F4E54) {
@@ -17,17 +18,18 @@ void font_atlas_init(uint8_t *raw_data) {
     main_font->tex_width = header[1];
     main_font->tex_height = header[2];
     main_font->line_height = header[3];
-    
-    main_font->ascent = header[4]; 
-    main_font->count = header[5];  
 
-    main_font->glyphs = (GlyphInfo *)(raw_data + 24); 
+    main_font->ascent = header[4];
+    main_font->count = header[5];
+
+    main_font->glyphs = (GlyphInfo *)(raw_data + 24);
 
     uint32_t metrics_size = main_font->count * sizeof(GlyphInfo);
     main_font->bitmap = (uint32_t *)(raw_data + 24 + metrics_size);
 }
 
-int draw_char_vector(int x, int y, char c, uint32_t color) {
+int draw_char_vector(int x, int y, char c, uint32_t color)
+{
     if (!main_font || c < 32 || c > 126)
         return x;
 
@@ -57,19 +59,22 @@ int draw_char_vector(int x, int y, char c, uint32_t color) {
     return x + g->advance;
 }
 
-int get_char_width(char c) {
+int get_char_width(char c)
+{
     if (!main_font || c < 32 || c > 126)
         return 0;
     return main_font->glyphs[c - 32].advance;
 }
 
-int get_font_height() {
+int get_font_height()
+{
     if (!main_font)
         return 0;
     return main_font->line_height;
 }
 
-void draw_string_vector(int x, int y, const char *str, uint32_t color) {
+void draw_string_vector(int x, int y, const char *str, uint32_t color)
+{
     if (!main_font)
         return;
 
@@ -89,7 +94,8 @@ void draw_string_vector(int x, int y, const char *str, uint32_t color) {
     }
 }
 
-int get_string_width(const char *str) {
+int get_string_width(const char *str)
+{
     if (!main_font)
         return 0;
     int w = 0;

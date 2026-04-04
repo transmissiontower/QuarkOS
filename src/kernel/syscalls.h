@@ -1,14 +1,13 @@
 #ifndef SYSCALLS_H
 #define SYSCALLS_H
 
+#include "kernel/ipc.h"
 #include "lib/stdint.h"
 #include "util/util.h"
-#include "kernel/ipc.h"
 
 #define USER_FB_VIRT_START 0x80000000
 
-typedef struct
-{
+typedef struct {
     int id;
     int x;
     int y;
@@ -17,8 +16,7 @@ typedef struct
     uint32_t color;
 } draw_rect_args_t;
 
-typedef struct
-{
+typedef struct {
     int id;
     int x;
     int y;
@@ -31,14 +29,14 @@ typedef struct {
     uint32_t height;
     uint32_t pitch;
     uint32_t bpp;
-    void* buffer;
+    void *buffer;
 } fb_info_t;
 
 typedef struct {
     uint32_t start;
     uint32_t end;
     uint32_t flags;
-    char name[16];  
+    char name[16];
 } vmap_region_t;
 
 uint32_t sys_get_uptime();

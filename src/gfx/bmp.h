@@ -29,6 +29,6 @@ typedef struct {
 
 #pragma pack(pop)
 
-void draw_bmp(void* bmp_data, int x, int y);
+void draw_bmp(void *bmp_data, int x, int y);
 
 #endif

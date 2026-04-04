@@ -9,7 +9,6 @@ void memcpy(void *dest, const void *src, uint32_t count);
 void memcpy32(void *dest, const void *src, uint32_t count);
 void outb(uint16_t port, uint8_t value);
 char inb(uint16_t port);
-void debug_color(uint32_t color);
 
 int memcmp(const void *s1, const void *s2, uint32_t n);
 uint16_t inw(uint16_t port);

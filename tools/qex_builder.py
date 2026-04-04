@@ -44,7 +44,7 @@ def read_elf_metadata(elf_path):
         p_type = ph[0]
         p_vaddr = ph[3]
         p_memsz = ph[5]
-        if p_type == 1: 
+        if p_type == 1:
             if p_vaddr + p_memsz > max_vma:
                 max_vma = p_vaddr + p_memsz
 

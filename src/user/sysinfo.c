@@ -1,8 +1,8 @@
-#include "user/lib/libapi.h"
-#include "user/lib/icons_def.h"
-#include "lib/stdlib.h"
-#include "lib/stdbool.h"
 #include "kernel/ipc.h"
+#include "lib/stdbool.h"
+#include "lib/stdlib.h"
+#include "user/lib/icons_def.h"
+#include "user/lib/libapi.h"
 
 #define WIN_W 400
 #define WIN_H 540
@@ -11,25 +11,32 @@
 static int comp_pid = -1;
 static int selected_pid = -1;
 
-void draw_rect_rpc(int x, int y, int w, int h, uint32_t color) {
+void draw_rect_rpc(int x, int y, int w, int h, uint32_t color)
+{
     message_t msg;
     msg.type = MSG_WIN_DRAW_RECT;
-    msg.data1 = y; msg.data2 = x; msg.data3 = w;
-    *(int*)&msg.payload[0] = h;
-    *(uint32_t*)&msg.payload[4] = color;
+    msg.data1 = y;
+    msg.data2 = x;
+    msg.data3 = w;
+    *(int *)&msg.payload[0] = h;
+    *(uint32_t *)&msg.payload[4] = color;
     qk_sys_ipc_send(comp_pid, &msg);
 }
 
-void draw_icon_rpc(int x, int y, int icon_id, uint32_t color) {
+void draw_icon_rpc(int x, int y, int icon_id, uint32_t color)
+{
     message_t msg;
     msg.type = MSG_WIN_PRINT_AT;
-    msg.data1 = x; msg.data2 = y; msg.data3 = color;
+    msg.data1 = x;
+    msg.data2 = y;
+    msg.data3 = color;
     msg.payload[0] = (char)icon_id;
     msg.payload[1] = 0;
     qk_sys_ipc_send(comp_pid, &msg);
 }
 
-void render_ui() {
+void render_ui()
+{
     uint32_t used_mem, total_mem, cpu_load;
     qk_get_stats(&used_mem, &total_mem, &cpu_load);
     uint32_t uptime = qk_get_uptime() / 1000;
@@ -37,10 +44,12 @@ void render_ui() {
     draw_rect_rpc(0, 0, WIN_W, 50, 0xFF21252B);
     draw_icon_rpc(15, 15, ICON_MONITOR, 0xFF61AFEF);
     qk_print_at(42, 17, 0xFFFFFFFF, "System Activity");
-    
+
     char up_s[32], t_s[16];
     int_to_str(uptime, t_s, 10);
-    strncpy(up_s, "UP: ", 5); strcat(up_s, t_s); strcat(up_s, "s");
+    strncpy(up_s, "UP: ", 5);
+    strcat(up_s, t_s);
+    strcat(up_s, "s");
     qk_print_at(WIN_W - 100, 17, 0xFF5C6370, up_s);
 
     int sx = 10, sy = 60, sw = WIN_W - 20;
@@ -48,9 +57,11 @@ void render_ui() {
 
     char cpu_s[32], cpu_v[16];
     int_to_str(cpu_load, cpu_v, 10);
-    strncpy(cpu_s, "CPU Load: ", 12); strcat(cpu_s, cpu_v); strcat(cpu_s, "%");
+    strncpy(cpu_s, "CPU Load: ", 12);
+    strcat(cpu_s, cpu_v);
+    strcat(cpu_s, "%");
     qk_print_at(sx + 15, sy + 12, 0xFFE06C75, cpu_s);
-    
+
     draw_rect_rpc(sx + 15, sy + 32, sw - 30, 8, 0xFF282C34);
     int cpu_w = ((sw - 30) * cpu_load) / 100;
     draw_rect_rpc(sx + 15, sy + 32, cpu_w, 8, 0xFFE06C75);
@@ -58,9 +69,12 @@ void render_ui() {
     uint32_t mem_perc = (total_mem > 0) ? (used_mem * 100 / total_mem) : 0;
     char mem_s[48], mem_v[16];
     int_to_str(used_mem / 1024 / 1024, mem_v, 10);
-    strncpy(mem_s, "Memory: ", 10); strcat(mem_s, mem_v); strcat(mem_s, "MB / ");
+    strncpy(mem_s, "Memory: ", 10);
+    strcat(mem_s, mem_v);
+    strcat(mem_s, "MB / ");
     int_to_str(total_mem / 1024 / 1024, mem_v, 10);
-    strcat(mem_s, mem_v); strcat(mem_s, "MB");
+    strcat(mem_s, mem_v);
+    strcat(mem_s, "MB");
     qk_print_at(sx + 15, sy + 50, 0xFF98C379, mem_s);
 
     draw_rect_rpc(sx + 15, sy + 68, sw - 30, 8, 0xFF282C34);
@@ -81,17 +95,28 @@ void render_ui() {
         int ry = 190 + (i * 24);
         bool is_sel = (procs[i].pid == selected_pid);
         uint32_t bg = is_sel ? 0xFF3E4451 : ((i % 2 == 0) ? 0xFF21252B : 0xFF1E2227);
-        
+
         draw_rect_rpc(10, ry, WIN_W - 20, 22, bg);
 
-        char p_s[12]; int_to_str(procs[i].pid, p_s, 10);
+        char p_s[12];
+        int_to_str(procs[i].pid, p_s, 10);
         uint32_t n_clr = (procs[i].pid == 0) ? 0xFFE06C75 : 0xFFABB2BF;
-        
-        const char* st_s = "WAIT"; uint32_t st_clr = 0xFFD19A66;
-        switch(procs[i].state) {
-            case 0: st_s = "READY"; st_clr = 0xFF98C379; break;
-            case 1: st_s = "RUN";   st_clr = 0xFF56B6C2; break;
-            case 4: st_s = "IRQ";   st_clr = 0xFFC678DD; break;
+
+        const char *st_s = "WAIT";
+        uint32_t st_clr = 0xFFD19A66;
+        switch (procs[i].state) {
+        case 0:
+            st_s = "READY";
+            st_clr = 0xFF98C379;
+            break;
+        case 1:
+            st_s = "RUN";
+            st_clr = 0xFF56B6C2;
+            break;
+        case 4:
+            st_s = "IRQ";
+            st_clr = 0xFFC678DD;
+            break;
         }
 
         qk_print_at(20, ry + 5, 0xFF61AFEF, p_s);
@@ -108,33 +133,39 @@ void render_ui() {
     qk_print_at(10, WIN_H - 20, 0xFF5C6370, "Click a row to select. Press [X] to Kill.");
 }
 
-int main() {
+int main()
+{
     comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
-    if (comp_pid < 0) return 1;
+    if (comp_pid < 0)
+        return 1;
 
     qk_set_proc_name(-1, "procman");
 
     message_t msg;
     msg.type = MSG_WIN_CREATE;
-    msg.data1 = WIN_W; msg.data2 = WIN_H;
-    strncpy((char*)msg.payload, "Task Manager", 64);
+    msg.data1 = WIN_W;
+    msg.data2 = WIN_H;
+    strncpy((char *)msg.payload, "Task Manager", 64);
     qk_sys_ipc_send(comp_pid, &msg);
 
-    while(1) {
+    while (1) {
         qk_ipc_recv(&msg);
-        if(msg.type == MSG_WIN_CREATED) break;
+        if (msg.type == MSG_WIN_CREATED)
+            break;
     }
 
-    while(1) {
+    while (1) {
         while (qk_ipc_recv_nb(&msg) == 0) {
             if (msg.type == MSG_MOUSE_EVENT && msg.data1 == EVENT_MOUSE_DOWN) {
-                int mx = msg.data2; int my = msg.data3;
+                int mx = msg.data2;
+                int my = msg.data3;
                 if (my >= 190 && my < 190 + (14 * 24)) {
                     int idx = (my - 190) / 24;
                     process_info_t temp[14];
                     int cnt = qk_get_procs(temp, 14);
                     if (idx >= 0 && idx < cnt) {
-                        if (selected_pid == temp[idx].pid && mx > WIN_W - 55 && temp[idx].pid != 0) {
+                        if (selected_pid == temp[idx].pid && mx > WIN_W - 55 &&
+                            temp[idx].pid != 0) {
                             qk_sys_kill(temp[idx].pid);
                             selected_pid = -1;
                         } else {
@@ -147,7 +178,8 @@ int main() {
             }
         }
 
-        message_t clr; clr.type = MSG_WIN_CLEAR;
+        message_t clr;
+        clr.type = MSG_WIN_CLEAR;
         qk_sys_ipc_send(comp_pid, &clr);
         render_ui();
         qk_sleep(250);

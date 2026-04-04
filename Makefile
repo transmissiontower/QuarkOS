@@ -239,7 +239,8 @@ run: image
 # ==================================================
 clean:
 	rm -f $(KERNEL_OBJ) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) \
-	      src/user/*.o src/kernel/*.o *.elf *.bin disk.img kernel kernel.iso
+	      src/user/*.o src/kernel/*.o *.elf *.bin disk.img kernel kernel.iso \
+
 	rm -f Asm/boot/*.qex Asm/boot/*.bin Asm/boot/kernel
 
 .PHONY: all clean image run user_bin
