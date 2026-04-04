@@ -1,14 +1,14 @@
-#include "user/lib/libapi.h"
-#include "kernel/ipc.h"
 #include "gfx/events.h"
+#include "kernel/ipc.h"
 #include "lib/stdbool.h"
+#include "user/lib/libapi.h"
 
-#define PS2_DATA        0x60
-#define PS2_STATUS      0x64
-#define ST_OUTPUT_FULL  0x01
-#define ST_FROM_MOUSE   0x20
-#define IRQ_KEYBOARD    1
-#define IRQ_MOUSE       12
+#define PS2_DATA 0x60
+#define PS2_STATUS 0x64
+#define ST_OUTPUT_FULL 0x01
+#define ST_FROM_MOUSE 0x20
+#define IRQ_KEYBOARD 1
+#define IRQ_MOUSE 12
 #define MOUSE_SPEED_MULTIPLIER 2
 #define BUTTON_QUEUE_CAP 32
 
@@ -32,7 +32,8 @@ static int button_tail = 0;
 static bool move_pending = false;
 static mouse_event_t move_event;
 
-static void clamp_mouse_position(void) {
+static void clamp_mouse_position(void)
+{
     if (screen_w <= 0) {
         screen_w = 1;
     }
@@ -40,46 +41,53 @@ static void clamp_mouse_position(void) {
         screen_h = 1;
     }
 
-    if (mouse_x < 0) mouse_x = 0;
-    if (mouse_y < 0) mouse_y = 0;
-    if (mouse_x >= screen_w) mouse_x = screen_w - 1;
-    if (mouse_y >= screen_h) mouse_y = screen_h - 1;
+    if (mouse_x < 0)
+        mouse_x = 0;
+    if (mouse_y < 0)
+        mouse_y = 0;
+    if (mouse_x >= screen_w)
+        mouse_x = screen_w - 1;
+    if (mouse_y >= screen_h)
+        mouse_y = screen_h - 1;
 }
 
-static void init_mouse_state(void) {
+static void init_mouse_state(void)
+{
     fb_info_t fb;
     if (qk_map_framebuffer(&fb) == 0) {
-        if ((int)fb.width > 0) screen_w = (int)fb.width;
-        if ((int)fb.height > 0) screen_h = (int)fb.height;
+        if ((int)fb.width > 0)
+            screen_w = (int)fb.width;
+        if ((int)fb.height > 0)
+            screen_h = (int)fb.height;
     }
     mouse_x = screen_w / 2;
     mouse_y = screen_h / 2;
     clamp_mouse_position();
 }
 
-static inline bool button_queue_empty(void) {
+static inline bool button_queue_empty(void)
+{
     return button_head == button_tail;
 }
 
-static int button_queue_next(int idx) {
+static int button_queue_next(int idx)
+{
     return (idx + 1) % BUTTON_QUEUE_CAP;
 }
 
-static void queue_button_event(EventType type, uint8_t button) {
+static void queue_button_event(EventType type, uint8_t button)
+{
     int next_tail = button_queue_next(button_tail);
     if (next_tail == button_head) {
         button_head = button_queue_next(button_head);
     }
-    button_queue[button_tail] = (mouse_event_t){
-        .type = type,
-        .button = button,
-        .x = mouse_x,
-        .y = mouse_y
-    };
+    button_queue[button_tail] =
+        (mouse_event_t){.type = type, .button = button, .x = mouse_x, .y = mouse_y};
     button_tail = next_tail;
 }
 
-static void queue_mouse_move(uint8_t buttons) {
+static void queue_mouse_move(uint8_t buttons)
+{
     move_event.type = EVENT_MOUSE_MOVE;
     move_event.button = buttons;
     move_event.x = mouse_x;
@@ -87,7 +95,8 @@ static void queue_mouse_move(uint8_t buttons) {
     move_pending = true;
 }
 
-static void deliver_mouse_event(int comp_pid, mouse_event_t *evt) {
+static void deliver_mouse_event(int comp_pid, mouse_event_t *evt)
+{
     message_t msg;
     memset(&msg, 0, sizeof(message_t));
     msg.type = MSG_MOUSE_EVENT;
@@ -104,7 +113,8 @@ static void deliver_mouse_event(int comp_pid, mouse_event_t *evt) {
     qk_sys_ipc_send(comp_pid, &msg);
 }
 
-static void flush_mouse_events(int comp_pid) {
+static void flush_mouse_events(int comp_pid)
+{
     while (!button_queue_empty()) {
         mouse_event_t evt = button_queue[button_head];
         button_head = button_queue_next(button_head);
@@ -116,12 +126,13 @@ static void flush_mouse_events(int comp_pid) {
     }
 }
 
-static void handle_keyboard(int comp_pid, uint8_t scancode) {
+static void handle_keyboard(int comp_pid, uint8_t scancode)
+{
     message_t msg;
     memset(&msg, 0, sizeof(message_t));
     msg.type = MSG_KEY_EVENT;
-    msg.data1 = (uint32_t)scancode; 
-    
+    msg.data1 = (uint32_t)scancode;
+
     Event *ev = (Event *)msg.payload;
     ev->type = (scancode & 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
     ev->key = scancode & 0x7F;
@@ -129,72 +140,81 @@ static void handle_keyboard(int comp_pid, uint8_t scancode) {
     qk_sys_ipc_send(comp_pid, &msg);
 }
 
-static void handle_mouse_byte(uint8_t data) {
+static void handle_mouse_byte(uint8_t data)
+{
     switch (mouse_cycle) {
-        case 0:
-            if (!(data & 0x08)) return;
-            mouse_pkt[0] = data; mouse_cycle = 1;
-            break;
-        case 1:
-            mouse_pkt[1] = data; mouse_cycle = 2;
-            break;
-        case 2: {
-            mouse_pkt[2] = data;
-            mouse_cycle = 0;
+    case 0:
+        if (!(data & 0x08))
+            return;
+        mouse_pkt[0] = data;
+        mouse_cycle = 1;
+        break;
+    case 1:
+        mouse_pkt[1] = data;
+        mouse_cycle = 2;
+        break;
+    case 2: {
+        mouse_pkt[2] = data;
+        mouse_cycle = 0;
 
-            int dx = (int8_t)mouse_pkt[1];
-            int dy = (int8_t)mouse_pkt[2];
-            dx *= MOUSE_SPEED_MULTIPLIER;
-            dy *= MOUSE_SPEED_MULTIPLIER;
+        int dx = (int8_t)mouse_pkt[1];
+        int dy = (int8_t)mouse_pkt[2];
+        dx *= MOUSE_SPEED_MULTIPLIER;
+        dy *= MOUSE_SPEED_MULTIPLIER;
 
-            int prev_x = mouse_x;
-            int prev_y = mouse_y;
+        int prev_x = mouse_x;
+        int prev_y = mouse_y;
 
-            mouse_x += dx;
-            mouse_y -= dy;
-            clamp_mouse_position();
+        mouse_x += dx;
+        mouse_y -= dy;
+        clamp_mouse_position();
 
-            uint8_t buttons = mouse_pkt[0] & 0x07;
+        uint8_t buttons = mouse_pkt[0] & 0x07;
 
-            if (mouse_x != prev_x || mouse_y != prev_y) {
-                queue_mouse_move(buttons);
-            }
-
-            uint8_t changed = buttons ^ mouse_buttons;
-            if (changed) {
-                if (changed & 0x01) {
-                    queue_button_event(
-                        (buttons & 0x01) ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP,
-                        MOUSE_BTN_LEFT);
-                }
-                if (changed & 0x02) {
-                    queue_button_event(
-                        (buttons & 0x02) ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP,
-                        MOUSE_BTN_RIGHT);
-                }
-                if (changed & 0x04) {
-                    queue_button_event(
-                        (buttons & 0x04) ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP,
-                        MOUSE_BTN_MIDDLE);
-                }
-                mouse_buttons = buttons;
-            }
-            break;
+        if (mouse_x != prev_x || mouse_y != prev_y) {
+            queue_mouse_move(buttons);
         }
+
+        uint8_t changed = buttons ^ mouse_buttons;
+        if (changed) {
+            if (changed & 0x01) {
+                queue_button_event((buttons & 0x01) ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP,
+                                   MOUSE_BTN_LEFT);
+            }
+            if (changed & 0x02) {
+                queue_button_event((buttons & 0x02) ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP,
+                                   MOUSE_BTN_RIGHT);
+            }
+            if (changed & 0x04) {
+                queue_button_event((buttons & 0x04) ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP,
+                                   MOUSE_BTN_MIDDLE);
+            }
+            mouse_buttons = buttons;
+        }
+        break;
+    }
     }
 }
 
-void main() {
+void main()
+{
     init_mouse_state();
-    while (qk_hw_inb(PS2_STATUS) & ST_OUTPUT_FULL) qk_hw_inb(PS2_DATA);
-    int comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
-    if (comp_pid <= 0) comp_pid = 4;
+    while (qk_hw_inb(PS2_STATUS) & ST_OUTPUT_FULL)
+        qk_hw_inb(PS2_DATA);
+    int comp_pid = 0;
+    while (comp_pid <= 0) {
+        comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
+        if (comp_pid <= 0)
+            qk_sleep(100);
+    }
     while (1) {
         uint8_t status = qk_hw_inb(PS2_STATUS);
         if (status & ST_OUTPUT_FULL) {
             uint8_t data = qk_hw_inb(PS2_DATA);
-            if (status & ST_FROM_MOUSE) handle_mouse_byte(data);
-            else handle_keyboard(comp_pid, data);
+            if (status & ST_FROM_MOUSE)
+                handle_mouse_byte(data);
+            else
+                handle_keyboard(comp_pid, data);
         } else {
             flush_mouse_events(comp_pid);
             qk_wait_irq(IRQ_MOUSE);

@@ -5,7 +5,7 @@ from PIL import Image
 def bake(input_path, output_path):
     img = Image.open(input_path).convert("RGBA")
     img = img.resize((1920, 1080), Image.Resampling.LANCZOS)
-    
+
     with open(output_path, "wb") as f:
         pixels = list(img.getdata())
         for r, g, b, a in pixels:

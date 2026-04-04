@@ -1,8 +1,8 @@
 #ifndef KMALLOC_H
 #define KMALLOC_H
 
-#include "lib/stdint.h"
 #include "lib/stdbool.h"
+#include "lib/stdint.h"
 
 typedef struct Header {
     struct Header *next;

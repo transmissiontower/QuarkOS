@@ -9,7 +9,8 @@ uint8_t *shadow_edge = 0;
 int shadow_size = 0;
 int shadow_radius = 0;
 
-Texture *create_texture(int w, int h) {
+Texture *create_texture(int w, int h)
+{
     Texture *tex = (Texture *)kmalloc(sizeof(Texture));
     tex->width = w;
     tex->height = h;
@@ -18,7 +19,8 @@ Texture *create_texture(int w, int h) {
     return tex;
 }
 
-void draw_texture(Texture *tex, int x, int y) {
+void draw_texture(Texture *tex, int x, int y)
+{
     if (!tex)
         return;
 
@@ -73,7 +75,8 @@ void draw_texture(Texture *tex, int x, int y) {
     }
 }
 
-void shadows_init(int size, int r, int intensity) {
+void shadows_init(int size, int r, int intensity)
+{
     shadow_size = size;
     shadow_radius = r;
 
@@ -104,7 +107,8 @@ void shadows_init(int size, int r, int intensity) {
     }
 }
 
-Texture *rhombus_rounded(int w, int h, int r, uint32_t color) {
+Texture *rhombus_rounded(int w, int h, int r, uint32_t color)
+{
     int size = (int)sqrt(w * w + h * h) + 4;
     Texture *tex = create_texture(size, size);
 
@@ -157,7 +161,8 @@ Texture *rhombus_rounded(int w, int h, int r, uint32_t color) {
     return tex;
 }
 
-uint8_t *corner_mask_texture(int r) {
+uint8_t *corner_mask_texture(int r)
+{
     uint8_t *mask = (uint8_t *)kmalloc(r * r);
 
     int r_fp = r << 8;

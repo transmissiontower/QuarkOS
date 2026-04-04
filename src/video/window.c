@@ -2,12 +2,12 @@
 #include "drivers/GUI/framebuffer.h"
 #include "drivers/ps2/mouse.h"
 #include "gfx/font_atlas.h"
+#include "kernel/process.h"
+#include "lib/stdbool.h"
 #include "mm/kmalloc.h"
 #include "util/util.h"
 #include "video/compositor.h"
 #include "video/texture.h"
-#include "lib/stdbool.h"
-#include "kernel/process.h"
 
 Window windows[MAX_WINDOWS];
 Window *window_stack[MAX_WINDOWS];
@@ -20,11 +20,13 @@ Texture *tex_close = 0;
 Texture *tex_max = 0;
 Texture *tex_min = 0;
 
-void corner_mask_init() {
+void corner_mask_init()
+{
     corner_mask = corner_mask_texture(WIN_RADIUS);
 }
 
-void window_manager_init() {
+void window_manager_init()
+{
     corner_mask_init();
     shadows_init(24, WIN_RADIUS, 90);
 
@@ -38,7 +40,8 @@ void window_manager_init() {
     }
 }
 
-char *get_last_line(Window *win) {
+char *get_last_line(Window *win)
+{
     if (!win || !win->text_buffer)
         return 0;
     if (win->text_cursor == 0)
@@ -50,7 +53,8 @@ char *get_last_line(Window *win) {
     return &win->text_buffer[i + 1];
 }
 
-int get_current_line_width(Window *win) {
+int get_current_line_width(Window *win)
+{
     int current_w = 0;
     int i = win->text_cursor - 1;
 
@@ -65,7 +69,8 @@ int get_current_line_width(Window *win) {
     return current_w;
 }
 
-int get_text_lines_count(Window *win) {
+int get_text_lines_count(Window *win)
+{
     int lines = 1;
     for (int i = 0; i < win->text_cursor; i++)
         if (win->text_buffer[i] == '\n')
@@ -73,13 +78,15 @@ int get_text_lines_count(Window *win) {
     return lines;
 }
 
-void strcpy_custom(char *dest, const char *src) {
+void strcpy_custom(char *dest, const char *src)
+{
     while (*src)
         *dest++ = *src++;
     *dest = 0;
 }
 
-void to_front(Window *win) {
+void to_front(Window *win)
+{
     if (!win)
         return;
 
@@ -101,7 +108,8 @@ void to_front(Window *win) {
     invalidate_screen();
 }
 
-Window *window_create(int x, int y, int w, int h, const char *title) {
+Window *window_create(int x, int y, int w, int h, const char *title)
+{
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (windows[i].id == 0) {
             windows[i].id = i + 1;
@@ -118,14 +126,15 @@ Window *window_create(int x, int y, int w, int h, const char *title) {
             windows[i].max_len = 4096;
             windows[i].text_buffer = (char *)kmalloc(windows[i].max_len);
             windows[i].text_cursor = 0;
-            if(windows[i].text_buffer) windows[i].text_buffer[0] = 0;
+            if (windows[i].text_buffer)
+                windows[i].text_buffer[0] = 0;
 
             windows[i].input_read_ptr = 0;
             windows[i].input_write_ptr = 0;
 
             int gfx_size = w * (h - TITLE_BAR_HEIGHT) * 4;
             windows[i].gfx_buffer = (uint32_t *)kmalloc(gfx_size);
-            if(windows[i].gfx_buffer)
+            if (windows[i].gfx_buffer)
                 memset32(windows[i].gfx_buffer, windows[i].bg_color, gfx_size / 4);
 
             window_stack[window_count++] = &windows[i];
@@ -137,7 +146,8 @@ Window *window_create(int x, int y, int w, int h, const char *title) {
     return 0;
 }
 
-void close_window(Window *win) {
+void close_window(Window *win)
+{
     if (!win || win->id == 0)
         return;
 
@@ -178,7 +188,8 @@ void close_window(Window *win) {
     invalidate_screen();
 }
 
-void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text) {
+void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text)
+{
     int r = WIN_RADIUS;
 
     rect_fill(x, y + r, w, h - 2 * r, color);
@@ -193,34 +204,37 @@ void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text) {
     draw_corner_mask(x + w - r, y + h - r, r, color, corner_mask, 3);
 }
 
-void draw_window_content(Window *win) {
+void draw_window_content(Window *win)
+{
     if (win->gfx_buffer) {
         int w = win->w;
         int h = win->h - TITLE_BAR_HEIGHT;
         int start_x = win->x;
         int start_y = win->y + TITLE_BAR_HEIGHT;
-        
-        int r = WIN_RADIUS; 
-        int r_sq = r * r; 
+
+        int r = WIN_RADIUS;
+        int r_sq = r * r;
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 if (x < r && y >= h - r) {
                     int dx = r - 1 - x;
                     int dy = y - (h - r);
-                    if (dx * dx + dy * dy >= r_sq) continue;
+                    if (dx * dx + dy * dy >= r_sq)
+                        continue;
                 }
-                
+
                 if (x >= w - r && y >= h - r) {
                     int dx = x - (w - r);
                     int dy = y - (h - r);
-                    if (dx * dx + dy * dy >= r_sq) continue;
+                    if (dx * dx + dy * dy >= r_sq)
+                        continue;
                 }
 
                 uint32_t color = win->gfx_buffer[y * w + x];
-                
+
                 if ((color >> 24) != 0) {
-                     put_pixel(start_x + x, start_y + y, color);
+                    put_pixel(start_x + x, start_y + y, color);
                 }
             }
         }
@@ -230,8 +244,8 @@ void draw_window_content(Window *win) {
         int current_x = win->x + 10;
         int current_y = win->y + 45;
         int start_x = current_x;
-        int max_x = win->x + win->w - 10; 
-        int max_y = win->y + win->h - 10; 
+        int max_x = win->x + win->w - 10;
+        int max_y = win->y + win->h - 10;
 
         char *str = win->text_buffer;
         while (*str) {
@@ -241,7 +255,7 @@ void draw_window_content(Window *win) {
                 current_x = start_x;
             } else {
                 int w = get_char_width(c);
-                
+
                 if (current_x + w < max_x && current_y + get_font_height() < max_y) {
                     current_x = draw_char_vector(current_x, current_y, c, COLOR_WHITE);
                 } else {
@@ -253,7 +267,8 @@ void draw_window_content(Window *win) {
     }
 }
 
-void draw_window_head(int x, int y, int w, int h, uint32_t color) {
+void draw_window_head(int x, int y, int w, int h, uint32_t color)
+{
     int r = WIN_RADIUS;
 
     rect_fill(x, y + r, w, h - 2 * r, color);
@@ -263,7 +278,8 @@ void draw_window_head(int x, int y, int w, int h, uint32_t color) {
     draw_corner_mask(x + w - r, y, r, color, corner_mask, 1);
 }
 
-void draw_window(Window *win, int isActive) {
+void draw_window(Window *win, int isActive)
+{
     uint32_t color = isActive ? 0xFF7FB7BE : 0xFFD6DBD2;
 
     shadow_draw(win->x, win->y, win->w, win->h);
@@ -287,7 +303,8 @@ void draw_window(Window *win, int isActive) {
     draw_texture(tex_min, minX, btnY);
 }
 
-void draw_windows() {
+void draw_windows()
+{
     for (int i = 0; i < window_count; i++) {
         Window *win = window_stack[i];
         if (win && win->id)
@@ -295,7 +312,8 @@ void draw_windows() {
     }
 }
 
-void scroll_buffer(Window *win, int max_h) {
+void scroll_buffer(Window *win, int max_h)
+{
     int total_h = get_text_lines_count(win) * get_font_height();
 
     if (total_h > max_h || win->text_cursor >= win->max_len - 64) {
@@ -321,17 +339,18 @@ void scroll_buffer(Window *win, int max_h) {
     }
 }
 
-void window_event_handle(Event e) {
+void window_event_handle(Event e)
+{
     if (e.type == EVENT_MOUSE_MOVE) {
         if (dragging_window) {
             int new_x = e.x - dragging_window->drag_offset_x;
             int new_y = e.y - dragging_window->drag_offset_y;
-            
+
             int min_x = -(dragging_window->w - 50);
-            int max_x = (int)fb_width - 50;          
-            int min_y = 0;                  
-            int max_y = (int)fb_height - TITLE_BAR_HEIGHT; 
-            
+            int max_x = (int)fb_width - 50;
+            int min_y = 0;
+            int max_y = (int)fb_height - TITLE_BAR_HEIGHT;
+
             dragging_window->x = (new_x < min_x) ? min_x : (new_x > max_x) ? max_x : new_x;
             dragging_window->y = (new_y < min_y) ? min_y : (new_y > max_y) ? max_y : new_y;
         }
@@ -344,7 +363,8 @@ void window_event_handle(Event e) {
             if (!win || !win->id)
                 continue;
 
-            if (e.x >= win->x && e.x <= win->x + win->w && e.y >= win->y && e.y <= win->y + win->h) {
+            if (e.x >= win->x && e.x <= win->x + win->w && e.y >= win->y &&
+                e.y <= win->y + win->h) {
 
                 to_front(win);
 
@@ -388,7 +408,6 @@ void window_event_handle(Event e) {
         }
         char c = (char)key;
 
-        
         if (c > 0) {
             int next_write = (w->input_write_ptr + 1) % INPUT_BUFFER_SIZE;
             if (next_write != w->input_read_ptr) {
@@ -399,7 +418,8 @@ void window_event_handle(Event e) {
     }
 }
 
-void window_print(Window *win, const char *str) {
+void window_print(Window *win, const char *str)
+{
     if (!win || !win->text_buffer)
         return;
     int max_h = win->h - 55 - 10;
@@ -415,7 +435,8 @@ void window_print(Window *win, const char *str) {
     invalidate_window(win->x, win->y, win->w, win->h);
 }
 
-void window_clear(Window *win) {
+void window_clear(Window *win)
+{
     if (!win || !win->text_buffer)
         return;
     win->text_cursor = 0;

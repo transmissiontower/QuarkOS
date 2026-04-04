@@ -16,14 +16,15 @@ typedef struct {
 } AtlasFont;
 
 extern AtlasFont *user_font;
-extern AtlasFont *gui_icons; 
+extern AtlasFont *gui_icons;
 
 void font_atlas_init(uint8_t *raw_data);
-void draw_string_vector(gfx_context_t* ctx, int x, int y, const char *str, uint32_t color);
+void draw_string_vector(gfx_context_t *ctx, int x, int y, const char *str, uint32_t color);
 int get_char_width(char c);
 int get_font_height();
 
-void draw_icon(gfx_context_t* ctx, AtlasFont* atlas, int x, int y, uint32_t icon_id, uint32_t color);
-void font_atlas_init_for_ptr(AtlasFont* atlas, uint8_t *raw_data);
+void draw_icon(gfx_context_t *ctx, AtlasFont *atlas, int x, int y, uint32_t icon_id,
+               uint32_t color);
+void font_atlas_init_for_ptr(AtlasFont *atlas, uint8_t *raw_data);
 
 #endif

@@ -19,10 +19,10 @@ uint32_t total_phys_pages;
 
 static uint32_t last_search_index = 0;
 
-static uint32_t page_dirs[256][1024] __attribute__((aligned(4096)));
 int mem_num_vpages;
 
-void kernel_panic(const char *msg) {
+void kernel_panic(const char *msg)
+{
     asm volatile("cli");
     clear_screen(COLOR_RED);
     string_draw(20, 20, "KERNEL PANIC", COLOR_WHITE, COLOR_RED);
@@ -34,32 +34,26 @@ void kernel_panic(const char *msg) {
     crash_wait_for_reboot();
 }
 
-void mm_vmm_tlb_flush_single(uint32_t addr) {
+void mm_vmm_tlb_flush_single(uint32_t addr)
+{
     asm volatile("invlpg (%0)" ::"r"(addr) : "memory");
 }
 
-uint32_t *mem_get_current_page_dir() {
-    uint32_t phys;
-    asm volatile("mov %%cr3, %0" : "=r"(phys));
-    return (uint32_t *)(phys + KERNEL_START);
+uint32_t *mem_get_current_page_dir()
+{
+    return REC_PAGEDIR;
 }
 
-void mm_vmm_set_active_dir(uint32_t *pd) {
+void mm_vmm_set_active_dir(uint32_t *pd)
+{
     uint32_t phys = (uint32_t)pd - KERNEL_START;
     asm volatile("mov %0, %%eax\n\t"
                  "mov %%eax, %%cr3\n" ::"r"(phys)
-        : "eax");
+                 : "eax");
 }
 
-void mm_vmm_sync_dir() {
-    for (int d = 0; d < 256; d++) {
-        for (int i = 768; i < 1024; i++) {
-            page_dirs[d][i] = initial_page_dir[i] & ~PAGE_FLAG_OWNER;
-        }
-    }
-}
-
-void mm_pmm_lock_region(uint32_t base, uint32_t size) {
+void mm_pmm_lock_region(uint32_t base, uint32_t size)
+{
     uint32_t start = base >> 12;
     uint32_t count = (size + 0xFFF) >> 12;
 
@@ -71,7 +65,8 @@ void mm_pmm_lock_region(uint32_t base, uint32_t size) {
     }
 }
 
-void mm_pmm_free_region(uint32_t base, uint32_t size) {
+void mm_pmm_free_region(uint32_t base, uint32_t size)
+{
     uint32_t start = (base + 0xFFF) >> 12;
     uint32_t end = (base + size) >> 12;
 
@@ -84,7 +79,8 @@ void mm_pmm_free_region(uint32_t base, uint32_t size) {
     }
 }
 
-uint32_t mm_pmm_alloc_frame() {
+uint32_t mm_pmm_alloc_frame()
+{
     uint32_t start_byte = page_frame_min >> 3;
     uint32_t end_byte = (page_frame_max >> 3) + 1;
     if (end_byte > BITMAP_SIZE)
@@ -125,16 +121,20 @@ uint32_t mm_pmm_alloc_frame() {
     return 0;
 }
 
-void mm_pmm_free_frame(uint32_t phys) {
+void mm_pmm_free_frame(uint32_t phys)
+{
     uint32_t page = phys >> 12;
-    if (page >= MAX_PHYS_PAGES) return;
+    if (page >= MAX_PHYS_PAGES)
+        return;
     if (phys_mem_bitmap[page >> 3] & (1 << (page & 7))) {
         phys_mem_bitmap[page >> 3] &= ~(1 << (page & 7));
-        if (total_alloc > 0) total_alloc--;
+        if (total_alloc > 0)
+            total_alloc--;
     }
 }
 
-void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
+void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags)
+{
     uint32_t pd_index = virt >> 22;
     uint32_t pt_index = (virt >> 12) & 0x3FF;
 
@@ -142,10 +142,12 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
 
     if (!(pd[pd_index] & PAGE_FLAG_PRESENT)) {
         uint32_t pt_phys = mm_pmm_alloc_frame();
-        if (!pt_phys) kernel_panic("Out of memory");
+        if (!pt_phys)
+            kernel_panic("Out of memory");
 
         uint32_t pde_flags = PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_OWNER;
-        if (flags & PAGE_FLAG_USER) pde_flags |= PAGE_FLAG_USER;
+        if (flags & PAGE_FLAG_USER)
+            pde_flags |= PAGE_FLAG_USER;
 
         pd[pd_index] = pt_phys | pde_flags;
 
@@ -165,7 +167,8 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
     mm_vmm_tlb_flush_single(virt);
 }
 
-void mm_vmm_cleanup_current_dir() {
+void mm_vmm_cleanup_current_dir()
+{
     uint32_t *pd = REC_PAGEDIR;
     for (int i = 0; i < 768; i++) {
         if (pd[i] & PAGE_FLAG_PRESENT) {
@@ -183,7 +186,8 @@ void mm_vmm_cleanup_current_dir() {
     }
 }
 
-void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start) {
+void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start)
+{
     mem_num_vpages = 0;
 
     uint32_t pd_phys = (uint32_t)initial_page_dir - KERNEL_START;
@@ -209,21 +213,24 @@ void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start) {
     } else {
         mm_pmm_free_region(0x100000, mboot->mem_upper * 1024);
     }
-    
-    total_phys_pages = (mboot->mem_upper + 1024) / 4; 
+
+    total_phys_pages = (mboot->mem_upper + 1024) / 4;
 
     mm_pmm_lock_region(0, phys_alloc_start);
 
     page_frame_min = (phys_alloc_start + 0xFFF) >> 12;
     last_search_index = page_frame_min >> 3;
-
-    memset(page_dirs, 0, sizeof(page_dirs));
 }
 
-void *map_module(uint32_t phys_addr, uint32_t size) {
+void *map_module(uint32_t phys_addr, uint32_t size)
+{
     uint32_t virt_addr = module_virt_alloc_ptr;
     if (virt_addr % 4096)
         virt_addr = (virt_addr & ~0xFFF) + 0x1000;
+
+    uint32_t aligned_size = (size + 0xFFF) & ~0xFFF;
+    if (virt_addr + aligned_size > MODULE_VIRT_END || virt_addr + aligned_size < virt_addr)
+        return 0;
 
     uint32_t start_page = phys_addr & 0xFFFFF000;
     uint32_t end_page = (phys_addr + size - 1) & 0xFFFFF000;
@@ -238,7 +245,8 @@ void *map_module(uint32_t phys_addr, uint32_t size) {
     return (void *)(virt_addr + (phys_addr & 0xFFF));
 }
 
-void mem_free_identity_map() {
+void mem_free_identity_map()
+{
     initial_page_dir[0] = 0;
     initial_page_dir[1] = 0;
     initial_page_dir[2] = 0;
@@ -246,5 +254,5 @@ void mem_free_identity_map() {
 
     uint32_t cr3;
     asm volatile("mov %%cr3, %0" : "=r"(cr3));
-    asm volatile("mov %0, %%cr3" :: "r"(cr3));
+    asm volatile("mov %0, %%cr3" ::"r"(cr3));
 }

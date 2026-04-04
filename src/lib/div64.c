@@ -1,8 +1,10 @@
 #include "lib/stdint.h"
 
-uint64_t __udivmoddi4(uint64_t num, uint64_t den, uint64_t *rem) {
+uint64_t __udivmoddi4(uint64_t num, uint64_t den, uint64_t *rem)
+{
     if (den == 0) {
-        if (rem) *rem = 0;
+        if (rem)
+            *rem = 0;
         return 0;
     }
 
@@ -17,10 +19,12 @@ uint64_t __udivmoddi4(uint64_t num, uint64_t den, uint64_t *rem) {
         }
     }
 
-    if (rem) *rem = remainder;
+    if (rem)
+        *rem = remainder;
     return quotient;
 }
 
-uint64_t __udivdi3(uint64_t num, uint64_t den) {
+uint64_t __udivdi3(uint64_t num, uint64_t den)
+{
     return __udivmoddi4(num, den, 0);
 }

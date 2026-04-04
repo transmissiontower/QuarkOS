@@ -1,15 +1,16 @@
 #ifndef PROCESS_H
 #define PROCESS_H
 
-#include "lib/stdint.h"
 #include "kernel/ipc.h"
+#include "lib/stdint.h"
 
 typedef enum {
     PROCESS_READY,
     PROCESS_RUNNING,
     PROCESS_BLOCKED,
     PROCESS_ZOMBIE,
-    PROCESS_WAIT_IRQ
+    PROCESS_WAIT_IRQ,
+    PROCESS_IPC_WAIT
 } process_state_t;
 
 typedef struct process {
@@ -29,6 +30,9 @@ typedef struct process {
     message_queue_t ipc_queue;
     uint32_t io_privilege_mask;
     int waiting_irq;
+    int ipc_wait_from;
+    int ipc_reply_ready;
+    message_t ipc_reply_slot;
 } process_t;
 
 typedef struct {
@@ -49,14 +53,15 @@ extern process_t *current_process;
 
 void k_scheduler_init();
 void k_scheduler_update_sleeps();
-process_t* k_proc_spawn(uint8_t *code, uint32_t size);
+process_t *k_proc_spawn(uint8_t *code, uint32_t size);
 void k_scheduler_yield();
+void k_scheduler_direct_switch(struct process *dest);
 void block_current_process(uint32_t ms);
-process_t* k_proc_find_by_id(int pid);
+process_t *k_proc_find_by_id(int pid);
 void k_proc_wait_irq(int irq);
 void process_wake_on_irq(int irq);
 void k_proc_terminate(int pid);
-process_t* k_proc_find_by_id(int pid);
-process_t* get_current_process();
+process_t *k_proc_find_by_id(int pid);
+process_t *get_current_process();
 
 #endif

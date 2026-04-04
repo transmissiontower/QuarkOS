@@ -2,8 +2,8 @@
 #define WINDOW_H
 
 #include "gfx/events.h"
-#include "lib/stdint.h"
 #include "lib/stdbool.h"
+#include "lib/stdint.h"
 
 #define MAX_WINDOWS 10
 #define TITLE_BAR_HEIGHT 28

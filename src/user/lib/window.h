@@ -1,10 +1,10 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include "lib/stdint.h"
-#include "lib/stdbool.h"
-#include "user/lib/gfx.h"
 #include "gfx/events.h"
+#include "lib/stdbool.h"
+#include "lib/stdint.h"
+#include "user/lib/gfx.h"
 
 #define MAX_WINDOWS 32
 #define TITLE_BAR_HEIGHT 32
@@ -15,13 +15,13 @@
 #define WINDOW_MIN_HEIGHT (TITLE_BAR_HEIGHT + 120)
 #define WINDOW_COLLAPSED_HEIGHT (TITLE_BAR_HEIGHT + WIN_RADIUS)
 
-#define UI_SURFACE_COLOR     0xFF1E2127
-#define COLOR_WIN_ACTIVE     0xFFD7D7D7
-#define COLOR_WIN_INACTIVE   0xFFD7D7D7
-#define COLOR_WIN_BG         UI_SURFACE_COLOR
-#define COLOR_WIN_HEADER     UI_SURFACE_COLOR
-#define COLOR_WIN_SEP        0xFFD7D7D7
-#define COLOR_WHITE          0xFFD7D7D7
+#define UI_SURFACE_COLOR 0xFF1E2127
+#define COLOR_WIN_ACTIVE 0xFFD7D7D7
+#define COLOR_WIN_INACTIVE 0xFFD7D7D7
+#define COLOR_WIN_BG UI_SURFACE_COLOR
+#define COLOR_WIN_HEADER UI_SURFACE_COLOR
+#define COLOR_WIN_SEP 0xFFD7D7D7
+#define COLOR_WHITE 0xFFD7D7D7
 
 typedef struct Window {
     int id;
@@ -42,7 +42,6 @@ typedef struct Window {
     int max_scroll_y;
 
     uint32_t *gfx_buffer;
-
 
     bool is_dragging;
     int drag_offset_x;
@@ -78,7 +77,8 @@ void window_set_color(Window *win, uint32_t color);
 
 Texture *rhombus_rounded(int w, int h, int r, uint32_t color);
 uint8_t *corner_mask_texture(int r);
-void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint32_t color, uint8_t *mask);
+void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint32_t color,
+                       uint8_t *mask);
 int draw_char_vector(gfx_context_t *ctx, int x, int y, char c, uint32_t color);
 void gfx_put_pixel(gfx_context_t *ctx, int x, int y, uint32_t color);
 void draw_texture(gfx_context_t *ctx, Texture *t, int x, int y);
