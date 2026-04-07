@@ -148,3 +148,23 @@ void qk_trigger_panic(const char *msg)
 {
     syscall(47, (int)msg, 0, 0);
 }
+
+void qk_pcspk_play(uint32_t freq)
+{
+    syscall(50, (int)freq, 0, 0);
+}
+
+void qk_pcspk_stop(void)
+{
+    syscall(51, 0, 0, 0);
+}
+
+void qk_pcspk_pwm_play(const uint8_t *buf, uint32_t len, uint32_t rate)
+{
+    syscall(52, (int)buf, (int)len, (int)rate);
+}
+
+int qk_pcspk_pwm_ready(void)
+{
+    return syscall(53, 0, 0, 0);
+}

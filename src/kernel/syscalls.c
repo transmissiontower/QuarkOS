@@ -1,6 +1,7 @@
 #include "kernel/syscalls.h"
 #include "drivers/GUI/framebuffer.h"
 #include "drivers/acpi.h"
+#include "drivers/pcspk.h"
 #include "drivers/rtc.h"
 #include "drivers/timer.h"
 #include "kernel/ipc.h"
@@ -542,6 +543,25 @@ void k_syscall_entry(struct InterruptRegisters *regs)
     case 48:
         k_scheduler_yield();
         regs->eax = 0;
+        break;
+    case 50:
+        drv_pcspk_play(regs->ebx);
+        regs->eax = 0;
+        break;
+    case 51:
+        drv_pcspk_stop();
+        regs->eax = 0;
+        break;
+    /* 52: pcspk_pwm_play(buf, len, rate) — start one PWM chunk */
+    case 52:
+        drv_pcspk_pwm_start((const uint8_t *)regs->ebx,
+                             (uint32_t)regs->ecx,
+                             (uint32_t)regs->edx);
+        regs->eax = 0;
+        break;
+    /* 53: pcspk_pwm_ready() — returns 1 when current chunk is done */
+    case 53:
+        regs->eax = drv_pcspk_pwm_ready();
         break;
     default:
         regs->eax = -1;

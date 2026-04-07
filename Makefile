@@ -48,6 +48,7 @@ KERNEL_C = \
 	src/kernel/syscalls.c \
 	src/fs/fat.c \
 	src/drivers/ata.c \
+	src/drivers/pcspk.c \
 	src/gfx/bmp.c \
 	src/drivers/rtc.c \
 	src/drivers/acpi.c
@@ -78,7 +79,9 @@ USER_STORAGE_SERVER_OBJ = $(USER_LIB_OBJ) src/user/storage_server.o
 USER_INPUT_SERVER_OBJ = $(USER_LIB_OBJ) src/user/input_server.o
 USER_TIME_SERVER_OBJ = $(USER_LIB_OBJ) src/user/time_server.o
 USER_INIT_OBJ = $(USER_LIB_OBJ) src/kernel/init.o
-USER_ELFDEMO_OBJ = $(USER_LIB_OBJ) src/user/elfdemo.o
+USER_ELFDEMO_OBJ  = $(USER_LIB_OBJ) src/user/elfdemo.o
+MUSIC_SPK = Asm/boot/music.spk
+MUSIC_SRC := $(wildcard music.flac)
 
 # ==================================================
 # Default target
@@ -134,6 +137,9 @@ kernel: $(KERNEL_OBJ) linker.ld
 # ==================================================
 # Userland
 # ==================================================
+$(MUSIC_SPK): music.flac
+	python3 tools/flac_to_spk.py music.flac $(MUSIC_SPK)
+
 user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
           $(USER_STORAGE_SERVER_OBJ) $(USER_INPUT_SERVER_OBJ) $(USER_TIME_SERVER_OBJ) \
           $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ) $(USER_ELFDEMO_OBJ)
@@ -184,7 +190,7 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 # ==================================================
 # Image (используем готовое ядро)
 # ==================================================
-image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN)
+image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) $(if $(MUSIC_SRC),$(MUSIC_SPK),)
 	mkdir -p Asm/boot
 	cp kernel Asm/boot/kernel
 	echo "Hello from fs!" > hello.txt
@@ -207,6 +213,7 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN)
 	$(MCOPY) -i disk.img Asm/boot/vmap.qex ::APPS/VMAP.QEX
 	$(MCOPY) -i disk.img Asm/boot/comp.qex ::APPS/COMP.QEX
 	$(MCOPY) -i disk.img Asm/boot/elfdemo.elf ::APPS/ELFDEMO.ELF
+	$(if $(MUSIC_SRC),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYSTEM/DATA/MUSIC.SPK,)
 	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYSTEM/DATA/ATL.BIN
 	$(MCOPY) -i disk.img $(ICONS_BIN) ::SYSTEM/DATA/GUI.BIN
 	$(MCOPY) -i disk.img Asm/boot/wallpaper.bin ::SYSTEM/DATA/BG.BIN
@@ -232,6 +239,9 @@ run: image
 		-boot order=d \
 		-vga virtio \
 		-m 4G \
+		-audiodev pa,id=snd0,out.frequency=44100,out.channels=2 \
+		-machine pcspk-audiodev=snd0 \
+		-device sb16,audiodev=snd0 \
 		-display gtk,full-screen=on	
 
 # ==================================================
