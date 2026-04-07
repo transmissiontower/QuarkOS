@@ -55,6 +55,10 @@ void sys_window_close(int id);
 void qk_power_shutdown(void);
 void qk_power_reboot(void);
 void qk_trigger_panic(const char *msg);
+void qk_pcspk_play(uint32_t freq);
+void qk_pcspk_stop(void);
+void qk_pcspk_pwm_play(const uint8_t *buf, uint32_t len, uint32_t rate);
+int  qk_pcspk_pwm_ready(void);
 
 uint8_t qk_hw_inb(uint16_t port);
 void qk_hw_outb(uint16_t port, uint8_t val);

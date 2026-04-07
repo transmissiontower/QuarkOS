@@ -910,6 +910,260 @@ void shell_memscope()
     }
 }
 
+/* ---- streaming helpers for shell_cmd_play ---- */
+#define SPK_CHUNK  4096
+#define SPK_SLOTS  3
+
+static uint8_t  spk_buf[SPK_SLOTS][SPK_CHUNK];
+static uint32_t spk_len[SPK_SLOTS];
+
+/* Read up to `len` bytes from the currently-open storage file at `offset`. */
+static uint32_t spk_read(uint32_t offset, uint8_t *buf, uint32_t len)
+{
+    uint32_t got = 0;
+    while (got < len) {
+        uint32_t chunk = len - got;
+        if (chunk > 120) chunk = 120;
+
+        message_t req;
+        memset(&req, 0, sizeof(req));
+        req.type  = MSG_REQ_DATA;
+        req.data1 = offset + got;
+        req.data2 = chunk;
+        qk_sys_ipc_send(storage_pid, &req);
+
+        message_t resp;
+        while (1) {
+            qk_ipc_recv(&resp);
+            if (resp.sender_pid == storage_pid && resp.type == MSG_FILE_DATA)
+                break;
+        }
+        if (resp.data1 == 0) break;
+        memcpy(buf + got, resp.payload, resp.data1);
+        got += resp.data1;
+    }
+    return got;
+}
+
+/* Open file and return its size, 0 on failure. */
+static uint32_t spk_open(const char *path)
+{
+    uint16_t dir_cluster = 0;
+    char resolved[16];
+    const char *name = path;
+
+    if (strstr(path, "/")) {
+        if (qk_path_resolve_ext(0, path, &dir_cluster, resolved) != 0)
+            return 0;
+        name = resolved;
+    }
+
+    message_t req;
+    memset(&req, 0, sizeof(req));
+    req.type  = MSG_FILE_OPEN;
+    req.data1 = dir_cluster;
+    strncpy((char *)req.payload, name, 12);
+    qk_sys_ipc_send(storage_pid, &req);
+
+    message_t resp;
+    while (1) {
+        qk_ipc_recv(&resp);
+        if (resp.sender_pid == storage_pid) break;
+    }
+    if (resp.type != MSG_FILE_SIZE) return 0;
+    return resp.data1;
+}
+
+static void shell_cmd_play(const char *arg)
+{
+    const char *path = (arg && *arg) ? arg : "/SYSTEM/DATA/MUSIC.SPK";
+
+    if (storage_pid < 0) {
+        shell_print("play: no storage server\n");
+        return;
+    }
+
+    uint32_t file_size = spk_open(path);
+    if (file_size < 12) {
+        shell_print("play: file not found\n");
+        return;
+    }
+
+    /* Read and validate 12-byte header */
+    uint8_t hdr[12];
+    if (spk_read(0, hdr, 12) < 12) {
+        shell_print("play: read error\n");
+        return;
+    }
+    if (hdr[0] != 'S' || hdr[1] != 'P' || hdr[2] != 'K' || hdr[3] != 'W') {
+        shell_print("play: not a .spk file\n");
+        return;
+    }
+
+    uint32_t sample_rate = (uint32_t)(hdr[4]  | (hdr[5]  << 8) |
+                                      (hdr[6]  << 16) | (hdr[7]  << 24));
+    uint32_t num_samples = (uint32_t)(hdr[8]  | (hdr[9]  << 8) |
+                                      (hdr[10] << 16) | (hdr[11] << 24));
+    if (sample_rate == 0 || num_samples == 0) {
+        shell_print("play: corrupt header\n");
+        return;
+    }
+
+    shell_print("play: streaming...\n");
+
+    uint32_t offset    = 12;
+    uint32_t remaining = num_samples;
+
+    /* Prime slots 0 and 1 */
+    int primed = 0;
+    for (int s = 0; s < 2 && remaining > 0; s++) {
+        uint32_t chunk = remaining < SPK_CHUNK ? remaining : SPK_CHUNK;
+        uint32_t got   = spk_read(offset, spk_buf[s], chunk);
+        if (got == 0) break;
+        spk_len[s] = got;
+        offset    += got;
+        remaining -= got;
+        primed++;
+    }
+    if (primed == 0) {
+        shell_print("play: empty file\n");
+        return;
+    }
+
+    int play_slot = 0;
+    qk_pcspk_pwm_play(spk_buf[play_slot], spk_len[play_slot], sample_rate);
+
+    while (1) {
+        int next_slot = (play_slot + 1) % SPK_SLOTS;
+        int fill_slot = (play_slot + 2) % SPK_SLOTS;
+
+        /* Fill next chunk while current plays */
+        if (remaining > 0) {
+            uint32_t chunk = remaining < SPK_CHUNK ? remaining : SPK_CHUNK;
+            uint32_t got   = spk_read(offset, spk_buf[fill_slot], chunk);
+            if (got > 0) {
+                spk_len[fill_slot] = got;
+                offset    += got;
+                remaining -= got;
+            } else {
+                spk_len[fill_slot] = 0;
+            }
+        } else {
+            spk_len[fill_slot] = 0;
+        }
+
+        while (!qk_pcspk_pwm_ready())
+            qk_yield();
+
+        if (spk_len[next_slot] == 0)
+            break;
+
+        qk_pcspk_pwm_play(spk_buf[next_slot], spk_len[next_slot], sample_rate);
+        play_slot = next_slot;
+    }
+
+    while (!qk_pcspk_pwm_ready())
+        qk_yield();
+
+    shell_print("play: done\n");
+}
+
+#include "user/still_alive.h"
+#include "user/rick_roll.h"
+
+/* Busy-poll sleep: uses uptime counter so IPC messages (mouse/keyboard)
+ * cannot prematurely unblock the wait. */
+static void alive_sleep(uint32_t ms)
+{
+    uint32_t start = qk_get_uptime();
+    while (qk_get_uptime() - start < ms)
+        qk_yield();
+}
+
+static void shell_cmd_alive(void)
+{
+    uint32_t n = sizeof(still_alive) / sizeof(still_alive[0]);
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t dur = still_alive[i].ms;
+        if (still_alive[i].freq == 0) {
+            qk_pcspk_stop();
+            alive_sleep(dur);
+        } else {
+            uint32_t gap = dur / 7;
+            if (gap < 20) gap = 20;
+            uint32_t on  = dur - gap;
+            qk_pcspk_play(still_alive[i].freq);
+            alive_sleep(on);
+            qk_pcspk_stop();
+            alive_sleep(gap);
+        }
+    }
+    qk_pcspk_stop();
+}
+
+static void shell_cmd_rick(void)
+{
+    uint32_t n = sizeof(rick_roll) / sizeof(rick_roll[0]);
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t dur = rick_roll[i].ms;
+        if (rick_roll[i].freq == 0) {
+            qk_pcspk_stop();
+            alive_sleep(dur);
+        } else {
+            uint32_t gap = dur / 7;
+            if (gap < 20) gap = 20;
+            uint32_t on  = dur - gap;
+            qk_pcspk_play(rick_roll[i].freq);
+            alive_sleep(on);
+            qk_pcspk_stop();
+            alive_sleep(gap);
+        }
+    }
+    qk_pcspk_stop();
+}
+
+static void shell_cmd_beep(const char *arg)
+{
+    uint32_t freq = 880;
+    uint32_t duration = 200;
+    if (arg && *arg) {
+        const char *p = arg;
+        while (*p == ' ')
+            p++;
+        uint32_t parsed = 0;
+        int have_num = 0;
+        while (*p >= '0' && *p <= '9') {
+            have_num = 1;
+            parsed = parsed * 10 + (uint32_t)(*p - '0');
+            p++;
+        }
+        if (have_num)
+            freq = parsed;
+        while (*p == ' ')
+            p++;
+        parsed = 0;
+        have_num = 0;
+        while (*p >= '0' && *p <= '9') {
+            have_num = 1;
+            parsed = parsed * 10 + (uint32_t)(*p - '0');
+            p++;
+        }
+        if (have_num)
+            duration = parsed;
+    }
+    if (freq < 20)
+        freq = 20;
+    if (freq > 4000)
+        freq = 4000;
+    if (duration < 10)
+        duration = 10;
+    if (duration > 2000)
+        duration = 2000;
+    qk_pcspk_play(freq);
+    qk_sleep(duration);
+    qk_pcspk_stop();
+}
+
 static void shell_spawn_app(const char *path, const char *arg)
 {
     uint32_t sz = 0;
@@ -1006,6 +1260,7 @@ int main()
                     shell_print("FS: ls, cd, cat, touch, mkdir, hex, clear\n");
                     shell_print(
                         "Apps: notepad [file], procman, sysinfo, quill [file], exec [path]\n");
+                    shell_print("Audio: beep [freq] [ms]\n");
                     shell_print("Debug: uptime, procs, kill [id], sysgraph, memscope, pf, kp\n");
                 } else if (cmd_is(cmd_buffer, "purge", "clear"))
                     shell_clear();
@@ -1045,6 +1300,18 @@ int main()
                     shell_touch(arg);
                 else if (cmd_is(cmd_buffer, "touch", "seed"))
                     shell_touch(0);
+                else if ((arg = cmd_arg_ptr(cmd_buffer, "play", 0)) != 0)
+                    shell_cmd_play(arg);
+                else if (cmd_is(cmd_buffer, "play", 0))
+                    shell_cmd_play(0);
+                else if (cmd_is(cmd_buffer, "alive", 0))
+                    shell_cmd_alive();
+                else if (cmd_is(cmd_buffer, "rick", 0))
+                    shell_cmd_rick();
+                else if ((arg = cmd_arg_ptr(cmd_buffer, "beep", 0)) != 0)
+                    shell_cmd_beep(arg);
+                else if (cmd_is(cmd_buffer, "beep", 0))
+                    shell_cmd_beep(0);
                 else if ((arg = cmd_arg_ptr(cmd_buffer, "mkdir", "hatch")) != 0)
                     shell_mkdir(arg);
                 else if (cmd_is(cmd_buffer, "mkdir", "hatch"))
