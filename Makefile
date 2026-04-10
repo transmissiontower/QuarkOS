@@ -12,8 +12,8 @@ GRUB_MKRESCUE = $(shell if which grub2-mkrescue > /dev/null 2>&1; then echo grub
 # ==================================================
 # Flags
 # ==================================================
-CFLAGS = -ffreestanding -Wall -Wextra -O2 -g -m32 -Isrc
-USER_CFLAGS = -ffreestanding -Wall -Wextra -O2 -m32 -Isrc
+CFLAGS = -ffreestanding -Wall -Wextra -O2 -g -m32 -Isrc -MMD -MP
+USER_CFLAGS = -ffreestanding -Wall -Wextra -O2 -m32 -Isrc -MMD -MP
 FONT_ATLAS = Asm/boot/font_atlas.bin
 ICONS_BIN = Asm/boot/icons.bin
 WALLPAPER_BIN = Asm/boot/wallpaper.bin
@@ -80,8 +80,15 @@ USER_INPUT_SERVER_OBJ = $(USER_LIB_OBJ) src/user/input_server.o
 USER_TIME_SERVER_OBJ = $(USER_LIB_OBJ) src/user/time_server.o
 USER_INIT_OBJ = $(USER_LIB_OBJ) src/kernel/init.o
 USER_ELFDEMO_OBJ  = $(USER_LIB_OBJ) src/user/elfdemo.o
+USER_FETCH_OBJ    = $(USER_LIB_OBJ) src/user/fetch.o
+USER_IMGVIEW_OBJ  = $(USER_LIB_OBJ) src/user/imgview.o
+
+
 MUSIC_SPK = Asm/boot/music.spk
 MUSIC_SRC := $(wildcard music.flac)
+
+DEPS := $(patsubst %.c,%.d,$(KERNEL_C)) $(patsubst %.c,%.d,$(wildcard src/user/*.c src/user/lib/*.c src/lib/*.c src/kernel/init.c))
+-include $(DEPS)
 
 # ==================================================
 # Default target
@@ -116,6 +123,12 @@ $(ICONS_BIN): tools/icon_baker.py tools/lucide.ttf
 $(WALLPAPER_BIN): tools/wallpaper_baker.py wallpaper.bmp
 	python3 tools/wallpaper_baker.py wallpaper.bmp Asm/boot/wallpaper.bin
 
+Asm/boot/kaori.bmp: kaori.jpeg
+	python3 -c "from PIL import Image; img=Image.open('kaori.jpeg').convert('RGB'); img.thumbnail((400,260)); img.save('Asm/boot/kaori.bmp','BMP')"
+
+Asm/boot/terry.bmp: terry.jpg
+	python3 -c "from PIL import Image; img=Image.open('terry.jpg').convert('RGB'); img.thumbnail((400,260)); img.save('Asm/boot/terry.bmp','BMP')"
+
 src/user/lib/crt0.o: src/user/lib/crt0.s
 	$(AS) -f elf32 $< -o $@
 
@@ -131,6 +144,7 @@ src/user/lib/math.o: src/lib/math.c
 src/user/lib/stdlib.o: src/lib/stdlib.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
+
 kernel: $(KERNEL_OBJ) linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJ)
 
@@ -142,7 +156,8 @@ $(MUSIC_SPK): music.flac
 
 user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
           $(USER_STORAGE_SERVER_OBJ) $(USER_INPUT_SERVER_OBJ) $(USER_TIME_SERVER_OBJ) \
-          $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ) $(USER_ELFDEMO_OBJ)
+          $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ) $(USER_ELFDEMO_OBJ) \
+          $(USER_FETCH_OBJ) $(USER_IMGVIEW_OBJ)
 	mkdir -p Asm/boot
 	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_TEST_OBJ)
 	cp test.elf Asm/boot/test.elf
@@ -186,11 +201,20 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 	python3 tools/qex_builder.py init.bin Asm/boot/init.qex
 	python3 tools/qex_builder.py time_server.bin Asm/boot/time_server.qex
 	python3 tools/qex_builder.py sysinfo.bin Asm/boot/sysinfo.qex
+	$(LD) -m elf_i386 -T src/user/linker.ld -o fetch.elf $(USER_FETCH_OBJ)
+	cp fetch.elf Asm/boot/fetch.elf
+	$(OBJCOPY) -O binary fetch.elf fetch.bin
+	python3 tools/qex_builder.py fetch.bin Asm/boot/fetch.qex
+	$(LD) -m elf_i386 -T src/user/linker.ld -o imgview.elf $(USER_IMGVIEW_OBJ)
+	cp imgview.elf Asm/boot/imgview.elf
+	$(OBJCOPY) -O binary imgview.elf imgview.bin
+	python3 tools/qex_builder.py imgview.bin Asm/boot/imgview.qex
+
 
 # ==================================================
 # Image (используем готовое ядро)
 # ==================================================
-image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) $(if $(MUSIC_SRC),$(MUSIC_SPK),)
+image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boot/terry.bmp $(if $(MUSIC_SRC),$(MUSIC_SPK),)
 	mkdir -p Asm/boot
 	cp kernel Asm/boot/kernel
 	echo "Hello from fs!" > hello.txt
@@ -213,17 +237,20 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) $(if $(MUSIC_SRC),$(MUSIC_
 	$(MCOPY) -i disk.img Asm/boot/vmap.qex ::APPS/VMAP.QEX
 	$(MCOPY) -i disk.img Asm/boot/comp.qex ::APPS/COMP.QEX
 	$(MCOPY) -i disk.img Asm/boot/elfdemo.elf ::APPS/ELFDEMO.ELF
+	$(MCOPY) -i disk.img Asm/boot/fetch.qex ::APPS/FETCH.QEX
+	$(MCOPY) -i disk.img Asm/boot/imgview.qex ::APPS/IMGVIEW.QEX
 	$(if $(MUSIC_SRC),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYSTEM/DATA/MUSIC.SPK,)
 	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYSTEM/DATA/ATL.BIN
 	$(MCOPY) -i disk.img $(ICONS_BIN) ::SYSTEM/DATA/GUI.BIN
 	$(MCOPY) -i disk.img Asm/boot/wallpaper.bin ::SYSTEM/DATA/BG.BIN
+	$(MCOPY) -i disk.img Asm/boot/logo.bmp ::SYSTEM/DATA/LOGO.BMP
+	$(MCOPY) -i disk.img Asm/boot/kaori.bmp ::USERS/DEFAULT/DESK/KAORI.BMP
+	$(MCOPY) -i disk.img Asm/boot/terry.bmp ::USERS/DEFAULT/DESK/TERRY.BMP
 	echo "QuarkOS" > hostname.txt && $(MCOPY) -i disk.img hostname.txt ::SYSTEM/SETUP/HOST
 	echo "0.3.1-blanket" > version.txt && $(MCOPY) -i disk.img version.txt ::SYSTEM/SETUP/VER
 	echo "/dev/ata0 / fat16 defaults 0 0" > fstab.txt && $(MCOPY) -i disk.img fstab.txt ::SYSTEM/SETUP/BOOT
-	echo "[0.000000] Kernel start..." > boot.log && $(MCOPY) -i disk.img boot.log ::SYSTEM/LOGS/BOOT.LOG
 	echo "Welcome to QuarkOS v0.3.1!" > readme.txt && $(MCOPY) -i disk.img readme.txt ::USERS/DEFAULT/README.TXT
 	echo "User Manual:\n1. Use 'guide' for help.\n2. 'drift' (cd) to change dirs.\n3. 'glimpse' (ls) to list files." > manual.txt && $(MCOPY) -i disk.img manual.txt ::USERS/DEFAULT/DOCS/MANUAL.TXT
-	echo "TODO:\n- Add network driver\n- Support more file formats" > todo.txt && $(MCOPY) -i disk.img todo.txt ::USERS/DEFAULT/DOCS/TODO.TXT
 	touch empty.tmp && $(MCOPY) -i disk.img empty.tmp ::TEMP/.KEEP
 	$(GRUB_MKRESCUE) -o kernel.iso Asm/
 
@@ -250,7 +277,9 @@ run: image
 clean:
 	rm -f $(KERNEL_OBJ) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) \
 	      src/user/*.o src/kernel/*.o *.elf *.bin disk.img kernel kernel.iso \
-
-	rm -f Asm/boot/*.qex Asm/boot/*.bin Asm/boot/kernel
+	      fstab.txt hostname.txt readme.txt manual.txt version.txt boot.log empty.tmp mdir*
+	find src -name "*.d" -delete
+	find src -name "*.o" -delete
+	rm -f Asm/boot/*.qex Asm/boot/*.bin Asm/boot/*.elf Asm/boot/kernel
 
 .PHONY: all clean image run user_bin

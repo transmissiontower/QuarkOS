@@ -35,6 +35,11 @@ static uint32_t root_sectors;
 static uint32_t data_start_lba;
 static uint8_t *current_file_data = 0;
 static uint32_t current_file_size = 0;
+
+#define SHARED_MAX_PAGES 128   
+static uint32_t current_file_pages[SHARED_MAX_PAGES];
+static uint32_t current_file_page_count = 0;
+static uint32_t current_file_page_offset = 0;
 static uint32_t fat_cached_sector = 0xFFFFFFFFu;
 static uint8_t fat_cache_buf[512];
 static uint16_t fat_next_free_hint = 2;
@@ -86,25 +91,8 @@ void ata_wait_drq()
 
 int drv_stor_ata_read(uint32_t lba, uint8_t *buffer)
 {
-    ata_error = 0;
-    ata_wait_bsy();
-    if (ata_error)
-        return -1;
-    qk_hw_outb(ATA_DRIVE_HEAD, 0xE0 | ((lba >> 24) & 0x0F));
-    qk_hw_outb(ATA_ERROR, 0x00);
-    qk_hw_outb(ATA_SECTOR_CNT, 1);
-    qk_hw_outb(ATA_LBA_LO, (uint8_t)(lba & 0xFF));
-    qk_hw_outb(ATA_LBA_MID, (uint8_t)((lba >> 8) & 0xFF));
-    qk_hw_outb(ATA_LBA_HI, (uint8_t)((lba >> 16) & 0xFF));
-    qk_hw_outb(ATA_COMMAND, ATA_CMD_READ_PIO);
-    ata_wait_bsy();
-    ata_wait_drq();
-    if (ata_error)
-        return -1;
-    uint16_t *target = (uint16_t *)buffer;
-    for (int i = 0; i < 256; i++)
-        target[i] = qk_inw(ATA_DATA);
-    return 0;
+    
+    return qk_ata_read_sectors(lba, 1, buffer);
 }
 
 int drv_stor_ata_write(uint32_t lba, uint8_t *buffer)
@@ -178,25 +166,53 @@ uint8_t *fat_read_file_server(uint16_t cluster, uint32_t size)
 {
     if (size == 0)
         return 0;
-    uint8_t *data = malloc(size + 512);
+    
+    uint8_t *data = malloc(size + fat.bytes_per_cluster + 512);
+    if (!data)
+        return 0;
+    
+
+    uint32_t alloc_size = size + fat.bytes_per_cluster + 512;
+    for (uint32_t i = 0; i < alloc_size; i += 4096)
+        ((volatile uint8_t *)data)[i] = 0;
     uint8_t *ptr = data;
     uint16_t cur = cluster;
-    uint8_t buf[512];
     uint32_t total_read = 0;
     while (cur < 0xFFF8 && cur != 0xFFFF && total_read < size) {
-        uint32_t lba = data_start_lba + (cur - 2) * fat.sectors_per_cluster;
-        for (int i = 0; i < fat.sectors_per_cluster && total_read < size; i++) {
-            drv_stor_ata_read(lba + i, buf);
-            uint32_t left = size - total_read;
-            uint32_t chunk = (left > 512) ? 512 : left;
-            memcpy(ptr, buf, chunk);
-            ptr += chunk;
-            total_read += chunk;
+        
+        uint16_t run_start = cur;
+        uint32_t run_clusters = 1;
+        uint16_t next = fat_get_entry(cur);
+        while (next == cur + 1 && next < 0xFFF8 && next != 0xFFFF) {
+            run_clusters++;
+            cur = next;
+            next = fat_get_entry(cur);
         }
-        cur = fat_get_entry(cur);
+        cur = next;
+
+        uint32_t lba = data_start_lba + (run_start - 2) * fat.sectors_per_cluster;
+        uint32_t sectors = run_clusters * fat.sectors_per_cluster;
+        
+        uint8_t *rptr = ptr;
+        while (sectors > 0) {
+            uint32_t batch = (sectors > 128) ? 128 : sectors;
+            qk_ata_read_sectors(lba, batch, rptr);
+            lba    += batch;
+            rptr   += batch * 512;
+            sectors -= batch;
+        }
+
+        uint32_t run_bytes = run_clusters * fat.bytes_per_cluster;
+        uint32_t left = size - total_read;
+        uint32_t chunk = (left < run_bytes) ? left : run_bytes;
+        ptr        += chunk;
+        total_read += chunk;
     }
     return data;
 }
+
+#define DIR_BULK_MAX_SECTORS 32
+static uint8_t dir_bulk_buf[DIR_BULK_MAX_SECTORS * 512];
 
 static int fat_find_entry_in_dir(uint16_t dir_cluster, const char *fat_name,
                                  fat_dir_entry_t *out_entry)
@@ -205,20 +221,55 @@ static int fat_find_entry_in_dir(uint16_t dir_cluster, const char *fat_name,
                        ? root_dir_lba
                        : (data_start_lba + (dir_cluster - 2) * fat.sectors_per_cluster);
     uint32_t scnt = (dir_cluster == 0) ? root_sectors : fat.sectors_per_cluster;
-    uint8_t d_buf[512];
-    for (uint32_t s = 0; s < scnt; s++) {
-        drv_stor_ata_read(lba + s, d_buf);
-        fat_dir_entry_t *e = (fat_dir_entry_t *)d_buf;
-        for (int i = 0; i < 16; i++) {
-            if ((uint8_t)e[i].filename[0] == 0)
+    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    
+    qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
+    fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
+    uint32_t total_entries = scnt * 16;
+    for (uint32_t i = 0; i < total_entries; i++) {
+        if ((uint8_t)e[i].filename[0] == 0)
+            return -1;
+        if ((uint8_t)e[i].filename[0] == 0xE5)
+            continue;
+        if (memcmp(e[i].filename, fat_name, 11) == 0) {
+            if (out_entry)
+                memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int fat_resolve_path(const char *path, uint16_t *out_dir_cluster, char *out_fat_name)
+{
+    uint16_t cluster = 0; 
+    const char *p = path;
+    if (*p == '/') p++;
+
+    char seg[16];
+    while (*p) {
+        int si = 0;
+        while (*p && *p != '/') {
+            if (si < 15) seg[si++] = *p;
+            p++;
+        }
+        seg[si] = 0;
+        if (*p == '/') {
+            
+            char fat_n[11];
+            to_fat_name(seg, fat_n);
+            fat_dir_entry_t entry;
+            if (fat_find_entry_in_dir(cluster, fat_n, &entry) != 0)
                 return -1;
-            if ((uint8_t)e[i].filename[0] == 0xE5)
-                continue;
-            if (memcmp(e[i].filename, fat_name, 11) == 0) {
-                if (out_entry)
-                    memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
-                return 0;
-            }
+            if (!(entry.attributes & 0x10))
+                return -1; 
+            cluster = entry.first_cluster_low;
+            p++; 
+        } else {
+            
+            if (out_dir_cluster) *out_dir_cluster = cluster;
+            if (out_fat_name)    to_fat_name(seg, out_fat_name);
+            return 0;
         }
     }
     return -1;
@@ -365,25 +416,24 @@ static int fat_lookup_entry_with_location(uint16_t dir_cluster, const char *fat_
 {
     uint32_t lba = dir_first_lba(dir_cluster);
     uint32_t scnt = dir_sector_count(dir_cluster);
-    uint8_t buf[512];
-    for (uint32_t s = 0; s < scnt; s++) {
-        drv_stor_ata_read(lba + s, buf);
-        fat_dir_entry_t *entries = (fat_dir_entry_t *)buf;
-        for (int i = 0; i < 16; i++) {
-            uint8_t first_char = (uint8_t)entries[i].filename[0];
-            if (first_char == 0)
-                return -1;
-            if (first_char == 0xE5)
-                continue;
-            if (memcmp(entries[i].filename, fat_name, 11) == 0) {
-                if (out_entry)
-                    memcpy(out_entry, &entries[i], sizeof(fat_dir_entry_t));
-                if (out_lba)
-                    *out_lba = lba + s;
-                if (out_index)
-                    *out_index = i;
-                return 0;
-            }
+    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
+    fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
+    uint32_t total_entries = scnt * 16;
+    for (uint32_t i = 0; i < total_entries; i++) {
+        uint8_t first_char = (uint8_t)entries[i].filename[0];
+        if (first_char == 0)
+            return -1;
+        if (first_char == 0xE5)
+            continue;
+        if (memcmp(entries[i].filename, fat_name, 11) == 0) {
+            if (out_entry)
+                memcpy(out_entry, &entries[i], sizeof(fat_dir_entry_t));
+            if (out_lba)
+                *out_lba = lba + (i / 16);
+            if (out_index)
+                *out_index = (int)(i % 16);
+            return 0;
         }
     }
     return -1;
@@ -393,19 +443,18 @@ static int fat_find_free_entry_slot(uint16_t dir_cluster, uint32_t *out_lba, int
 {
     uint32_t lba = dir_first_lba(dir_cluster);
     uint32_t scnt = dir_sector_count(dir_cluster);
-    uint8_t buf[512];
-    for (uint32_t s = 0; s < scnt; s++) {
-        drv_stor_ata_read(lba + s, buf);
-        fat_dir_entry_t *entries = (fat_dir_entry_t *)buf;
-        for (int i = 0; i < 16; i++) {
-            uint8_t first_char = (uint8_t)entries[i].filename[0];
-            if (first_char == 0 || first_char == 0xE5) {
-                if (out_lba)
-                    *out_lba = lba + s;
-                if (out_index)
-                    *out_index = i;
-                return 0;
-            }
+    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
+    fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
+    uint32_t total_entries = scnt * 16;
+    for (uint32_t i = 0; i < total_entries; i++) {
+        uint8_t first_char = (uint8_t)entries[i].filename[0];
+        if (first_char == 0 || first_char == 0xE5) {
+            if (out_lba)
+                *out_lba = lba + (i / 16);
+            if (out_index)
+                *out_index = (int)(i % 16);
+            return 0;
         }
     }
     return -1;
@@ -541,12 +590,21 @@ void main()
                 free(current_file_data);
                 current_file_data = 0;
             }
+            current_file_page_count = 0;
+            current_file_page_offset = 0;
             char fat_n[11];
-            to_fat_name((char *)msg.payload, fat_n);
-            uint16_t dir_cluster = (uint16_t)msg.data1;
+            uint16_t dir_cluster;
+            if (msg.data1 == 0xFFFF) {
+                
+                if (fat_resolve_path((char *)msg.payload, &dir_cluster, fat_n) != 0)
+                    dir_cluster = 0xFFFE; 
+            } else {
+                to_fat_name((char *)msg.payload, fat_n);
+                dir_cluster = (uint16_t)msg.data1;
+            }
             fat_dir_entry_t entry;
             bool found = false;
-            if (fat_find_entry_in_dir(dir_cluster, fat_n, &entry) == 0) {
+            if (dir_cluster != 0xFFFE && fat_find_entry_in_dir(dir_cluster, fat_n, &entry) == 0) {
                 if (!(entry.attributes & 0x10)) {
                     current_file_size = entry.file_size;
                     current_file_data =
@@ -554,13 +612,35 @@ void main()
                     found = true;
                 }
             }
-            message_t r = {.type = found ? MSG_FILE_SIZE : MSG_ERROR, .data1 = current_file_size};
+            message_t r;
+            memset(&r, 0, sizeof(r));
+            r.type  = found ? MSG_FILE_SIZE : MSG_ERROR;
+            r.data1 = current_file_size;
+            
+            if (found && current_file_data && current_file_size > 0) {
+                uint32_t needed_pages =
+                    ((uint32_t)current_file_data & 0xFFF) + current_file_size + 4095;
+                needed_pages /= 4096;
+                if (needed_pages <= SHARED_MAX_PAGES) {
+                    int cnt = qk_virt_to_phys_list((uint32_t)current_file_data,
+                                                   current_file_size,
+                                                   current_file_pages);
+                    if (cnt > 0) {
+                        current_file_page_count  = (uint32_t)cnt;
+                        current_file_page_offset = (uint32_t)current_file_data & 0xFFF;
+                        r.data2 = current_file_page_count;
+                        r.data3 = current_file_page_offset;
+                        memcpy(r.payload, current_file_pages,
+                               current_file_page_count * sizeof(uint32_t));
+                    }
+                }
+            }
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_REQ_DATA) {
             uint32_t off = msg.data1;
             uint32_t len = msg.data2;
-            if (len > 120)
-                len = 120;
+            if (len > 504)
+                len = 504;
             message_t r = {.type = MSG_FILE_DATA};
             if (current_file_data && off < current_file_size) {
                 if (off + len > current_file_size)
@@ -576,36 +656,36 @@ void main()
                                ? root_dir_lba
                                : (data_start_lba + (cluster - 2) * fat.sectors_per_cluster);
             uint32_t scnt = (cluster == 0) ? root_sectors : fat.sectors_per_cluster;
-            uint8_t d_buf[512];
+            if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+            qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
             message_t r = {.type = MSG_DIR_REPLY};
             int lp = 0;
             char lb[128];
             bzero(lb, 128);
-            for (uint32_t s = 0; s < scnt; s++) {
-                drv_stor_ata_read(lba + s, d_buf);
-                fat_dir_entry_t *e = (fat_dir_entry_t *)d_buf;
-                for (int i = 0; i < 16; i++) {
-                    uint8_t first_char = (uint8_t)e[i].filename[0];
+            fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
+            uint32_t total_dir_entries = scnt * 16;
+            for (uint32_t di = 0; di < total_dir_entries; di++) {
+                    uint8_t first_char = (uint8_t)e[di].filename[0];
                     if (first_char == 0)
                         goto end_d;
-                    if (first_char == 0xE5 || (e[i].attributes & 0x08))
+                    if (first_char == 0xE5 || (e[di].attributes & 0x08))
                         continue;
                     char name[16];
                     int j = 0;
-                    for (int k = 0; k < 8 && e[i].filename[k] != ' '; k++)
-                        name[j++] = e[i].filename[k];
-                    if (e[i].ext[0] != ' ') {
+                    for (int k = 0; k < 8 && e[di].filename[k] != ' '; k++)
+                        name[j++] = e[di].filename[k];
+                    if (e[di].ext[0] != ' ') {
                         name[j++] = '.';
-                        for (int k = 0; k < 3 && e[i].ext[k] != ' '; k++)
-                            name[j++] = e[i].ext[k];
+                        for (int k = 0; k < 3 && e[di].ext[k] != ' '; k++)
+                            name[j++] = e[di].ext[k];
                     }
                     name[j] = 0;
                     char info[64];
                     bzero(info, 64);
-                    int is_d = (e[i].attributes & 0x10) ? 1 : 0;
+                    int is_d = (e[di].attributes & 0x10) ? 1 : 0;
                     int n = int_to_str(is_d, info, 0);
                     info[n++] = '|';
-                    n += int_to_str(e[i].first_cluster_low, info + n, 0);
+                    n += int_to_str(e[di].first_cluster_low, info + n, 0);
                     info[n++] = '|';
                     strncpy(info + n, name, 15);
                     int ilen = strlen(info);
@@ -619,7 +699,6 @@ void main()
                     memcpy(lb + lp, info, ilen);
                     lp += ilen;
                     lb[lp++] = '\n';
-                }
             }
         end_d:
             memcpy(r.payload, lb, 128);

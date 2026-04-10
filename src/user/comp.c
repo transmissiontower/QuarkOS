@@ -437,7 +437,7 @@ static void launch_terminal_process(void)
         desktop_show_notification("Terminal unavailable");
         return;
     }
-    if (qk_spawn(terminal_binary, terminal_binary_size) != 0)
+    if (qk_spawn(terminal_binary, terminal_binary_size) < 0)
         desktop_show_notification("Failed to launch terminal");
 }
 
@@ -754,6 +754,56 @@ static void process_message(message_t *msg)
         for (int i = 0; i < window_count; i++)
             if (window_stack[i]->owner_pid == msg->sender_pid)
                 window_set_color(window_stack[i], msg->data1);
+    } else if (msg->type == MSG_WIN_BLIT_PIXELS) {
+        
+        for (int i = 0; i < window_count; i++) {
+            if (window_stack[i]->owner_pid == msg->sender_pid) {
+                Window *win = window_stack[i];
+                int px      = (int)msg->data1;
+                int py      = (int)msg->data2;
+                int count   = (int)msg->data3;
+                int content_h = win->h - TITLE_BAR_HEIGHT;
+                uint32_t *pixels = (uint32_t *)msg->payload;
+                if (count > 128) count = 128;
+                for (int p = 0; p < count; p++) {
+                    int x = px + p;
+                    if (x >= 0 && x < win->w && py >= 0 && py < content_h)
+                        win->gfx_buffer[py * win->w + x] = pixels[p];
+                }
+                break;
+            }
+        }
+    } else if (msg->type == MSG_WIN_MAP_BUFFER) {
+        
+        int win_id = (int)msg->data1;
+        Window *win = 0;
+        for (int i = 0; i < window_count; i++) {
+            if (window_stack[i]->id == win_id &&
+                window_stack[i]->owner_pid == msg->sender_pid) {
+                win = window_stack[i];
+                break;
+            }
+        }
+        message_t reply;
+        memset(&reply, 0, sizeof(reply));
+        if (win && win->gfx_buffer) {
+            int content_h = win->h - TITLE_BAR_HEIGHT;
+            if (content_h < 1) content_h = 1;
+            uint32_t buf_size = (uint32_t)win->w * (uint32_t)content_h * 4;
+            
+
+            reply.type  = MSG_WIN_BUFFER_INFO;
+            reply.data1 = buf_size;                            
+            reply.data2 = (uint32_t)win->w;
+            reply.data3 = (uint32_t)content_h;
+            ((uint32_t *)reply.payload)[0] = (uint32_t)win->gfx_buffer; 
+        } else {
+            reply.type = MSG_ERROR;
+        }
+        qk_sys_ipc_send(msg->sender_pid, &reply);
+    } else if (msg->type == MSG_WIN_DIRTY) {
+        
+        (void)msg; 
     } else if (msg->type == MSG_PROCESS_TERMINATED) {
         int target_pid = msg->data1;
         for (int i = 0; i < window_count; i++) {
@@ -942,6 +992,7 @@ int main()
     window_manager_init();
     cache_terminal_binary();
     last_fps_update = qk_get_uptime();
+    uint32_t last_render_ms = qk_get_uptime();
     message_t msg;
     while (1) {
         int got_msg = 0;
@@ -956,10 +1007,14 @@ int main()
             fps_counter = 0;
             last_fps_update = now;
         }
-        render();
+        
 
-        if (!got_msg)
-            qk_yield();
+        if (got_msg || (now - last_render_ms) >= 30) {
+            render();
+            last_render_ms = now;
+        }
+        
+        qk_yield();
     }
     return 0;
 }

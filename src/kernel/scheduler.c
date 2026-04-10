@@ -277,6 +277,7 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size)
     proc->heap_end = (image_info.image_end + 0xFFF) & ~0xFFF;
     proc->image_base = image_info.image_base;
     proc->image_end = proc->heap_end;
+    proc->shared_virt_bump = 0x88000000;
 
     uint32_t *esp = (uint32_t *)proc->kernel_stack;
 

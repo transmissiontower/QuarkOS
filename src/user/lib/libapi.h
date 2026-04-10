@@ -26,7 +26,7 @@ typedef struct {
     char name[16];
 } process_info_t;
 
-typedef enum { QK_SERVER_STORAGE = 0, QK_SERVER_COMPOSITOR = 1 } qk_server_type_t;
+typedef enum { QK_SERVER_STORAGE = 0, QK_SERVER_COMPOSITOR = 1, QK_SERVER_INPUT = 2 } qk_server_type_t;
 
 void qk_sys_exit(int code);
 void qk_sleep(uint32_t ms);
@@ -62,9 +62,22 @@ int  qk_pcspk_pwm_ready(void);
 
 uint8_t qk_hw_inb(uint16_t port);
 void qk_hw_outb(uint16_t port, uint8_t val);
+int qk_ata_read_sectors(uint32_t lba, uint32_t count, void *buf);
+
+int      qk_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out);
+uint32_t qk_map_phys_list(uint32_t *phys_pages, uint32_t count);
+
+void    *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out);
+void     qk_win_dirty(int comp_pid);
 uint16_t qk_inw(uint16_t port);
 void qk_outw(uint16_t port, uint16_t val);
 int qk_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu);
+void qk_blit_pixels(int comp_pid, int x, int y, uint32_t *pixels, int count);
+void qk_compositor_suspend(int comp_pid);
+void qk_compositor_resume(int comp_pid);
+void qk_input_redirect(int target_pid);
+void qk_input_restore(void);
+int  qk_getpid(void);
 
 void *malloc(uint32_t size);
 void free(void *ptr);
