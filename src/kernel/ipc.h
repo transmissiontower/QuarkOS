@@ -7,7 +7,7 @@ typedef struct {
     int sender_pid;
     int type;
     uint32_t data1, data2, data3;
-    uint8_t payload[128];
+    uint8_t payload[512];
 } message_t;
 
 #define MSG_OK 100
@@ -31,6 +31,7 @@ typedef struct {
 #define MSG_FILE_SAVE_CHUNK 309
 #define MSG_FILE_SAVE_END 310
 #define MSG_FILE_READ 311
+#define MSG_FILE_PEEK 312
 
 #define MSG_WIN_SET_PIXEL 55
 #define MSG_WIN_DRAW_LINE 56
@@ -39,6 +40,14 @@ typedef struct {
 #define MSG_WIN_PRINT_AT 59
 #define MSG_WIN_COLOR 60
 #define MSG_PROCESS_TERMINATED 61
+#define MSG_WIN_BLIT_PIXELS 62
+#define MSG_WIN_MAP_BUFFER  63  
+#define MSG_WIN_BUFFER_INFO 64  
+#define MSG_WIN_DIRTY       65  
+#define MSG_COMPOSITOR_SUSPEND 70
+#define MSG_COMPOSITOR_RESUME  71
+#define MSG_INPUT_REDIRECT     72  
+#define MSG_INPUT_RESTORE      73  
 
 #define IPC_QUEUE_SIZE 128
 

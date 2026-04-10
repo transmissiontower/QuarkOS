@@ -1,18 +1,10 @@
-/*
- * stdio.c — formatted I/O and FILE* for QuarkOS32 userspace.
- *
- * Formatted output (printf/sprintf/vsnprintf) and a FILE* layer over the
- * storage_server IPC (fopen/fread/fseek/fclose etc.).
- */
+
 
 #include "user/lib/stdio.h"
 #include "user/lib/libapi.h"
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 
-/* -----------------------------------------------------------------------
- * Stub FILE objects
- * ----------------------------------------------------------------------- */
 static FILE _stderr_impl = {0, 0, -1, 0, 1};
 static FILE _stdout_impl = {0, 0, -1, 0, 1};
 static FILE _stdin_impl  = {0, 0, -1, 0, 1};
@@ -20,10 +12,6 @@ FILE *stderr = &_stderr_impl;
 FILE *stdout = &_stdout_impl;
 FILE *stdin  = &_stdin_impl;
 
-/* -----------------------------------------------------------------------
- * vsnprintf — handles %d %i %u %x %X %o %s %c %p %%
- *             with flags (- 0 +), width, precision, l modifier
- * ----------------------------------------------------------------------- */
 static void _putc_buf(char *buf, uint32_t *pos, uint32_t max, char c)
 {
     if (*pos < max - 1)
@@ -173,10 +161,7 @@ int fputc(int c, FILE *stream) { (void)stream; (void)c; return c; }
 int puts(const char *s) { qk_print_at(0,0,0xFFFFFFFF,s); return 0; }
 int putchar(int c) { (void)c; return c; }
 
-/* -----------------------------------------------------------------------
- * FILE* — backed by storage_server IPC
- * ----------------------------------------------------------------------- */
-#define CHUNK 120   /* max bytes per MSG_REQ_DATA reply */
+#define CHUNK 120   
 
 static FILE  _open_file;
 static int   _file_in_use = 0;
@@ -239,7 +224,7 @@ uint32_t fread(void *buf, uint32_t elem_size, uint32_t count, FILE *fp)
 
 uint32_t fwrite(const void *buf, uint32_t size, uint32_t count, FILE *fp)
 {
-    (void)buf; (void)size; (void)fp; return count; /* write-back not implemented */
+    (void)buf; (void)size; (void)fp; return count; 
 }
 
 int fseek(FILE *fp, long offset, int whence)

@@ -1,19 +1,4 @@
-/*
- * spkplay.c  —  PC-speaker audio player for QuarkOS
- *
- * Reads a .spk file (produced by tools/flac_to_spk.py) from the storage
- * server and streams it to the PC speaker via PWM using syscalls 52/53.
- *
- * .spk file format:
- *   [0..3]   magic 'S','P','K','W'
- *   [4..7]   sample_rate  (uint32, little-endian)
- *   [8..11]  num_samples  (uint32, little-endian)
- *   [12..]   8-bit unsigned PCM samples
- *
- * Ring-buffer design (identical to wav.c):
- *   Three slots of PLAY_BUF_SIZE bytes.
- *   Two slots primed before playback, third filled concurrently.
- */
+
 
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
@@ -33,8 +18,6 @@ static uint8_t play_buf[PLAY_SLOTS][PLAY_BUF_SIZE];
 static uint32_t play_len[PLAY_SLOTS];
 
 static int storage_pid = -1;
-
-/* ---- storage helpers (same pattern as wav.c) ---- */
 
 static uint32_t file_read(uint8_t *buf, uint32_t offset, uint32_t len)
 {
@@ -87,8 +70,6 @@ static uint32_t file_open(const char *name, uint16_t dir_cluster)
     return resp.data1;
 }
 
-/* ---- .spk header ---- */
-
 typedef struct {
     uint32_t sample_rate;
     uint32_t num_samples;
@@ -115,8 +96,6 @@ static int parse_spk_header(spk_info_t *info)
     return 0;
 }
 
-/* ---- main ---- */
-
 int main()
 {
     storage_pid = qk_get_server_pid(QK_SERVER_STORAGE);
@@ -134,7 +113,7 @@ int main()
     uint32_t offset    = SPK_HEADER_SIZE;
     uint32_t remaining = info.num_samples;
 
-    /* Prime slots 0 and 1 */
+    
     int primed = 0;
     for (int s = 0; s < 2 && remaining > 0; s++) {
         uint32_t chunk = remaining < PLAY_BUF_SIZE ? remaining : PLAY_BUF_SIZE;
@@ -151,7 +130,7 @@ int main()
 
     int play_slot = 0;
 
-    /* Kick off first chunk */
+    
     qk_pcspk_pwm_play(play_buf[play_slot], play_len[play_slot],
                       info.sample_rate);
 
@@ -159,7 +138,7 @@ int main()
         int next_slot = (play_slot + 1) % PLAY_SLOTS;
         int fill_slot = (play_slot + 2) % PLAY_SLOTS;
 
-        /* Fill fill_slot from storage while play_slot is playing */
+        
         if (remaining > 0) {
             uint32_t chunk = remaining < PLAY_BUF_SIZE ? remaining : PLAY_BUF_SIZE;
             uint32_t got   = file_read(play_buf[fill_slot], offset, chunk);
@@ -174,7 +153,7 @@ int main()
             play_len[fill_slot] = 0;
         }
 
-        /* Wait for current chunk to finish */
+        
         while (!qk_pcspk_pwm_ready())
             qk_yield();
 
@@ -186,7 +165,7 @@ int main()
         play_slot = next_slot;
     }
 
-    /* Drain last chunk */
+    
     while (!qk_pcspk_pwm_ready())
         qk_yield();
 

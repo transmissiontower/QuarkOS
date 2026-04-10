@@ -19,19 +19,15 @@ void on_irq_0(struct InterruptRegisters *regs)
     (void)regs;
 
     if (drv_pcspk_pwm_active()) {
-        /*
-         * During PWM audio PIT CH0 fires at `rate` Hz (e.g. 8000 Hz).
-         * Service the next audio sample on every IRQ, but only advance
-         * `ticks` once per (rate/100) IRQs so that get_uptime_ms() and
-         * sleep() remain correct.
-         */
+        
+
         drv_pcspk_pwm_tick();
 
         drv_pcspk_pwm_subtick++;
         if (drv_pcspk_pwm_subtick < drv_pcspk_pwm_subtick_max)
             return;
         drv_pcspk_pwm_subtick = 0;
-        /* fall through to normal tick processing */
+        
     }
 
     ticks++;

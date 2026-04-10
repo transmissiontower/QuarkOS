@@ -33,6 +33,7 @@ typedef struct process {
     int ipc_wait_from;
     int ipc_reply_ready;
     message_t ipc_reply_slot;
+    uint32_t shared_virt_bump;
 } process_t;
 
 typedef struct {

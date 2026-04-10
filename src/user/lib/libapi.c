@@ -120,6 +120,51 @@ void qk_outw(uint16_t p, uint16_t v)
     syscall(23, p, v, 0);
 }
 
+int qk_ata_read_sectors(uint32_t lba, uint32_t count, void *buf)
+{
+    return syscall(54, lba, count, (uint32_t)buf);
+}
+
+int qk_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out)
+{
+    return syscall(56, (int)virt, (int)size, (int)out);
+}
+
+uint32_t qk_map_phys_list(uint32_t *phys_pages, uint32_t count)
+{
+    return (uint32_t)syscall(57, (int)phys_pages, (int)count, 0);
+}
+
+void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out)
+{
+    message_t msg, reply;
+    memset(&msg, 0, sizeof(msg));
+    msg.type  = MSG_WIN_MAP_BUFFER;
+    msg.data1 = (uint32_t)win_id;
+    if (qk_ipc_send_recv(comp_pid, &msg, &reply) != 0)
+        return 0;
+    if (reply.type != MSG_WIN_BUFFER_INFO || reply.data1 == 0)
+        return 0;
+    if (w_out) *w_out = (int)reply.data2;
+    if (h_out) *h_out = (int)reply.data3;
+    
+    uint32_t src_virt = ((uint32_t *)reply.payload)[0];
+    uint32_t size     = reply.data1;
+    
+    uint32_t mapped = (uint32_t)syscall(58, comp_pid, (int)src_virt, (int)size);
+    if (!mapped)
+        return 0;
+    return (void *)mapped;
+}
+
+void qk_win_dirty(int comp_pid)
+{
+    message_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = MSG_WIN_DIRTY;
+    qk_sys_ipc_send(comp_pid, &msg);
+}
+
 void qk_print_at(int x, int y, uint32_t color, const char *str)
 {
     message_t msg;
@@ -134,6 +179,65 @@ void qk_print_at(int x, int y, uint32_t color, const char *str)
     if (comp_pid_cache < 0)
         return;
     qk_sys_ipc_send(comp_pid_cache, &msg);
+}
+
+void qk_blit_pixels(int comp_pid, int x, int y, uint32_t *pixels, int count)
+{
+    while (count > 0) {
+        int batch = count > 128 ? 128 : count;
+        message_t msg;
+        msg.type = MSG_WIN_BLIT_PIXELS;
+        msg.data1 = (uint32_t)x;
+        msg.data2 = (uint32_t)y;
+        msg.data3 = (uint32_t)batch;
+        memcpy(msg.payload, pixels, (uint32_t)(batch * 4));
+        qk_sys_ipc_send(comp_pid, &msg);
+        x += batch;
+        pixels += batch;
+        count -= batch;
+    }
+}
+
+void qk_compositor_suspend(int comp_pid)
+{
+    message_t msg;
+    msg.type = MSG_COMPOSITOR_SUSPEND;
+    msg.data1 = msg.data2 = msg.data3 = 0;
+    qk_sys_ipc_send(comp_pid, &msg);
+}
+
+void qk_compositor_resume(int comp_pid)
+{
+    message_t msg;
+    msg.type = MSG_COMPOSITOR_RESUME;
+    msg.data1 = msg.data2 = msg.data3 = 0;
+    qk_sys_ipc_send(comp_pid, &msg);
+}
+
+int qk_getpid(void)
+{
+    return syscall(55, 0, 0, 0);
+}
+
+void qk_input_redirect(int target_pid)
+{
+    int input_pid = qk_get_server_pid(QK_SERVER_INPUT);
+    if (input_pid <= 0) return;
+    message_t msg;
+    msg.type = MSG_INPUT_REDIRECT;
+    msg.data1 = (uint32_t)target_pid;
+    msg.data2 = msg.data3 = 0;
+    qk_sys_ipc_send(input_pid, &msg);
+}
+
+void qk_input_restore(void)
+{
+    int input_pid = qk_get_server_pid(QK_SERVER_INPUT);
+    if (input_pid <= 0) return;
+    message_t msg;
+    msg.type = MSG_INPUT_RESTORE;
+    msg.data1 = msg.data2 = msg.data3 = 0;
+    qk_sys_ipc_send(input_pid, &msg);
 }
 
 void qk_power_shutdown(void)
@@ -168,3 +272,4 @@ int qk_pcspk_pwm_ready(void)
 {
     return syscall(53, 0, 0, 0);
 }
+

@@ -910,14 +910,12 @@ void shell_memscope()
     }
 }
 
-/* ---- streaming helpers for shell_cmd_play ---- */
 #define SPK_CHUNK  4096
 #define SPK_SLOTS  3
 
 static uint8_t  spk_buf[SPK_SLOTS][SPK_CHUNK];
 static uint32_t spk_len[SPK_SLOTS];
 
-/* Read up to `len` bytes from the currently-open storage file at `offset`. */
 static uint32_t spk_read(uint32_t offset, uint8_t *buf, uint32_t len)
 {
     uint32_t got = 0;
@@ -945,7 +943,6 @@ static uint32_t spk_read(uint32_t offset, uint8_t *buf, uint32_t len)
     return got;
 }
 
-/* Open file and return its size, 0 on failure. */
 static uint32_t spk_open(const char *path)
 {
     uint16_t dir_cluster = 0;
@@ -989,7 +986,7 @@ static void shell_cmd_play(const char *arg)
         return;
     }
 
-    /* Read and validate 12-byte header */
+    
     uint8_t hdr[12];
     if (spk_read(0, hdr, 12) < 12) {
         shell_print("play: read error\n");
@@ -1014,7 +1011,7 @@ static void shell_cmd_play(const char *arg)
     uint32_t offset    = 12;
     uint32_t remaining = num_samples;
 
-    /* Prime slots 0 and 1 */
+    
     int primed = 0;
     for (int s = 0; s < 2 && remaining > 0; s++) {
         uint32_t chunk = remaining < SPK_CHUNK ? remaining : SPK_CHUNK;
@@ -1037,7 +1034,7 @@ static void shell_cmd_play(const char *arg)
         int next_slot = (play_slot + 1) % SPK_SLOTS;
         int fill_slot = (play_slot + 2) % SPK_SLOTS;
 
-        /* Fill next chunk while current plays */
+        
         if (remaining > 0) {
             uint32_t chunk = remaining < SPK_CHUNK ? remaining : SPK_CHUNK;
             uint32_t got   = spk_read(offset, spk_buf[fill_slot], chunk);
@@ -1071,8 +1068,6 @@ static void shell_cmd_play(const char *arg)
 #include "user/still_alive.h"
 #include "user/rick_roll.h"
 
-/* Busy-poll sleep: uses uptime counter so IPC messages (mouse/keyboard)
- * cannot prematurely unblock the wait. */
 static void alive_sleep(uint32_t ms)
 {
     uint32_t start = qk_get_uptime();
@@ -1171,7 +1166,6 @@ static void shell_spawn_app(const char *path, const char *arg)
     if (buf && sz > 0) {
         int pid = qk_spawn(buf, sz);
         if (pid >= 0 && arg && *arg) {
-            qk_sleep(150);
             message_t msg;
             msg.type = MSG_FILE_OPEN;
             strncpy((char *)msg.payload, arg, 127);
@@ -1259,7 +1253,7 @@ int main()
                 if (cmd_is(cmd_buffer, "guide", "help")) {
                     shell_print("FS: ls, cd, cat, touch, mkdir, hex, clear\n");
                     shell_print(
-                        "Apps: notepad [file], procman, sysinfo, quill [file], exec [path]\n");
+                        "Apps: notepad [file], imgview [file], sysinfo, quill [file], exec [path]\n");
                     shell_print("Audio: beep [freq] [ms]\n");
                     shell_print("Debug: uptime, procs, kill [id], sysgraph, memscope, pf, kp\n");
                 } else if (cmd_is(cmd_buffer, "purge", "clear"))
@@ -1290,6 +1284,37 @@ int main()
                     shell_spawn_app("/APPS/NOTEPAD.QEX", 0);
                 else if ((arg = cmd_arg_ptr(cmd_buffer, "notepad", 0)) != 0)
                     shell_spawn_app("/APPS/NOTEPAD.QEX", arg);
+                else if (cmd_is(cmd_buffer, "imgview", 0))
+                    shell_spawn_app("/APPS/IMGVIEW.QEX", 0);
+                else if ((arg = cmd_arg_ptr(cmd_buffer, "imgview", 0)) != 0) {
+                    static char imgview_path[128];
+                    if (arg[0] == '/') {
+                        strncpy(imgview_path, arg, sizeof(imgview_path) - 1);
+                        imgview_path[sizeof(imgview_path) - 1] = '\0';
+                    } else {
+                        int plen = 0; while (current_path[plen]) plen++;
+                        strncpy(imgview_path, current_path, sizeof(imgview_path) - 1);
+                        if (plen > 0 && imgview_path[plen-1] != '/')
+                            imgview_path[plen++] = '/';
+                        strncpy(imgview_path + plen, arg, sizeof(imgview_path) - 1 - plen);
+                        imgview_path[sizeof(imgview_path) - 1] = '\0';
+                    }
+                    
+                    {
+                        int ip = 0; while (imgview_path[ip]) ip++;
+                        int has_dot = 0;
+                        for (int d = ip - 1; d >= 0 && imgview_path[d] != '/'; d--)
+                            if (imgview_path[d] == '.') { has_dot = 1; break; }
+                        if (!has_dot && ip + 4 < (int)sizeof(imgview_path)) {
+                            imgview_path[ip++] = '.';
+                            imgview_path[ip++] = 'B';
+                            imgview_path[ip++] = 'M';
+                            imgview_path[ip++] = 'P';
+                            imgview_path[ip]   = '\0';
+                        }
+                    }
+                    shell_spawn_app("/APPS/IMGVIEW.QEX", imgview_path);
+                }
                 else if ((arg = cmd_arg_ptr(cmd_buffer, "quill", "nano")) != 0)
                     shell_nano(arg);
                 else if ((arg = cmd_arg_ptr(cmd_buffer, "drift", "cd")) != 0)

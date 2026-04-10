@@ -35,6 +35,7 @@ int sys_map_wallpaper(uint32_t *virt_addr_out)
 
 static int storage_server_pid = -1;
 static int compositor_server_pid = -1;
+static int input_server_pid = -1;
 
 static int is_ptr_safe(const void *ptr, uint32_t size)
 {
@@ -62,6 +63,8 @@ int sys_set_server_pid(int type, int pid)
         storage_server_pid = pid;
     else if (type == 1)
         compositor_server_pid = pid;
+    else if (type == 2)
+        input_server_pid = pid;
     return 0;
 }
 
@@ -71,6 +74,8 @@ int sys_get_server_pid(int type)
         return storage_server_pid;
     if (type == 1)
         return compositor_server_pid;
+    if (type == 2)
+        return input_server_pid;
     return -1;
 }
 
@@ -131,8 +136,10 @@ int sys_spawn(void *buffer, uint32_t size)
         return -1;
     if (!is_ptr_safe(buffer, size))
         return -1;
-    k_proc_spawn((uint8_t *)buffer, size);
-    return 0;
+    process_t *proc = k_proc_spawn((uint8_t *)buffer, size);
+    if (!proc)
+        return -1;
+    return proc->pid;
 }
 
 int sys_map_fb(fb_info_t *user_info)
@@ -183,16 +190,20 @@ int sys_ipc_send(int dest_pid, message_t *user_msg)
         memcpy(&dest->ipc_reply_slot, user_msg, sizeof(message_t));
         dest->ipc_reply_slot.sender_pid = current_process->pid;
         dest->ipc_reply_ready = 1;
-        if (dest->state == PROCESS_IPC_WAIT)
-            dest->state = PROCESS_READY;
+        dest->state = PROCESS_READY;
+        
+
+        k_scheduler_direct_switch(dest);
         return 0;
     }
 
     if (dest->ipc_wait_from != -1)
         return 0;
 
-    while (dest->ipc_queue.count >= IPC_QUEUE_SIZE)
-        k_scheduler_yield();
+    
+
+    if (dest->ipc_queue.count >= IPC_QUEUE_SIZE)
+        return -1;
     ipc_enqueue(dest, user_msg);
     if (dest->state == PROCESS_IPC_WAIT || dest->state == PROCESS_BLOCKED)
         dest->state = PROCESS_READY;
@@ -215,9 +226,12 @@ int sys_ipc_send_recv(int dest_pid, message_t *send_msg, message_t *recv_msg)
     current_process->ipc_wait_from = dest_pid;
     current_process->ipc_reply_ready = 0;
     current_process->state = PROCESS_IPC_WAIT;
-    if (dest->state == PROCESS_IPC_WAIT)
-        k_scheduler_direct_switch(dest);
-    else {
+    if (dest->state == PROCESS_IPC_WAIT || dest->state == PROCESS_READY) {
+        
+
+        if (dest->state != PROCESS_RUNNING)
+            k_scheduler_direct_switch(dest);
+    } else {
         if (dest->state == PROCESS_BLOCKED)
             dest->state = PROCESS_READY;
         k_scheduler_yield();
@@ -432,6 +446,49 @@ int sys_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu)
     return 0;
 }
 
+int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out)
+{
+    if (size == 0 || !out)
+        return -1;
+    uint32_t offset    = virt & 0xFFF;
+    uint32_t page_base = virt & ~0xFFF;
+    uint32_t pages     = (offset + size + 4095) / 4096;
+    if (!is_ptr_safe(out, pages * 4))
+        return -1;
+    for (uint32_t i = 0; i < pages; i++) {
+        uint32_t addr   = page_base + i * 4096;
+        uint32_t pd_idx = addr >> 22;
+        uint32_t pt_idx = (addr >> 12) & 0x3FF;
+        uint32_t *pd    = REC_PAGEDIR;
+        if (!(pd[pd_idx] & PAGE_FLAG_PRESENT))
+            return -1;
+        uint32_t *pt = Rec_PAGEDIR(pd_idx);
+        if (!(pt[pt_idx] & PAGE_FLAG_PRESENT))
+            return -1;
+        out[i] = pt[pt_idx] & 0xFFFFF000;
+    }
+    return (int)pages;
+}
+
+uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count)
+{
+    if (!phys_pages || count == 0 || count > 256)
+        return 0;
+    if (!is_ptr_safe(phys_pages, count * 4))
+        return 0;
+    uint32_t virt_start = current_process->shared_virt_bump;
+    
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t phys = phys_pages[i];
+        if (!phys)
+            return 0;
+        mm_vmm_map_page(virt_start + i * 4096, phys,
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER);
+    }
+    current_process->shared_virt_bump += count * 4096;
+    return virt_start;
+}
+
 int sys_trigger_panic(const char *msg)
 {
     if (current_process->pid != 0)
@@ -552,17 +609,146 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         drv_pcspk_stop();
         regs->eax = 0;
         break;
-    /* 52: pcspk_pwm_play(buf, len, rate) — start one PWM chunk */
+    
     case 52:
         drv_pcspk_pwm_start((const uint8_t *)regs->ebx,
                              (uint32_t)regs->ecx,
                              (uint32_t)regs->edx);
         regs->eax = 0;
         break;
-    /* 53: pcspk_pwm_ready() — returns 1 when current chunk is done */
+    
     case 53:
         regs->eax = drv_pcspk_pwm_ready();
         break;
+    
+    case 54: {
+        if (!(current_process->io_privilege_mask & IO_PRIV_ATA)) {
+            regs->eax = -1;
+            break;
+        }
+        uint32_t lba   = regs->ebx;
+        uint32_t count = regs->ecx;
+        uint16_t *buf  = (uint16_t *)regs->edx;
+        if (!buf || count == 0 || count > 128) { regs->eax = -1; break; }
+        if (!is_ptr_safe(buf, count * 512)) { regs->eax = -1; break; }
+        
+        #define ATA_SR  0x1F7
+        #define ATA_DH  0x1F6
+        #define ATA_SC  0x1F2
+        #define ATA_LB0 0x1F3
+        #define ATA_LB1 0x1F4
+        #define ATA_LB2 0x1F5
+        #define ATA_CMD 0x1F7
+        #define ATA_DAT 0x1F0
+        
+
+        uint8_t slave_mask_saved = inb(0xA1);
+        outb(0xA1, slave_mask_saved | 0x40);
+        
+        for (int t = 0; t < 100000; t++) { if (!(inb(ATA_SR) & 0x80)) break; }
+        outb(ATA_DH,  0xE0 | ((lba >> 24) & 0x0F));
+        outb(0x1F1,   0x00);
+        outb(ATA_SC,  (uint8_t)count);
+        outb(ATA_LB0, (uint8_t)(lba & 0xFF));
+        outb(ATA_LB1, (uint8_t)((lba >> 8) & 0xFF));
+        outb(ATA_LB2, (uint8_t)((lba >> 16) & 0xFF));
+        outb(ATA_CMD, 0x20);  
+        int ok = 1;
+        for (uint32_t s = 0; s < count; s++) {
+            for (int t = 0; t < 100000; t++) {
+                uint8_t st = inb(ATA_SR);
+                if (st & 0x08) break;  
+                if (st & 0x01) { ok = 0; break; }
+            }
+            if (!ok) break;
+            
+            uint16_t *dst = buf + s * 256;
+            asm volatile("rep insw" : "+D"(dst) : "c"(256), "d"(ATA_DAT) : "memory");
+            inb(ATA_SR);  
+        }
+        
+        outb(0xA1, slave_mask_saved);
+        asm volatile("sti");
+        k_scheduler_yield();
+        asm volatile("cli");
+        regs->eax = ok ? 0 : -1;
+        break;
+    }
+    case 55:
+        regs->eax = current_process->pid;
+        break;
+    
+    case 56:
+        regs->eax = (uint32_t)sys_virt_to_phys_list(regs->ebx, regs->ecx, (uint32_t *)regs->edx);
+        break;
+    
+    case 57:
+        regs->eax = sys_map_phys_list((uint32_t *)regs->ebx, regs->ecx);
+        break;
+    
+
+    case 58: {
+        int      src_pid  = (int)regs->ebx;
+        uint32_t src_virt = (uint32_t)regs->ecx;
+        uint32_t size     = (uint32_t)regs->edx;
+        if (size == 0 || size > 16 * 1024 * 1024) { regs->eax = 0; break; }
+
+        process_t *src = k_proc_find_by_id(src_pid);
+        if (!src) { regs->eax = 0; break; }
+
+        uint32_t offset     = src_virt & 0xFFFu;
+        uint32_t page_base  = src_virt & ~0xFFFu;
+        uint32_t page_count = (offset + size + 4095) / 4096;
+        if (page_count > 4096) { regs->eax = 0; break; }
+
+        
+        uint32_t saved_cr3 = current_process->pd_phys;
+        asm volatile("mov %0, %%cr3" ::"r"(src->pd_phys) : "memory");
+
+        uint32_t virt_start = current_process->shared_virt_bump;
+        int ok = 1;
+
+        
+        asm volatile("mov %0, %%cr3" ::"r"(saved_cr3) : "memory");
+
+        
+        uint32_t *src_pd_virt = 0;
+        
+        uint32_t temp_pd_addr = 0xFF800000; 
+        mm_vmm_map_page(temp_pd_addr, src->pd_phys,
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
+
+        src_pd_virt = (uint32_t *)temp_pd_addr;
+
+        for (uint32_t i = 0; i < page_count && ok; i++) {
+            uint32_t addr   = page_base + i * 4096;
+            uint32_t pd_idx = addr >> 22;
+            uint32_t pt_idx = (addr >> 12) & 0x3FF;
+
+            uint32_t pde = src_pd_virt[pd_idx];
+            if (!(pde & PAGE_FLAG_PRESENT)) { ok = 0; break; }
+
+            
+            uint32_t temp_pt_addr = 0xFF801000;
+            mm_vmm_map_page(temp_pt_addr, pde & ~0xFFF,
+                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
+            uint32_t *src_pt_virt = (uint32_t *)temp_pt_addr;
+            uint32_t pte = src_pt_virt[pt_idx];
+            if (!(pte & PAGE_FLAG_PRESENT)) { ok = 0; break; }
+
+            uint32_t phys = pte & ~0xFFFu;
+            mm_vmm_map_page(virt_start + i * 4096, phys,
+                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER);
+        }
+
+        if (ok) {
+            current_process->shared_virt_bump += page_count * 4096;
+            regs->eax = virt_start + offset;
+        } else {
+            regs->eax = 0;
+        }
+        break;
+    }
     default:
         regs->eax = -1;
         break;

@@ -1,9 +1,4 @@
-/*
- * rick_roll.h — "Never Gonna Give You Up" by Rick Astley
- *
- * Source: robsoncouto/arduino-songs (GitHub), arrangement by Chlorondria
- *   https://github.com/robsoncouto/arduino-songs/blob/master/nevergonnagiveyouup/
- */
+
 
 #ifndef RICK_ROLL_H
 #define RICK_ROLL_H
@@ -15,15 +10,14 @@
 typedef struct { uint32_t freq; uint32_t ms; } note_t;
 #endif
 
-// Durations
-#define RK_W   2100  // whole
-#define RK_H   1050  // half 
-#define RK_Q    530  // quarter 
-#define RK_E    260  // eighth 
-#define RK_S    130  // sixteenth 
-#define RK_DQ   790  // dotted quarter 
-#define RK_DE   390  // dotted eighth 
-#define RK_DH  1580  // dotted half 
+#define RK_W   2100  
+#define RK_H   1050  
+#define RK_Q    530  
+#define RK_E    260  
+#define RK_S    130  
+#define RK_DQ   790  
+#define RK_DE   390  
+#define RK_DH  1580  
 
 #define RK_A4   440
 #define RK_B4   494
