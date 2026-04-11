@@ -8,7 +8,15 @@ void crash_wait_for_reboot(void)
 {
     asm volatile("cli");
 
-    for (uint32_t attempts = 0; attempts < 5000000; attempts++) {
+    
+    for (int i = 0; i < 16; i++) {
+        if (!((uint8_t)inb(0x64) & 0x01))
+            break;
+        (void)inb(0x60);
+    }
+
+    
+    while (1) {
         for (volatile uint32_t spin = 0; spin < 2000; spin++)
             asm volatile("pause");
         uint8_t status = (uint8_t)inb(0x64);
@@ -19,6 +27,4 @@ void crash_wait_for_reboot(void)
             }
         }
     }
-    while (1)
-        asm volatile("hlt");
 }

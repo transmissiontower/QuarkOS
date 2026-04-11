@@ -145,6 +145,7 @@ Window *window_create(int owner_pid, int x, int y, int w, int h, const char *tit
         win->text_color = COLOR_WHITE;
         win->scroll_y = 0;
         win->max_scroll_y = 0;
+        win->user_scrolled = false;
 
         window_stack[window_count++] = win;
         to_front(win);
@@ -263,6 +264,16 @@ static int window_resize_to(Window *win, int new_w, int new_h)
     win->gfx_buffer = new_buffer;
     win->w = new_w;
     win->h = new_h;
+
+    
+    if (win->owner_pid > 0) {
+        message_t note;
+        memset(&note, 0, sizeof(note));
+        note.type  = MSG_WIN_RESIZED;
+        note.data1 = (uint32_t)new_w;
+        note.data2 = (uint32_t)(new_h - TITLE_BAR_HEIGHT);
+        qk_sys_ipc_send(win->owner_pid, &note);
+    }
     return 1;
 }
 
@@ -387,18 +398,36 @@ static void draw_window_content(gfx_context_t *ctx, Window *win)
         int h = win->h - TITLE_BAR_HEIGHT;
         int r = WIN_RADIUS;
         int main_body_h = h - r - WIN_CONTENT_GAP;
+
+        
+        int draw_w = w;
+        if (win->x + draw_w > (int)ctx->width)
+            draw_w = (int)ctx->width - win->x;
+        if (draw_w <= 0)
+            return;
+
+        
+        int start_y = win->y + TITLE_BAR_HEIGHT + WIN_CONTENT_GAP;
+        int avail_rows = (int)ctx->height - start_y;
+        if (avail_rows <= 0)
+            return;
+        if (main_body_h > avail_rows)
+            main_body_h = avail_rows;
+        int radius_rows = r;
+        if (main_body_h + radius_rows > avail_rows)
+            radius_rows = avail_rows - main_body_h;
+
         uint32_t *src = win->gfx_buffer;
-        uint32_t *dst =
-            &ctx->buffer[(win->y + TITLE_BAR_HEIGHT + WIN_CONTENT_GAP) * ctx->width + win->x];
+        uint32_t *dst = &ctx->buffer[start_y * ctx->width + win->x];
         for (int i = 0; i < main_body_h; i++) {
-            memcpy(dst, src, w * 4);
+            memcpy(dst, src, (uint32_t)draw_w * 4);
             dst += ctx->width;
             src += w;
         }
 
-        for (int i = 0; i < r; i++) {
+        for (int i = 0; i < radius_rows; i++) {
             int dy = i;
-            for (int j = 0; j < w; j++) {
+            for (int j = 0; j < draw_w; j++) {
                 bool draw = true;
                 if (j < r) {
                     int dx = r - 1 - j;
@@ -446,7 +475,7 @@ static void draw_window_content(gfx_context_t *ctx, Window *win)
         int total_content_h = line_y + char_h;
         win->max_scroll_y = (total_content_h > max_y) ? (total_content_h - max_y) : 0;
 
-        if (strstr(win->title, "Shell")) {
+        if (strstr(win->title, "Shell") && !win->user_scrolled) {
             win->scroll_y = win->max_scroll_y;
         } else {
             if (win->scroll_y > win->max_scroll_y)
@@ -642,6 +671,26 @@ void window_event_handle(Event e)
         if (resizing_window) {
             resizing_window->is_resizing = false;
             resizing_window = 0;
+        }
+    }
+
+    if (e.type == EVENT_MOUSE_SCROLL) {
+        
+        for (int i = window_count - 1; i >= 0; i--) {
+            Window *win = window_stack[i];
+            if (!window_contains_point(win, e.x, e.y))
+                continue;
+            if (win->is_collapsed)
+                break;
+            int step = e.scroll * 20;
+            win->scroll_y += step;
+            if (win->scroll_y < 0)
+                win->scroll_y = 0;
+            if (win->scroll_y > win->max_scroll_y)
+                win->scroll_y = win->max_scroll_y;
+            
+            win->user_scrolled = (win->scroll_y < win->max_scroll_y);
+            break;
         }
     }
 }

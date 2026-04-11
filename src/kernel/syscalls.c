@@ -3,6 +3,7 @@
 #include "drivers/acpi.h"
 #include "drivers/pcspk.h"
 #include "drivers/rtc.h"
+#include "drivers/sb16.h"
 #include "drivers/timer.h"
 #include "kernel/ipc.h"
 #include "kernel/process.h"
@@ -303,6 +304,11 @@ int sys_port_io(int port, int val, int type)
     case 3:
         outw(port, (uint16_t)val);
         break;
+    case 4:
+        return (int)inl((uint16_t)port);
+    case 5:
+        outl((uint16_t)port, (uint32_t)val);
+        break;
     }
     return 0;
 }
@@ -472,7 +478,7 @@ int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out)
 
 uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count)
 {
-    if (!phys_pages || count == 0 || count > 256)
+    if (!phys_pages || count == 0 || count > 4096)
         return 0;
     if (!is_ptr_safe(phys_pages, count * 4))
         return 0;
@@ -629,7 +635,7 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         uint32_t lba   = regs->ebx;
         uint32_t count = regs->ecx;
         uint16_t *buf  = (uint16_t *)regs->edx;
-        if (!buf || count == 0 || count > 128) { regs->eax = -1; break; }
+        if (!buf || count == 0 || count > 255) { regs->eax = -1; break; }
         if (!is_ptr_safe(buf, count * 512)) { regs->eax = -1; break; }
         
         #define ATA_SR  0x1F7
@@ -749,6 +755,31 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         }
         break;
     }
+    case 59:
+        regs->eax = sys_port_io(regs->ebx, 0, 4);
+        break;
+    case 60:
+        regs->eax = sys_port_io(regs->ebx, regs->ecx, 5);
+        break;
+    case 61:
+        regs->eax = (uint32_t)drv_sb16_init();
+        break;
+    case 62: {
+        
+        void    *buf  = (void *)regs->ebx;
+        uint32_t len  = regs->ecx;
+        uint32_t rate = regs->edx & 0xFFFF;
+        uint8_t  ch   = (uint8_t)((regs->edx >> 16) & 0xFF);
+        uint8_t  bits = (uint8_t)((regs->edx >> 24) & 0xFF);
+        if (ch == 0) ch = 1;
+        if (bits == 0) bits = 16;
+        if (!is_ptr_safe(buf, len)) { regs->eax = (uint32_t)-1; break; }
+        regs->eax = (uint32_t)drv_sb16_play(buf, len, rate, ch, bits);
+        break;
+    }
+    case 63:
+        regs->eax = (uint32_t)drv_sb16_ready();
+        break;
     default:
         regs->eax = -1;
         break;

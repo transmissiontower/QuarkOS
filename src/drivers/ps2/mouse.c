@@ -61,6 +61,14 @@ void drv_input_mouse_init()
     mouse_write(0xF6);
     mouse_read();
 
+    
+    mouse_write(0xF3); mouse_read(); mouse_write(200); mouse_read();
+    mouse_write(0xF3); mouse_read(); mouse_write(100); mouse_read();
+    mouse_write(0xF3); mouse_read(); mouse_write(80);  mouse_read();
+    
+    mouse_write(0xF2); mouse_read(); 
+    mouse_read(); 
+
     mouse_write(0xF4);
     mouse_read();
 

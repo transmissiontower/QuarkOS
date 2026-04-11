@@ -12,8 +12,8 @@ GRUB_MKRESCUE = $(shell if which grub2-mkrescue > /dev/null 2>&1; then echo grub
 # ==================================================
 # Flags
 # ==================================================
-CFLAGS = -ffreestanding -Wall -Wextra -O2 -g -m32 -Isrc -MMD -MP
-USER_CFLAGS = -ffreestanding -Wall -Wextra -O2 -m32 -Isrc -MMD -MP
+CFLAGS = -ffreestanding -Wall -Wextra -O2 -g -m32 -Isrc -MMD -MP -fno-stack-protector
+USER_CFLAGS = -ffreestanding -Wall -Wextra -O2 -m32 -Isrc -MMD -MP -fno-stack-protector
 FONT_ATLAS = Asm/boot/font_atlas.bin
 ICONS_BIN = Asm/boot/icons.bin
 WALLPAPER_BIN = Asm/boot/wallpaper.bin
@@ -51,7 +51,8 @@ KERNEL_C = \
 	src/drivers/pcspk.c \
 	src/gfx/bmp.c \
 	src/drivers/rtc.c \
-	src/drivers/acpi.c
+	src/drivers/acpi.c \
+	src/drivers/sb16.c
 
 KERNEL_OBJ = $(KERNEL_C:.c=.o) \
 	src/kernel/process.o \
@@ -67,7 +68,7 @@ USER_LIB_OBJ = \
     src/user/lib/math.o \
     src/user/lib/stdlib.o \
     src/user/lib/path.o \
-    src/user/lib/storage_client.o 
+    src/user/lib/storage_client.o
 
 USER_TEST_OBJ = $(USER_LIB_OBJ) src/user/test.o
 USER_SHELL_OBJ = $(USER_LIB_OBJ) src/user/shell.o
@@ -83,8 +84,8 @@ USER_ELFDEMO_OBJ  = $(USER_LIB_OBJ) src/user/elfdemo.o
 USER_FETCH_OBJ    = $(USER_LIB_OBJ) src/user/fetch.o
 USER_IMGVIEW_OBJ  = $(USER_LIB_OBJ) src/user/imgview.o
 
-
 MUSIC_SPK = Asm/boot/music.spk
+MUSIC_WAV = Asm/boot/music.wav
 MUSIC_SRC := $(wildcard music.flac)
 
 DEPS := $(patsubst %.c,%.d,$(KERNEL_C)) $(patsubst %.c,%.d,$(wildcard src/user/*.c src/user/lib/*.c src/lib/*.c src/kernel/init.c))
@@ -123,17 +124,17 @@ $(ICONS_BIN): tools/icon_baker.py tools/lucide.ttf
 $(WALLPAPER_BIN): tools/wallpaper_baker.py wallpaper.bmp
 	python3 tools/wallpaper_baker.py wallpaper.bmp Asm/boot/wallpaper.bin
 
-Asm/boot/kaori.bmp: kaori.jpeg
-	python3 -c "from PIL import Image; img=Image.open('kaori.jpeg').convert('RGB'); img.thumbnail((400,260)); img.save('Asm/boot/kaori.bmp','BMP')"
+Asm/boot/kaori.bmp:
 
-Asm/boot/terry.bmp: terry.jpg
-	python3 -c "from PIL import Image; img=Image.open('terry.jpg').convert('RGB'); img.thumbnail((400,260)); img.save('Asm/boot/terry.bmp','BMP')"
+Asm/boot/terry.bmp:
 
 src/user/lib/crt0.o: src/user/lib/crt0.s
 	$(AS) -f elf32 $< -o $@
 
+
 src/user/%.o: src/user/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
+
 
 src/kernel/init.o: src/kernel/init.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
@@ -152,7 +153,10 @@ kernel: $(KERNEL_OBJ) linker.ld
 # Userland
 # ==================================================
 $(MUSIC_SPK): music.flac
-	python3 tools/flac_to_spk.py music.flac $(MUSIC_SPK)
+	-python3 tools/flac_to_spk.py music.flac $(MUSIC_SPK)
+
+$(MUSIC_WAV): music.flac
+	ffmpeg -y -i music.flac -ar 44100 -ac 2 -sample_fmt s16 $(MUSIC_WAV)
 
 user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
           $(USER_STORAGE_SERVER_OBJ) $(USER_INPUT_SERVER_OBJ) $(USER_TIME_SERVER_OBJ) \
@@ -214,7 +218,9 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 # ==================================================
 # Image (используем готовое ядро)
 # ==================================================
-image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boot/terry.bmp $(if $(MUSIC_SRC),$(MUSIC_SPK),)
+MUSIC_WAV_EXISTS := $(wildcard $(MUSIC_WAV))
+
+image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boot/terry.bmp $(if $(MUSIC_SRC),$(MUSIC_SPK),) $(if $(MUSIC_SRC),$(MUSIC_WAV),)
 	mkdir -p Asm/boot
 	cp kernel Asm/boot/kernel
 	echo "Hello from fs!" > hello.txt
@@ -232,14 +238,15 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boo
 	mmd -i disk.img ::TEMP
 	$(MCOPY) -i disk.img Asm/boot/test.qex ::APPS/TEST.QEX
 	$(MCOPY) -i disk.img Asm/boot/shell.qex ::APPS/SHELL.QEX
-	$(MCOPY) -i disk.img Asm/boot/notepad.elf ::APPS/NOTEPAD.ELF
+	$(MCOPY) -i disk.img Asm/boot/notepad.qex ::APPS/NOTEPAD.QEX
 	$(MCOPY) -i disk.img Asm/boot/sysinfo.qex ::APPS/SYSINFO.QEX
 	$(MCOPY) -i disk.img Asm/boot/vmap.qex ::APPS/VMAP.QEX
 	$(MCOPY) -i disk.img Asm/boot/comp.qex ::APPS/COMP.QEX
 	$(MCOPY) -i disk.img Asm/boot/elfdemo.elf ::APPS/ELFDEMO.ELF
 	$(MCOPY) -i disk.img Asm/boot/fetch.qex ::APPS/FETCH.QEX
 	$(MCOPY) -i disk.img Asm/boot/imgview.qex ::APPS/IMGVIEW.QEX
-	$(if $(MUSIC_SRC),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYSTEM/DATA/MUSIC.SPK,)
+	$(if $(wildcard $(MUSIC_SPK)),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYSTEM/DATA/MUSIC.SPK,)
+	$(if $(MUSIC_SRC),$(MCOPY) -i disk.img $(MUSIC_WAV) ::USERS/DEFAULT/DESK/MUSIC.WAV,)
 	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYSTEM/DATA/ATL.BIN
 	$(MCOPY) -i disk.img $(ICONS_BIN) ::SYSTEM/DATA/GUI.BIN
 	$(MCOPY) -i disk.img Asm/boot/wallpaper.bin ::SYSTEM/DATA/BG.BIN

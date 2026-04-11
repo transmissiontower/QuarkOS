@@ -703,6 +703,8 @@ static void process_message(message_t *msg)
                 m_mouse.data2 = em->x;
                 m_mouse.data3 = em->y;
                 qk_sys_ipc_send(top->owner_pid, &m_mouse);
+            } else if (e->type == EVENT_MOUSE_SCROLL) {
+                qk_sys_ipc_send(top->owner_pid, msg);
             }
         }
     } else if (msg->type == MSG_WIN_CREATE) {
