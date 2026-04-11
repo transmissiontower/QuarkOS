@@ -105,3 +105,15 @@ void outw(uint16_t port, uint16_t value)
 {
     asm volatile("outw %1, %0" : : "dN"(port), "a"(value));
 }
+
+uint32_t inl(uint16_t port)
+{
+    uint32_t rv;
+    asm volatile("inl %1, %0" : "=a"(rv) : "dN"(port));
+    return rv;
+}
+
+void outl(uint16_t port, uint32_t value)
+{
+    asm volatile("outl %1, %0" : : "dN"(port), "a"(value));
+}

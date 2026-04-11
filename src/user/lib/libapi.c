@@ -111,6 +111,31 @@ void qk_hw_outb(uint16_t p, uint8_t v)
 {
     syscall(21, p, v, 0);
 }
+uint32_t qk_hw_inl(uint16_t p)
+{
+    return (uint32_t)syscall(59, p, 0, 0);
+}
+void qk_hw_outl(uint16_t p, uint32_t v)
+{
+    syscall(60, p, (int)v, 0);
+}
+int qk_sb16_init(void)
+{
+    return syscall(61, 0, 0, 0);
+}
+int qk_sb16_play(const void *buf, uint32_t len, uint32_t rate,
+                 uint8_t channels, uint8_t bits)
+{
+    
+    uint32_t packed = (rate & 0xFFFF)
+                    | ((uint32_t)channels << 16)
+                    | ((uint32_t)bits     << 24);
+    return syscall(62, (int)buf, (int)len, (int)packed);
+}
+int qk_sb16_ready(void)
+{
+    return syscall(63, 0, 0, 0);
+}
 uint16_t qk_inw(uint16_t p)
 {
     return (uint16_t)syscall(22, p, 0, 0);

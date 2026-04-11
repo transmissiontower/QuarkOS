@@ -17,6 +17,7 @@ typedef struct {
     uint8_t button;
     int x;
     int y;
+    int scroll;
 } mouse_event_t;
 
 static int screen_w = 1920;
@@ -24,7 +25,7 @@ static int screen_h = 1080;
 static int mouse_x = 1920 / 2;
 static int mouse_y = 1080 / 2;
 static int mouse_cycle = 0;
-static uint8_t mouse_pkt[3];
+static uint8_t mouse_pkt[4];
 static uint8_t mouse_buttons = 0;
 static mouse_event_t button_queue[BUTTON_QUEUE_CAP];
 static int button_head = 0;
@@ -109,8 +110,9 @@ static void deliver_mouse_event(int comp_pid, mouse_event_t *evt)
     payload->x = evt->x;
     payload->y = evt->y;
     payload->button = evt->button;
+    payload->scroll = evt->scroll;
 
-    qk_sys_ipc_send(comp_pid, &msg);
+    (void)qk_sys_ipc_send(comp_pid, &msg);
 }
 
 static void flush_mouse_events(int comp_pid)
@@ -137,7 +139,17 @@ static void handle_keyboard(int comp_pid, uint8_t scancode)
     ev->type = (scancode & 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
     ev->key = scancode & 0x7F;
 
-    qk_sys_ipc_send(comp_pid, &msg);
+    (void)qk_sys_ipc_send(comp_pid, &msg);
+}
+
+static void queue_scroll_event(int scroll)
+{
+    int next_tail = button_queue_next(button_tail);
+    if (next_tail == button_head)
+        button_head = button_queue_next(button_head);
+    button_queue[button_tail] =
+        (mouse_event_t){.type = EVENT_MOUSE_SCROLL, .button = 0, .x = mouse_x, .y = mouse_y, .scroll = scroll};
+    button_tail = next_tail;
 }
 
 static void handle_mouse_byte(uint8_t data)
@@ -153,8 +165,12 @@ static void handle_mouse_byte(uint8_t data)
         mouse_pkt[1] = data;
         mouse_cycle = 2;
         break;
-    case 2: {
+    case 2:
         mouse_pkt[2] = data;
+        mouse_cycle = 3;
+        break;
+    case 3: {
+        mouse_pkt[3] = data;
         mouse_cycle = 0;
 
         int dx = (int8_t)mouse_pkt[1];
@@ -191,9 +207,27 @@ static void handle_mouse_byte(uint8_t data)
             }
             mouse_buttons = buttons;
         }
+
+        
+        uint8_t raw = mouse_pkt[3] & 0x0F;
+        int scroll = (raw & 0x08) ? (int)raw - 16 : (int)raw;
+        if (scroll != 0)
+            queue_scroll_event(scroll);
+
         break;
     }
     }
+}
+
+static int resolve_compositor_pid(void)
+{
+    int pid;
+    do {
+        pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
+        if (pid <= 0)
+            qk_sleep(100);
+    } while (pid <= 0);
+    return pid;
 }
 
 void main()
@@ -201,12 +235,12 @@ void main()
     init_mouse_state();
     while (qk_hw_inb(PS2_STATUS) & ST_OUTPUT_FULL)
         qk_hw_inb(PS2_DATA);
-    int comp_pid = 0;
-    while (comp_pid <= 0) {
-        comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
-        if (comp_pid <= 0)
-            qk_sleep(100);
-    }
+
+    int comp_pid = resolve_compositor_pid();
+
+    
+    int comp_check_counter = 0;
+
     while (1) {
         uint8_t status = qk_hw_inb(PS2_STATUS);
         if (status & ST_OUTPUT_FULL) {
@@ -217,6 +251,17 @@ void main()
                 handle_keyboard(comp_pid, data);
         } else {
             flush_mouse_events(comp_pid);
+
+            
+            if (++comp_check_counter >= 256) {
+                comp_check_counter = 0;
+                int new_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
+                if (new_pid > 0 && new_pid != comp_pid)
+                    comp_pid = new_pid;
+                else if (new_pid <= 0)
+                    comp_pid = resolve_compositor_pid();
+            }
+
             qk_wait_irq(IRQ_MOUSE);
         }
         flush_mouse_events(comp_pid);

@@ -4,6 +4,7 @@
 #include "arch/x86/multiboot.h"
 #include "drivers/GUI/framebuffer.h"
 #include "drivers/acpi.h"
+#include "drivers/sb16.h"
 #include "drivers/ata.h"
 #include "drivers/ps2/keyboard.h"
 #include "drivers/ps2/mouse.h"
@@ -203,6 +204,10 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info)
     boot_log_add("PS/2 mouse driver ready");
     arch_fpu_enable();
     boot_log_add("FPU extensions enabled");
+    if (drv_sb16_init() == 0)
+        boot_log_add("Audio: SB16 driver ready");
+    else
+        boot_log_add("Audio: SB16 not found (no sound card)");
     boot_log_add("Enabling interrupts");
     asm volatile("sti");
     boot_log_add("Boot complete. Entering idle loop");

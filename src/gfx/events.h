@@ -9,6 +9,7 @@ typedef enum {
     EVENT_MOUSE_MOVE,
     EVENT_MOUSE_DOWN,
     EVENT_MOUSE_UP,
+    EVENT_MOUSE_SCROLL,
     EVENT_KEY_PRESS,
     EVENT_KEY_RELEASE
 } EventType;
@@ -24,6 +25,7 @@ typedef struct {
     int32_t y;
     uint32_t key;
     uint8_t button;
+    int32_t scroll;
 } Event;
 
 void events_init();

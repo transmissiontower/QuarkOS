@@ -36,12 +36,13 @@ static uint32_t data_start_lba;
 static uint8_t *current_file_data = 0;
 static uint32_t current_file_size = 0;
 
-#define SHARED_MAX_PAGES 128   
+#define SHARED_MAX_PAGES 4096
 static uint32_t current_file_pages[SHARED_MAX_PAGES];
 static uint32_t current_file_page_count = 0;
 static uint32_t current_file_page_offset = 0;
 static uint32_t fat_cached_sector = 0xFFFFFFFFu;
 static uint8_t fat_cache_buf[512];
+static int fat_cache_dirty = 0;
 static uint16_t fat_next_free_hint = 2;
 
 typedef struct {
@@ -62,6 +63,147 @@ static void reset_save_session(void)
         free(save_session.buffer);
     }
     memset(&save_session, 0, sizeof(save_session));
+}
+
+#define PCI_ADDR_PORT 0xCF8
+#define PCI_DATA_PORT 0xCFC
+
+#define BM_CMD    0x00
+#define BM_STATUS 0x02
+#define BM_PRDT   0x04
+
+#define BM_CMD_START 0x01
+#define BM_CMD_READ  0x08
+
+#define BM_ST_ERROR 0x02
+#define BM_ST_IRQ   0x04
+
+typedef struct {
+    uint32_t phys_addr;
+    uint16_t byte_count; 
+    uint16_t flags;      
+} __attribute__((packed)) prd_t;
+
+static uint16_t bm_base       = 0;
+static uint8_t *prdt_buf      = 0; 
+static uint32_t prdt_phys     = 0;
+
+static uint32_t pci_read32(uint8_t dev, uint8_t func, uint8_t off)
+{
+    uint32_t addr = (1u << 31) | ((uint32_t)dev << 11) | ((uint32_t)func << 8) | (off & 0xFC);
+    qk_hw_outl(PCI_ADDR_PORT, addr);
+    return qk_hw_inl(PCI_DATA_PORT);
+}
+
+static void pci_write32(uint8_t dev, uint8_t func, uint8_t off, uint32_t val)
+{
+    uint32_t addr = (1u << 31) | ((uint32_t)dev << 11) | ((uint32_t)func << 8) | (off & 0xFC);
+    qk_hw_outl(PCI_ADDR_PORT, addr);
+    qk_hw_outl(PCI_DATA_PORT, val);
+}
+
+static void bm_dma_init(void)
+{
+    for (uint8_t d = 0; d < 32; d++) {
+        uint32_t id = pci_read32(d, 0, 0x00);
+        if ((id & 0xFFFF) == 0xFFFF)
+            continue;
+        uint32_t cc = pci_read32(d, 0, 0x08);
+        uint8_t cls = (cc >> 24) & 0xFF;
+        uint8_t sub = (cc >> 16) & 0xFF;
+        if (cls != 0x01 || sub != 0x01)
+            continue;
+
+        
+        uint32_t cmd = pci_read32(d, 0, 0x04);
+        pci_write32(d, 0, 0x04, cmd | 0x04);
+
+        uint32_t bar4 = pci_read32(d, 0, 0x20);
+        bm_base = (uint16_t)(bar4 & ~0x3u);
+
+        
+        prdt_buf = (uint8_t *)malloc(8192);
+        if (!prdt_buf) { bm_base = 0; return; }
+        
+        for (uint32_t i = 0; i < 8192; i += 4096)
+            ((volatile uint8_t *)prdt_buf)[i] = 0;
+
+        
+        uint32_t aligned_virt = ((uint32_t)prdt_buf + 4095) & ~0xFFFu;
+        uint32_t phys_out[2];
+        if (qk_virt_to_phys_list(aligned_virt, 4096, phys_out) < 1) {
+            free(prdt_buf); prdt_buf = 0; bm_base = 0; return;
+        }
+        prdt_phys = phys_out[0];
+        prdt_buf  = (uint8_t *)aligned_virt; 
+        return;
+    }
+}
+
+static int ata_dma_read_sectors(uint32_t lba, uint32_t count, uint8_t *buffer)
+{
+    if (bm_base == 0 || count == 0 || count > 255)
+        return qk_ata_read_sectors(lba, count, buffer);
+
+    uint32_t total_bytes = count * 512;
+    uint32_t buf_off     = (uint32_t)buffer & 0xFFFu;
+    uint32_t n_pages_max = (buf_off + total_bytes + 4095) / 4096;
+    if (n_pages_max > 64)
+        return qk_ata_read_sectors(lba, count, buffer);
+
+    uint32_t phys_pages[64];
+    int np = qk_virt_to_phys_list((uint32_t)buffer, total_bytes, phys_pages);
+    if (np <= 0)
+        return qk_ata_read_sectors(lba, count, buffer);
+
+    
+    prd_t *prdt = (prd_t *)prdt_buf;
+    uint32_t remaining = total_bytes;
+    for (int i = 0; i < np && remaining > 0; i++) {
+        uint32_t start = phys_pages[i] + (i == 0 ? buf_off : 0u);
+        uint32_t chunk = (i == 0) ? (4096u - buf_off) : 4096u;
+        if (chunk > remaining) chunk = remaining;
+        prdt[i].phys_addr  = start;
+        prdt[i].byte_count = (uint16_t)(chunk & 0xFFFFu); 
+        prdt[i].flags      = 0;
+        remaining -= chunk;
+    }
+    prdt[np - 1].flags = 0x8000; 
+
+    
+    qk_hw_outl(bm_base + BM_PRDT, prdt_phys);
+    qk_hw_outb(bm_base + BM_STATUS, BM_ST_ERROR | BM_ST_IRQ); 
+    qk_hw_outb(bm_base + BM_CMD, BM_CMD_READ);                
+
+    
+    for (int t = 0; t < 100000; t++) { if (!(qk_hw_inb(ATA_STATUS) & ATA_STATUS_BSY)) break; }
+    qk_hw_outb(ATA_DRIVE_HEAD, 0xE0 | ((lba >> 24) & 0x0F));
+    qk_hw_outb(ATA_ERROR, 0x00);
+    qk_hw_outb(ATA_SECTOR_CNT, (uint8_t)count);
+    qk_hw_outb(ATA_LBA_LO, (uint8_t)(lba));
+    qk_hw_outb(ATA_LBA_MID, (uint8_t)(lba >> 8));
+    qk_hw_outb(ATA_LBA_HI, (uint8_t)(lba >> 16));
+    qk_hw_outb(ATA_COMMAND, 0xC8); 
+
+    
+    qk_hw_outb(bm_base + BM_CMD, BM_CMD_READ | BM_CMD_START);
+
+    
+    int ok = 1;
+    for (uint32_t i = 0; i < 2000000u; i++) {
+        uint8_t st = qk_hw_inb(bm_base + BM_STATUS);
+        if (st & BM_ST_ERROR) { ok = 0; break; }
+        if (st & BM_ST_IRQ)   break;
+    }
+
+    
+    qk_hw_outb(bm_base + BM_CMD, 0x00);
+    qk_hw_outb(bm_base + BM_STATUS, BM_ST_ERROR | BM_ST_IRQ);
+    qk_hw_inb(ATA_STATUS); 
+
+    if (!ok)
+        return qk_ata_read_sectors(lba, count, buffer); 
+    return 0;
 }
 
 static int ata_error = 0;
@@ -118,6 +260,33 @@ int drv_stor_ata_write(uint32_t lba, uint8_t *buffer)
     return 0;
 }
 
+static int drv_stor_ata_write_sectors(uint32_t lba, uint8_t count, const uint8_t *buffer)
+{
+    if (count == 0)
+        return 0;
+    ata_error = 0;
+    ata_wait_bsy();
+    if (ata_error)
+        return -1;
+    qk_hw_outb(ATA_DRIVE_HEAD, 0xE0 | ((lba >> 24) & 0x0F));
+    qk_hw_outb(ATA_ERROR, 0x00);
+    qk_hw_outb(ATA_SECTOR_CNT, count);
+    qk_hw_outb(ATA_LBA_LO, (uint8_t)(lba & 0xFF));
+    qk_hw_outb(ATA_LBA_MID, (uint8_t)((lba >> 8) & 0xFF));
+    qk_hw_outb(ATA_LBA_HI, (uint8_t)((lba >> 16) & 0xFF));
+    qk_hw_outb(ATA_COMMAND, ATA_CMD_WRITE_PIO);
+    for (int s = 0; s < count; s++) {
+        ata_wait_bsy();
+        ata_wait_drq();
+        if (ata_error)
+            return -1;
+        const uint16_t *src = (const uint16_t *)(buffer + s * 512);
+        for (int i = 0; i < 256; i++)
+            qk_outw(ATA_DATA, src[i]);
+    }
+    return 0;
+}
+
 void to_fat_name(const char *src, char *dest)
 {
     memset(dest, ' ', 11);
@@ -146,9 +315,18 @@ void to_fat_name(const char *src, char *dest)
     }
 }
 
+static void fat_cache_flush(void)
+{
+    if (fat_cache_dirty && fat_cached_sector != 0xFFFFFFFFu) {
+        drv_stor_ata_write(fat_cached_sector, fat_cache_buf);
+        fat_cache_dirty = 0;
+    }
+}
+
 static void fat_cache_load(uint32_t sector)
 {
     if (fat_cached_sector != sector) {
+        fat_cache_flush();
         drv_stor_ata_read(sector, fat_cache_buf);
         fat_cached_sector = sector;
     }
@@ -195,8 +373,8 @@ uint8_t *fat_read_file_server(uint16_t cluster, uint32_t size)
         
         uint8_t *rptr = ptr;
         while (sectors > 0) {
-            uint32_t batch = (sectors > 128) ? 128 : sectors;
-            qk_ata_read_sectors(lba, batch, rptr);
+            uint32_t batch = (sectors > 255) ? 255 : sectors;
+            ata_dma_read_sectors(lba, batch, rptr);
             lba    += batch;
             rptr   += batch * 512;
             sectors -= batch;
@@ -223,7 +401,7 @@ static int fat_find_entry_in_dir(uint16_t dir_cluster, const char *fat_name,
     uint32_t scnt = (dir_cluster == 0) ? root_sectors : fat.sectors_per_cluster;
     if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
     
-    qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
+    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
     for (uint32_t i = 0; i < total_entries; i++) {
@@ -288,7 +466,7 @@ static void fat_set_entry(uint16_t cluster, uint16_t value)
     fat_cache_load(sector);
     uint32_t offset = (cluster * 2) % fat.bytes_per_sector;
     *(uint16_t *)&fat_cache_buf[offset] = value;
-    drv_stor_ata_write(sector, fat_cache_buf);
+    fat_cache_dirty = 1;
 }
 
 static uint16_t fat_find_free_cluster(void)
@@ -325,6 +503,7 @@ static void fat_free_chain(uint16_t start_cluster)
             fat_next_free_hint = cur;
         cur = next;
     }
+    fat_cache_flush();
 }
 
 static int fat_allocate_chain(uint32_t size, uint16_t *out_first_cluster)
@@ -350,17 +529,25 @@ static int fat_allocate_chain(uint32_t size, uint16_t *out_first_cluster)
         prev = cluster;
     }
     fat_set_entry(prev, 0xFFFF);
+    fat_cache_flush();
     *out_first_cluster = first;
     return 0;
 }
 
 static void fat_zero_cluster(uint16_t cluster)
 {
-    uint8_t buf[512];
-    memset(buf, 0, sizeof(buf));
     uint32_t lba = cluster_to_lba(cluster);
-    for (int i = 0; i < fat.sectors_per_cluster; i++) {
-        drv_stor_ata_write(lba + i, buf);
+    uint32_t spc = fat.sectors_per_cluster;
+    uint8_t *buf = malloc(spc * 512);
+    if (buf) {
+        memset(buf, 0, spc * 512);
+        drv_stor_ata_write_sectors(lba, (uint8_t)spc, buf);
+        free(buf);
+    } else {
+        uint8_t zero[512];
+        memset(zero, 0, sizeof(zero));
+        for (uint32_t i = 0; i < spc; i++)
+            drv_stor_ata_write(lba + i, zero);
     }
 }
 
@@ -368,36 +555,33 @@ static void fat_write_chain(uint16_t start_cluster, const uint8_t *data, uint32_
 {
     if (start_cluster < 2)
         return;
-    uint32_t bytes_per_sector = fat.bytes_per_sector;
-    uint8_t buf[512];
+    uint32_t bytes_per_cluster = fat.bytes_per_cluster;
+    uint32_t spc = fat.sectors_per_cluster;
+    uint8_t *cbuf = malloc(bytes_per_cluster);
+    if (!cbuf)
+        return;
     uint16_t cur = start_cluster;
     uint32_t remaining = size;
     while (cur >= 2 && cur < 0xFFF8) {
         uint32_t lba = cluster_to_lba(cur);
-        for (int s = 0; s < fat.sectors_per_cluster; s++) {
-            uint32_t to_copy = (remaining > bytes_per_sector) ? bytes_per_sector : remaining;
-            if (to_copy > 0 && data)
-                memcpy(buf, data, to_copy);
-            if (to_copy < bytes_per_sector)
-                memset(buf + to_copy, 0, bytes_per_sector - to_copy);
-            drv_stor_ata_write(lba + s, buf);
-            if (remaining <= bytes_per_sector) {
-                remaining = 0;
-                for (int rest = s + 1; rest < fat.sectors_per_cluster; rest++) {
-                    memset(buf, 0, bytes_per_sector);
-                    drv_stor_ata_write(lba + rest, buf);
-                }
-                break;
-            } else {
-                remaining -= bytes_per_sector;
-                if (data)
-                    data += bytes_per_sector;
-            }
+        uint32_t to_copy = (remaining > bytes_per_cluster) ? bytes_per_cluster : remaining;
+        if (to_copy > 0 && data)
+            memcpy(cbuf, data, to_copy);
+        if (to_copy < bytes_per_cluster)
+            memset(cbuf + to_copy, 0, bytes_per_cluster - to_copy);
+        drv_stor_ata_write_sectors(lba, (uint8_t)spc, cbuf);
+        if (remaining <= bytes_per_cluster) {
+            remaining = 0;
+        } else {
+            remaining -= bytes_per_cluster;
+            if (data)
+                data += bytes_per_cluster;
         }
         if (remaining == 0)
             break;
         cur = fat_get_entry(cur);
     }
+    free(cbuf);
 }
 
 static uint32_t dir_first_lba(uint16_t dir_cluster)
@@ -417,7 +601,7 @@ static int fat_lookup_entry_with_location(uint16_t dir_cluster, const char *fat_
     uint32_t lba = dir_first_lba(dir_cluster);
     uint32_t scnt = dir_sector_count(dir_cluster);
     if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
-    qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
+    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
     for (uint32_t i = 0; i < total_entries; i++) {
@@ -444,7 +628,7 @@ static int fat_find_free_entry_slot(uint16_t dir_cluster, uint32_t *out_lba, int
     uint32_t lba = dir_first_lba(dir_cluster);
     uint32_t scnt = dir_sector_count(dir_cluster);
     if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
-    qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
+    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
     for (uint32_t i = 0; i < total_entries; i++) {
@@ -582,6 +766,8 @@ void main()
     root_sectors = (fat.dir_entry_count * 32 + 511) / 512;
     data_start_lba = root_dir_lba + root_sectors;
 
+    bm_dma_init();
+
     message_t msg;
     while (1) {
         qk_ipc_recv(&msg);
@@ -617,23 +803,40 @@ void main()
             r.type  = found ? MSG_FILE_SIZE : MSG_ERROR;
             r.data1 = current_file_size;
             
-            if (found && current_file_data && current_file_size > 0) {
-                uint32_t needed_pages =
-                    ((uint32_t)current_file_data & 0xFFF) + current_file_size + 4095;
-                needed_pages /= 4096;
-                if (needed_pages <= SHARED_MAX_PAGES) {
-                    int cnt = qk_virt_to_phys_list((uint32_t)current_file_data,
-                                                   current_file_size,
-                                                   current_file_pages);
-                    if (cnt > 0) {
-                        current_file_page_count  = (uint32_t)cnt;
-                        current_file_page_offset = (uint32_t)current_file_data & 0xFFF;
-                        r.data2 = current_file_page_count;
-                        r.data3 = current_file_page_offset;
-                        memcpy(r.payload, current_file_pages,
-                               current_file_page_count * sizeof(uint32_t));
-                    }
+            
+            uint32_t pages_needed = (current_file_size + 4095) / 4096;
+            if (found && current_file_data && current_file_size > 0
+                    && pages_needed <= SHARED_MAX_PAGES) {
+                int cnt = qk_virt_to_phys_list((uint32_t)current_file_data,
+                                               current_file_size,
+                                               current_file_pages);
+                if (cnt > 0 && cnt <= SHARED_MAX_PAGES) {
+                    current_file_page_count  = (uint32_t)cnt;
+                    current_file_page_offset = (uint32_t)current_file_data & 0xFFF;
+                    r.data2 = current_file_page_count;
+                    r.data3 = current_file_page_offset;
+                    
+                    uint32_t first_batch = current_file_page_count < 128
+                                          ? current_file_page_count : 128;
+                    memcpy(r.payload, current_file_pages,
+                           first_batch * sizeof(uint32_t));
                 }
+            }
+            qk_sys_ipc_send(msg.sender_pid, &r);
+        } else if (msg.type == MSG_FILE_GET_PAGES) {
+            
+            message_t r;
+            memset(&r, 0, sizeof(r));
+            uint32_t pg_off = msg.data1;
+            if (pg_off < current_file_page_count) {
+                uint32_t avail = current_file_page_count - pg_off;
+                uint32_t send  = avail < 128 ? avail : 128;
+                memcpy(r.payload, current_file_pages + pg_off,
+                       send * sizeof(uint32_t));
+                r.type  = MSG_FILE_SIZE;   
+                r.data1 = send;
+            } else {
+                r.type  = MSG_ERROR;
             }
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_REQ_DATA) {
@@ -657,7 +860,7 @@ void main()
                                : (data_start_lba + (cluster - 2) * fat.sectors_per_cluster);
             uint32_t scnt = (cluster == 0) ? root_sectors : fat.sectors_per_cluster;
             if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
-            qk_ata_read_sectors(lba, scnt, dir_bulk_buf);
+            ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
             message_t r = {.type = MSG_DIR_REPLY};
             int lp = 0;
             char lb[128];

@@ -13,6 +13,8 @@ char inb(uint16_t port);
 int memcmp(const void *s1, const void *s2, uint32_t n);
 uint16_t inw(uint16_t port);
 void outw(uint16_t port, uint16_t value);
+uint32_t inl(uint16_t port);
+void outl(uint16_t port, uint32_t value);
 uint32_t blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha);
 uint32_t isqrt64(uint64_t n);
 

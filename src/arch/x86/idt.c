@@ -197,10 +197,9 @@ void arch_isr_dispatcher(struct InterruptRegisters *regs)
         clear_screen(COLOR_RED);
         string_draw(50, 50, exception_messages[regs->int_no], COLOR_WHITE, COLOR_RED);
         string_draw(50, 70, "System Halted!", COLOR_WHITE, COLOR_RED);
+        string_draw(50, 90, "Press R to reboot", COLOR_WHITE, COLOR_RED);
         drv_fb_swap_buffers();
-        asm volatile("cli");
-        for (;;)
-            ;
+        crash_wait_for_reboot();
     }
 }
 
@@ -213,6 +212,9 @@ void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r))
 
 void irq_uninstall_handler(int irq)
 {
+    
+    if (irq == 1 || irq == 12)
+        return;
     irq_routines[irq] = 0;
 }
 

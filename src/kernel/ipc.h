@@ -32,6 +32,7 @@ typedef struct {
 #define MSG_FILE_SAVE_END 310
 #define MSG_FILE_READ 311
 #define MSG_FILE_PEEK 312
+#define MSG_FILE_GET_PAGES 313  
 
 #define MSG_WIN_SET_PIXEL 55
 #define MSG_WIN_DRAW_LINE 56
@@ -43,11 +44,13 @@ typedef struct {
 #define MSG_WIN_BLIT_PIXELS 62
 #define MSG_WIN_MAP_BUFFER  63  
 #define MSG_WIN_BUFFER_INFO 64  
-#define MSG_WIN_DIRTY       65  
+#define MSG_WIN_DIRTY       65
+#define MSG_WIN_RESIZED     66  
 #define MSG_COMPOSITOR_SUSPEND 70
 #define MSG_COMPOSITOR_RESUME  71
 #define MSG_INPUT_REDIRECT     72  
-#define MSG_INPUT_RESTORE      73  
+#define MSG_INPUT_RESTORE      73
+#define MSG_WAV_PLAY           400 
 
 #define IPC_QUEUE_SIZE 128
 

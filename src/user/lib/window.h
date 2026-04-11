@@ -40,6 +40,7 @@ typedef struct Window {
     uint32_t text_color;
     int scroll_y;
     int max_scroll_y;
+    bool user_scrolled;
 
     uint32_t *gfx_buffer;
 
