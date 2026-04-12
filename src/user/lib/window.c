@@ -454,7 +454,7 @@ static void draw_window_content(gfx_context_t *ctx, Window *win)
         int max_y = win->h - TITLE_BAR_HEIGHT - 10;
         int max_x = win->w - 20;
 
-        char *str = win->text_buffer;
+        const uint8_t *str = (const uint8_t *)win->text_buffer;
         int line_y = 0;
         int current_x = 0;
 
@@ -462,14 +462,17 @@ static void draw_window_content(gfx_context_t *ctx, Window *win)
             if (*str == '\n') {
                 line_y += char_h;
                 current_x = 0;
+                str++;
             } else {
-                current_x += get_char_width(*str);
+                uint32_t cp;
+                int n = utf8_decode(str, &cp);
+                current_x += get_codepoint_width(cp);
                 if (current_x > max_x) {
                     line_y += char_h;
                     current_x = 0;
                 }
+                str += n;
             }
-            str++;
         }
 
         int total_content_h = line_y + char_h;
@@ -484,17 +487,19 @@ static void draw_window_content(gfx_context_t *ctx, Window *win)
 
         int start_y = win->y + TITLE_BAR_HEIGHT + WIN_CONTENT_GAP + margin;
 
-        str = win->text_buffer;
+        const uint8_t *strp = (const uint8_t *)win->text_buffer;
         current_x = win->x + 4;
         line_y = 0;
 
-        while (*str) {
-            char c = *str;
-            if (c == '\n') {
+        while (*strp) {
+            if (*strp == '\n') {
                 line_y += char_h;
                 current_x = win->x + 4;
+                strp++;
             } else {
-                int cw = get_char_width(c);
+                uint32_t cp;
+                int n = utf8_decode(strp, &cp);
+                int cw = get_codepoint_width(cp);
                 if (current_x + cw > win->x + max_x) {
                     line_y += char_h;
                     current_x = win->x + 4;
@@ -502,11 +507,11 @@ static void draw_window_content(gfx_context_t *ctx, Window *win)
 
                 int cy = start_y + line_y - win->scroll_y;
                 if (cy >= start_y && cy + char_h <= win->y + win->h - 4) {
-                    draw_char_vector(ctx, current_x, cy, c, win->text_color);
+                    draw_codepoint_vector(ctx, current_x, cy, cp, win->text_color);
                 }
                 current_x += cw;
+                strp += n;
             }
-            str++;
         }
 
         if (win->max_scroll_y > 0) {
@@ -549,9 +554,9 @@ void draw_window_head(gfx_context_t *ctx, Window *win, bool active)
 
     int bx = win->x + win->w - 24;
     int by = win->y + 10;
-    draw_icon(ctx, gui_icons, bx, by - 3, ICON_CLOSE, COLOR_WHITE);
-    draw_icon(ctx, gui_icons, bx - 20, by - 3, ICON_UP, COLOR_WHITE);
-    draw_icon(ctx, gui_icons, bx - 40, by - 3, ICON_DOWN, COLOR_WHITE);
+    draw_icon_sized(ctx, gui_icons, bx, by - 3, ICON_CLOSE, COLOR_WHITE, 18);
+    draw_icon_sized(ctx, gui_icons, bx - 20, by - 3, ICON_UP, COLOR_WHITE, 18);
+    draw_icon_sized(ctx, gui_icons, bx - 40, by - 3, ICON_DOWN, COLOR_WHITE, 18);
 }
 
 void draw_windows(gfx_context_t *ctx)

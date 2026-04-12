@@ -413,17 +413,67 @@ int main(void)
     msg.data2 = WIN_H;
     strncpy((char *)msg.payload, "Notepad", 63);
     qk_sys_ipc_send(comp_pid, &msg);
-    while (1) { qk_ipc_recv(&msg); if (msg.type == MSG_WIN_CREATED) break; }
+    while (1) {
+        qk_ipc_recv(&msg);
+        if (msg.type == MSG_WIN_CREATED) break;
+        
+        if (msg.type == MSG_FILE_OPEN && msg.payload[0] != '\0')
+            strncpy(tfile, (char *)msg.payload, 63);
+    }
     win_id = (int)msg.data1;
 
-    
     gfx = (uint32_t *)qk_win_map_buffer(comp_pid, win_id, &gfx_w, &gfx_h);
 
     
+    {
+        message_t probe;
+        while (qk_ipc_recv_nb(&probe) == 0) {
+            if (probe.type == MSG_FILE_OPEN && probe.payload[0] != '\0') {
+                strncpy(tfile, (char *)probe.payload, 63);
+                tfile[63] = 0;
+                break;
+            }
+        }
+    }
+
+    
     memset(tbuf, 0, BUF_SIZE);
-    const char *init = "# Welcome to Notepad\n# Ctrl+S: Save   New button: clear buffer\n\n";
-    strncpy(tbuf, init, BUF_SIZE-1);
-    tcursor = strlen(tbuf);
+    if (tfile[0] == '/') {
+        message_t req, resp;
+        memset(&req, 0, sizeof(req));
+        req.type  = MSG_FILE_OPEN;
+        req.data1 = 0xFFFF;
+        strncpy((char *)req.payload, tfile, sizeof(req.payload) - 1);
+        qk_sys_ipc_send(storage_pid, &req);
+        while (1) { qk_ipc_recv(&resp); if (resp.sender_pid == storage_pid) break; }
+
+        if (resp.type == MSG_FILE_SIZE && resp.data1 > 0) {
+            uint32_t size = resp.data1;
+            if (size > (uint32_t)(BUF_SIZE - 1)) size = (uint32_t)(BUF_SIZE - 1);
+            uint32_t off = 0;
+            while (off < size) {
+                memset(&req, 0, sizeof(req));
+                req.type  = MSG_REQ_DATA;
+                req.data1 = off;
+                req.data2 = (uint32_t)sizeof(resp.payload);
+                qk_sys_ipc_send(storage_pid, &req);
+                while (1) { qk_ipc_recv(&resp); if (resp.sender_pid == storage_pid && resp.type == MSG_FILE_DATA) break; }
+                uint32_t got = resp.data1;
+                if (got == 0) break;
+                if (off + got > size) got = size - off;
+                memcpy(tbuf + off, resp.payload, got);
+                off += got;
+            }
+            tbuf[off] = 0;
+            tcursor = (int)off;
+        }
+        
+    } else {
+        const char *init = "# Welcome to Notepad\n# Ctrl+S: Save   New button: clear buffer\n\n";
+        strncpy(tbuf, init, BUF_SIZE - 1);
+        tcursor = slen(tbuf);
+        strncpy(tfile, "untitled.txt", 63);
+    }
 
     render();
 

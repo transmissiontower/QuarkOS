@@ -73,6 +73,9 @@ void k_scheduler_init()
     kernel_proc->wake_up_time = 0;
     kernel_proc->ipc_wait_from = -1;
     kernel_proc->ipc_reply_ready = 0;
+    kernel_proc->exit_code = 0;
+    kernel_proc->waitpid_target = -1;
+    kernel_proc->env[0] = 0;
     strncpy(kernel_proc->name, "kernel", 15);
     kernel_proc->name[15] = 0;
 
@@ -97,6 +100,10 @@ void k_scheduler_update_sleeps()
         }
         curr = curr->next;
     } while (curr != ready_queue);
+
+    
+    void sys_alarm_tick(uint64_t now_ms);
+    sys_alarm_tick(now);
 }
 
 void k_scheduler_yield()
@@ -198,6 +205,13 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size)
     proc->wake_up_time = 0;
     proc->ipc_wait_from = -1;
     proc->ipc_reply_ready = 0;
+    proc->exit_code = 0;
+    proc->waitpid_target = -1;
+    
+    if (current_process)
+        memcpy(proc->env, current_process->env, 256);
+    else
+        proc->env[0] = 0;
     proc->name[0] = 0;
     proc->heap_end = 0;
     proc->image_base = 0;
@@ -331,6 +345,19 @@ void k_proc_terminate(int pid)
         if (curr->pid == pid) {
             void k_notify_server_proc_exit(int pid);
             k_notify_server_proc_exit(pid);
+
+            
+            {
+                process_t *scanner = ready_queue;
+                do {
+                    if (scanner->waitpid_target == pid) {
+                        scanner->ipc_reply_slot.data1 = (uint32_t)curr->exit_code;
+                        scanner->waitpid_target = -1;
+                        scanner->state = PROCESS_READY;
+                    }
+                    scanner = scanner->next;
+                } while (scanner != ready_queue);
+            }
 
             prev->next = curr->next;
 

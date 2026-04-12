@@ -12,6 +12,7 @@
 #define BOOT_LOG_DEFAULT_DELTA_US 150000
 
 typedef struct {
+    uint32_t codepoint;
     uint16_t x, y, w, h;
     int16_t advance, off_x, off_y;
 } __attribute__((packed)) K_GlyphInfo;
@@ -609,15 +610,42 @@ static void k_font_init(void *data)
         (uint32_t *)((uint8_t *)k_boot_font.glyphs + k_boot_font.count * sizeof(K_GlyphInfo));
 }
 
+static K_GlyphInfo *k_glyph_find(uint32_t cp)
+{
+    int lo = 0, hi = (int)k_boot_font.count - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        uint32_t mcp = k_boot_font.glyphs[mid].codepoint;
+        if (mcp == cp) return &k_boot_font.glyphs[mid];
+        if (mcp < cp)  lo = mid + 1;
+        else           hi = mid - 1;
+    }
+    return 0;
+}
+
 static int k_draw_string_atlas(int x, int y, const char *str, uint32_t color)
 {
     if (!k_font_virt_addr)
         return x;
     while (*str) {
-        char c = *str++;
-        if (c < 32 || c > 126)
-            continue;
-        K_GlyphInfo *g = &k_boot_font.glyphs[c - 32];
+        uint8_t b = (uint8_t)*str;
+        uint32_t cp;
+        int n = 1;
+        if (b < 0x80) {
+            cp = b;
+        } else if ((b & 0xE0) == 0xC0) {
+            cp = ((uint32_t)(b & 0x1F) << 6) | ((uint8_t)str[1] & 0x3F);
+            n = 2;
+        } else if ((b & 0xF0) == 0xE0) {
+            cp = ((uint32_t)(b & 0x0F) << 12) | ((uint32_t)((uint8_t)str[1] & 0x3F) << 6) | ((uint8_t)str[2] & 0x3F);
+            n = 3;
+        } else {
+            cp = '?'; n = 1;
+        }
+        str += n;
+        K_GlyphInfo *g = k_glyph_find(cp);
+        if (!g) { x += k_boot_font.line_height / 2; continue; }
+        if (g->w == 0) { x += g->advance; continue; }
         for (int iy = 0; iy < (int)g->h; iy++) {
             for (int ix = 0; ix < (int)g->w; ix++) {
                 uint32_t px = k_boot_font.bitmap[(g->y + iy) * k_boot_font.tex_width + (g->x + ix)];

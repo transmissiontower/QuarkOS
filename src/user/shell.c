@@ -80,26 +80,53 @@ static const char *cmd_arg_ptr(const char *input, const char *primary, const cha
     return 0;
 }
 
-char scancode_to_char(uint8_t code)
+#define KEY_MOD_SHIFT 0x01
+#define KEY_MOD_CTRL  0x02
+#define KEY_MOD_ALT   0x04
+#define KEY_MOD_CAPS  0x08
+
+char scancode_to_char(uint8_t code, uint32_t mods)
 {
-    const char *row1 = "1234567890-=";
-    const char *row2 = "qwertyuiop[]";
-    const char *row3 = "asdfghjkl;'`";
-    const char *row4 = "zxcvbnm,./";
+    bool shifted = (mods & KEY_MOD_SHIFT) != 0;
+    bool caps    = (mods & KEY_MOD_CAPS)  != 0;
+
+    
+    const char *row1    = "1234567890-=";
+    const char *row1_sh = "!@#$%^&*()_+";
+    const char *row2    = "qwertyuiop[]";
+    const char *row2_sh = "QWERTYUIOP{}";
+    const char *row3    = "asdfghjkl;'`";
+    const char *row3_sh = "ASDFGHJKL:\"~";
+    const char *row4    = "zxcvbnm,./";
+    const char *row4_sh = "ZXCVBNM<>?";
+
     if (code >= 0x02 && code <= 0x0D)
-        return row1[code - 0x02];
-    if (code >= 0x10 && code <= 0x1B)
-        return row2[code - 0x10];
-    if (code >= 0x1E && code <= 0x29)
-        return row3[code - 0x1E];
-    if (code >= 0x2C && code <= 0x35)
-        return row4[code - 0x2C];
-    if (code == 0x39)
-        return ' ';
-    if (code == 0x1C)
-        return '\n';
-    if (code == 0x0E)
-        return '\b';
+        return shifted ? row1_sh[code - 0x02] : row1[code - 0x02];
+
+    if (code >= 0x10 && code <= 0x1B) {
+        bool upper = shifted ^ caps;
+        return upper ? row2_sh[code - 0x10] : row2[code - 0x10];
+    }
+    if (code >= 0x1E && code <= 0x29) {
+        
+        if (code <= 0x26) { 
+            bool upper = shifted ^ caps;
+            return upper ? row3_sh[code - 0x1E] : row3[code - 0x1E];
+        }
+        return shifted ? row3_sh[code - 0x1E] : row3[code - 0x1E];
+    }
+    if (code >= 0x2C && code <= 0x35) {
+        if (code <= 0x32) { 
+            bool upper = shifted ^ caps;
+            return upper ? row4_sh[code - 0x2C] : row4[code - 0x2C];
+        }
+        return shifted ? row4_sh[code - 0x2C] : row4[code - 0x2C];
+    }
+    if (code == 0x39) return ' ';
+    if (code == 0x1C) return '\n';
+    if (code == 0x0E) return '\b';
+    if (code == 0x0F) return '\t';
+    if (code == 0x35) return shifted ? '?' : '/';
     return 0;
 }
 
@@ -424,13 +451,15 @@ static int shell_read_line_blocking(char *out, int max_len, uint8_t *special_sca
         qk_ipc_recv(&msg);
         if (msg.type != MSG_KEY_EVENT)
             continue;
-        uint8_t scancode = (uint8_t)msg.data1;
-        if (scancode == 0xE0) {
+        uint32_t raw = msg.data1;
+        uint8_t is_release = (raw & 0x80) != 0;
+        uint8_t code = (uint8_t)(raw & 0x7F);
+        int extended = (raw & 0x100) != 0;
+        
+        if (!extended && code == 0x00) {
             awaiting_extended = 1;
             continue;
         }
-        uint8_t is_release = scancode & 0x80;
-        uint8_t code = scancode & 0x7F;
         if (is_release) {
             if (code == SCANCODE_CTRL)
                 ctrl_down = 0;
@@ -460,7 +489,7 @@ static int shell_read_line_blocking(char *out, int max_len, uint8_t *special_sca
                 *special_scancode = SPECIAL_CTRL_C;
             return 2;
         }
-        char c = scancode_to_char(code);
+        char c = scancode_to_char(code, msg.data2);
         if (c == '\n') {
             shell_print("\n");
             out[ptr] = 0;
@@ -1076,6 +1105,11 @@ int main()
     shell_cd("/USERS/DEFAULT");
     qk_set_proc_name(-1, "shell");
 
+    
+    qk_setenv("HOME=/USERS/DEFAULT");
+    qk_setenv("PATH=/APPS");
+    qk_setenv("SHELL=shell");
+
     shell_print("QuarkOS Shell Ready\nType 'guide'.\n\n");
     shell_show_prompt();
 
@@ -1088,10 +1122,12 @@ int main()
         qk_ipc_recv(&input_msg);
 
         if (input_msg.type == MSG_KEY_EVENT) {
-            uint8_t scancode = (uint8_t)input_msg.data1;
-            if (scancode & 0x80)
+            uint32_t raw = input_msg.data1;
+            if (raw & 0x80)   
                 continue;
-            char c = scancode_to_char(scancode);
+            uint8_t scancode = (uint8_t)(raw & 0x7F);
+            uint32_t mods    = input_msg.data2;
+            char c = scancode_to_char(scancode, mods);
             if (c == '\n') {
                 shell_print("\n");
                 const char *arg = 0;
@@ -1100,7 +1136,18 @@ int main()
                     shell_print(
                         "Apps: notepad [file], imgview [file], sysinfo, quill [file], exec [path]\n");
                     shell_print("Audio: beep [freq] [ms]\n");
-                    shell_print("Debug: uptime, procs, kill [id], sysgraph, memscope, pf, kp\n");
+                    shell_print("Debug: uptime, procs, kill [-sig] [id], sysgraph, memscope, pf, kp\n");
+                    shell_print("Env:   setenv KEY=VALUE, getenv KEY, env\n");
+                    shell_print("Apps:  clock, filemgr\n");
+                } else if (cmd_is(cmd_buffer, "utest", 0)) {
+                    shell_print("--- UTF-8 Render Test ---\n");
+                    shell_print("Symbols:  \xe2\x9c\xb0 \xe2\x98\x85 \xe2\x98\x86 \xc2\xa9 \xc2\xae \xc2\xb0 \xe2\x82\xac \xc2\xa3 \xc2\xbd\n");
+                    shell_print("Arrows:   \xe2\x86\x90 \xe2\x86\x92 \xe2\x86\x91 \xe2\x86\x93\n");
+                    shell_print("Greek:    \xce\xb1 \xce\xb2 \xce\xb3 \xce\xb4 \xce\xb5 \xcf\x80 \xce\xa9\n");
+                    shell_print("Box:      \xe2\x94\x8c\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x90\n");
+                    shell_print("          \xe2\x94\x82 box \xe2\x94\x82\n");
+                    shell_print("          \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x98\x98\n");
+                    shell_print("Shift:    ! @ # $ % ^ & * ( ) _ + { } | : \" ~\n");
                 } else if (cmd_is(cmd_buffer, "purge", "clear"))
                     shell_clear();
                 else if (cmd_is(cmd_buffer, "ls", "glimpse"))
@@ -1125,6 +1172,10 @@ int main()
                     shell_print(" ms\n");
                 } else if (cmd_is(cmd_buffer, "procs", 0))
                     shell_procs();
+                else if (cmd_is(cmd_buffer, "clock", 0))
+                    shell_spawn_app("/APPS/CLOCK.QEX", 0);
+                else if (cmd_is(cmd_buffer, "filemgr", 0))
+                    shell_spawn_app("/APPS/FILEMGR.QEX", 0);
                 else if (cmd_is(cmd_buffer, "notepad", 0))
                     shell_spawn_app("/APPS/NOTEPAD.QEX", 0);
                 else if ((arg = cmd_arg_ptr(cmd_buffer, "notepad", 0)) != 0)
@@ -1188,15 +1239,45 @@ int main()
                     shell_exec(0);
                 else if ((arg = cmd_arg_ptr(cmd_buffer, "quartz", "hex")) != 0)
                     shell_hex(arg);
-                else if ((arg = cmd_arg_ptr(cmd_buffer, "kill", 0)) != 0) {
+                else if ((arg = cmd_arg_ptr(cmd_buffer, "setenv", 0)) != 0) {
+                    if (qk_setenv(arg) == 0)
+                        shell_print("setenv: ok.\n");
+                    else
+                        shell_print("setenv: failed (use KEY=VALUE format).\n");
+                } else if ((arg = cmd_arg_ptr(cmd_buffer, "getenv", 0)) != 0) {
+                    char val[128];
+                    if (qk_getenv(arg, val, sizeof(val)) == 0) {
+                        shell_print(arg);
+                        shell_print("=");
+                        shell_print(val);
+                        shell_print("\n");
+                    } else {
+                        shell_print("getenv: not set.\n");
+                    }
+                } else if (cmd_is(cmd_buffer, "env", 0)) {
+                    
+                    char all[256];
+                    if (qk_getenv("HOME", all, sizeof(all)) == 0) { shell_print("HOME="); shell_print(all); shell_print("\n"); }
+                    if (qk_getenv("PATH", all, sizeof(all)) == 0) { shell_print("PATH="); shell_print(all); shell_print("\n"); }
+                    if (qk_getenv("SHELL", all, sizeof(all)) == 0) { shell_print("SHELL="); shell_print(all); shell_print("\n"); }
+                } else if ((arg = cmd_arg_ptr(cmd_buffer, "kill", 0)) != 0) {
                     int pid = 0;
+                    int signum = 9; 
                     const char *p = arg;
+                    
+                    if (*p == '-') {
+                        p++;
+                        int s = 0;
+                        while (*p >= '0' && *p <= '9') { s = s * 10 + (*p - '0'); p++; }
+                        while (*p == ' ') p++;
+                        signum = s;
+                    }
                     while (*p >= '0' && *p <= '9') {
                         pid = pid * 10 + (*p - '0');
                         p++;
                     }
                     if (pid > 0)
-                        qk_sys_kill(pid);
+                        qk_signal_send(pid, signum);
                 } else if (cmd_ptr > 0)
                     shell_print("Unknown command.\n");
                 cmd_ptr = 0;

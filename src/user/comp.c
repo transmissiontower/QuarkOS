@@ -499,8 +499,8 @@ void render_top_bar()
     int search_x = 10;
     int search_w = 35;
     draw_pill(search_x, y, search_w, h);
-    draw_icon(&ctx, gui_icons, search_x + (search_w - 16) / 2 - 1, y + (h - 16) / 2 - 1,
-              ICON_SEARCH, fg);
+    draw_icon_sized(&ctx, gui_icons, search_x + (search_w - 18) / 2 - 1, y + (h - 18) / 2,
+                    ICON_SEARCH, fg, 18);
     int clock_x = 1920 / 2 - 75;
     int clock_w = 150;
     int clock_y = y + 9;
@@ -531,10 +531,10 @@ void render_top_bar()
     int buttons_w = 125;
     int buttons_y = 19;
     draw_pill(buttons_x, y, buttons_w, h);
-    draw_icon(&ctx, gui_icons, buttons_x + 10, buttons_y, ICON_TERMINAL, fg);
-    draw_icon(&ctx, gui_icons, buttons_x + 36, buttons_y, ICON_SUN, brightness_icon_color);
-    draw_icon(&ctx, gui_icons, buttons_x + 68, buttons_y, ICON_KEYBOARD, fg);
-    draw_icon(&ctx, gui_icons, buttons_x + 98, buttons_y, ICON_SHUTDOWN, fg);
+    draw_icon_sized(&ctx, gui_icons, buttons_x + 9,  buttons_y, ICON_TERMINAL, fg, 18);
+    draw_icon_sized(&ctx, gui_icons, buttons_x + 35, buttons_y, ICON_SUN, brightness_icon_color, 18);
+    draw_icon_sized(&ctx, gui_icons, buttons_x + 67, buttons_y, ICON_KEYBOARD, fg, 18);
+    draw_icon_sized(&ctx, gui_icons, buttons_x + 97, buttons_y, ICON_SHUTDOWN, fg, 18);
     terminal_button_rect.x = buttons_x + 10 - 4;
     terminal_button_rect.y = buttons_y - 4;
     terminal_button_rect.w = 28;

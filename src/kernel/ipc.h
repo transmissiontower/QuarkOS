@@ -50,7 +50,9 @@ typedef struct {
 #define MSG_COMPOSITOR_RESUME  71
 #define MSG_INPUT_REDIRECT     72  
 #define MSG_INPUT_RESTORE      73
-#define MSG_WAV_PLAY           400 
+#define MSG_WAV_PLAY           400
+#define MSG_ALARM              500
+#define MSG_SIGNAL             501
 
 #define IPC_QUEUE_SIZE 128
 
