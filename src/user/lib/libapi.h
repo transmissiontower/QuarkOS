@@ -86,6 +86,17 @@ void qk_input_redirect(int target_pid);
 void qk_input_restore(void);
 int  qk_getpid(void);
 
+int      qk_waitpid(int pid);
+int      qk_pipe_create(const char *name);
+int      qk_pipe_open(const char *name);
+int      qk_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len);
+int      qk_pipe_read(int pipe_id, uint8_t *buf, uint32_t len);
+int      qk_pipe_close(int pipe_id);
+int      qk_set_alarm(uint32_t ms);
+int      qk_setenv(const char *kv);
+int      qk_getenv(const char *key, char *out, uint32_t maxlen);
+int      qk_signal_send(int pid, int signum);
+
 void *malloc(uint32_t size);
 void *realloc(void *ptr, uint32_t new_size);
 void free(void *ptr);

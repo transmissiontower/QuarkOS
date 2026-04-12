@@ -63,8 +63,15 @@ int get_current_line_width(Window *win)
     i++;
 
     while (i < win->text_cursor) {
-        current_w += get_char_width(win->text_buffer[i]);
-        i++;
+        uint8_t b = (uint8_t)win->text_buffer[i];
+        if ((b & 0xC0) != 0x80) {
+            uint32_t cp;
+            int n = utf8_decode((const uint8_t *)win->text_buffer + i, &cp);
+            current_w += get_codepoint_width(cp);
+            i += n;
+        } else {
+            i++;
+        }
     }
     return current_w;
 }
@@ -247,22 +254,24 @@ void draw_window_content(Window *win)
         int max_x = win->x + win->w - 10;
         int max_y = win->y + win->h - 10;
 
-        char *str = win->text_buffer;
+        const uint8_t *str = (const uint8_t *)win->text_buffer;
+        int fh = get_font_height();
         while (*str) {
-            char c = *str;
-            if (c == '\n') {
-                current_y += get_font_height();
+            if (*str == '\n') {
+                current_y += fh;
                 current_x = start_x;
+                str++;
             } else {
-                int w = get_char_width(c);
-
-                if (current_x + w < max_x && current_y + get_font_height() < max_y) {
-                    current_x = draw_char_vector(current_x, current_y, c, COLOR_WHITE);
+                uint32_t cp;
+                int n = utf8_decode(str, &cp);
+                int w = get_codepoint_width(cp);
+                if (current_x + w < max_x && current_y + fh < max_y) {
+                    current_x = draw_codepoint_vector(current_x, current_y, cp, COLOR_WHITE);
                 } else {
                     current_x += w;
                 }
+                str += n;
             }
-            str++;
         }
     }
 }

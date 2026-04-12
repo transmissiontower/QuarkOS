@@ -1,43 +1,41 @@
 import struct
 import os
 from PIL import Image, ImageFont, ImageDraw
+from fontTools import ttLib
 
 FONT_PATH = "tools/lucide.ttf"
 OUTPUT_BIN = "Asm/boot/icons.bin"
 OUTPUT_H = "src/user/lib/icons_def.h"
-FONT_SIZE = 18
-IMG_WIDTH = 256
+FONT_SIZE = 48
+IMG_WIDTH = 1024  
 
-ICONS = {
-    "ICON_CLOSE": 0xeb15,
-    "ICON_UP": 0xe95a,
-    "ICON_DOWN": 0xe955,
-    "ICON_NOTIFICATION": 0xe933,
-    "ICON_SAFETY": 0xeaa5,
-    "ICON_MONITOR": 0xea46,
-    "ICON_CPU": 0xe999,
-    "ICON_FOCUS": 0xead5,
-    "ICON_KEYBOARD": 0xeb39,
-    "ICON_FULLSCREEN": 0xea94,
-    "ICON_SHUTDOWN": 0xea7c,
-    "ICON_SEARCH": 0xea98,
-    "ICON_TERMINAL": 0xead8,
-    "ICON_SUN": 0xEACC
-}
+def load_icons():
+    tt = ttLib.TTFont(FONT_PATH)
+    cmap = tt.getBestCmap()  
+    icons = {}
+    for cp, name in sorted(cmap.items()):
+        key = "ICON_" + name.upper().replace("-", "_").replace(".", "_")
+        icons[key] = cp
+    return icons
 
 def bake_icons():
     if not os.path.exists(FONT_PATH):
         print(f"Error: {FONT_PATH} not found")
         return
 
+    ICONS = load_icons()
+    print(f"Loaded {len(ICONS)} icons from {FONT_PATH}")
+
     SCALE = 4
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE * SCALE)
-    img = Image.new("RGBA", (IMG_WIDTH, 512), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
+    cols = IMG_WIDTH // (FONT_SIZE + 2)
+    est_rows = (len(ICONS) + cols - 1) // cols
+    est_h = (est_rows + 1) * (FONT_SIZE + 2) + 4
+    img = Image.new("RGBA", (IMG_WIDTH, est_h), (0, 0, 0, 0))
     current_x, current_y = 2, 2
     max_h_row = 0
     metrics = []
+    baked_names = [] 
 
     header_content = "#ifndef ICONS_DEF_H\n#define ICONS_DEF_H\n\n"
 
@@ -71,14 +69,44 @@ def bake_icons():
                 'x': current_x, 'y': current_y, 'w': w, 'h': h,
                 'adv': FONT_SIZE,
                 'ox': 0,
-                'oy': 0
+                'oy': 0,
+                'cp': code,
             })
-
-            header_content += f"#define {name} {idx + 32}\n"
+            baked_names.append(name)
 
             current_x += w + 2
             max_h_row = max(max_h_row, h)
 
+    for name, m in zip(baked_names, metrics):
+        header_content += f"#define {name} 0x{m['cp']:X}\n"
+
+    header_content += """
+/* Semantic aliases */
+#define ICON_CLOSE        ICON_UNIEB15
+#define ICON_UP           ICON_UNIE95A
+#define ICON_DOWN         ICON_UNIE955
+#define ICON_NOTIFICATION ICON_UNIE933
+#define ICON_SAFETY       ICON_UNIEAA5
+#define ICON_MONITOR      ICON_UNIEA46
+#define ICON_CPU          ICON_UNIE999
+#define ICON_FOCUS        ICON_UNIEAD5
+#define ICON_KEYBOARD     ICON_UNIEB39
+#define ICON_FULLSCREEN   ICON_UNIEA94
+#define ICON_SHUTDOWN     ICON_UNIEA7C
+#define ICON_SEARCH       ICON_UNIEA98
+#define ICON_TERMINAL     ICON_UNIEAD8
+#define ICON_SUN          ICON_UNIEACC
+#define ICON_FOLDER       ICON_UNIE9D9
+#define ICON_FOLDER_OPEN  ICON_UNIE9D7
+#define ICON_FILE_TEXT    ICON_UNIE9C7
+#define ICON_ARROW_LEFT   ICON_UNIE91C
+#define ICON_ARROW_RIGHT  ICON_UNIE91E
+#define ICON_HOME         ICON_UNIEA02
+#define ICON_HARD_DRIVE   ICON_UNIE9F8
+#define ICON_USERS        ICON_UNIEAFE
+#define ICON_CLOCK        ICON_UNIE970
+#define ICON_BINARY       ICON_UNIE9BF
+"""
     header_content += "\n#endif"
 
     final_h = current_y + max_h_row + 2
@@ -93,7 +121,7 @@ def bake_icons():
         f.write(struct.pack('<I', len(metrics)))
 
         for m in metrics:
-            f.write(struct.pack('<HHHHhhh', m['x'], m['y'], m['w'], m['h'], m['adv'], m['ox'], m['oy']))
+            f.write(struct.pack('<IHHHHhhh', m['cp'], m['x'], m['y'], m['w'], m['h'], m['adv'], m['ox'], m['oy']))
 
         for r, g, b, a in list(img.getdata()):
             f.write(struct.pack('<I', (a << 24) | (r << 16) | (g << 8) | b))

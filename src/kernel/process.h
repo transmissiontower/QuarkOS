@@ -10,7 +10,8 @@ typedef enum {
     PROCESS_BLOCKED,
     PROCESS_ZOMBIE,
     PROCESS_WAIT_IRQ,
-    PROCESS_IPC_WAIT
+    PROCESS_IPC_WAIT,
+    PROCESS_WAIT_PID
 } process_state_t;
 
 typedef struct process {
@@ -34,6 +35,9 @@ typedef struct process {
     int ipc_reply_ready;
     message_t ipc_reply_slot;
     uint32_t shared_virt_bump;
+    int exit_code;
+    int waitpid_target;
+    char env[256];
 } process_t;
 
 typedef struct {

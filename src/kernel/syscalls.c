@@ -106,7 +106,7 @@ void k_notify_server_proc_exit(int pid)
 
 int sys_exit(int code)
 {
-    (void)code;
+    current_process->exit_code = code;
     k_proc_terminate(current_process->pid);
     k_scheduler_yield();
     return 0;
@@ -511,6 +511,308 @@ int sys_trigger_panic(const char *msg)
     return -1;
 }
 
+int sys_waitpid(int pid)
+{
+    process_t *target = k_proc_find_by_id(pid);
+    if (!target)
+        return -1;
+
+    current_process->waitpid_target = pid;
+    current_process->state = PROCESS_WAIT_PID;
+    k_scheduler_yield();
+
+    while (current_process->waitpid_target != -1) {
+        current_process->state = PROCESS_WAIT_PID;
+        k_scheduler_yield();
+    }
+
+    return (int)current_process->ipc_reply_slot.data1;
+}
+
+#define MAX_PIPES    16
+#define PIPE_BUF_SIZE 4096
+
+typedef struct {
+    int      id;
+    char     name[16];
+    uint8_t  buf[PIPE_BUF_SIZE];
+    uint32_t head, tail, count;
+    int      blocked_reader;
+    int      blocked_writer;
+} kpipe_t;
+
+static kpipe_t k_pipes[MAX_PIPES];
+static int     k_pipes_inited = 0;
+
+static void pipes_init(void)
+{
+    if (k_pipes_inited) return;
+    for (int i = 0; i < MAX_PIPES; i++) k_pipes[i].id = 0;
+    k_pipes_inited = 1;
+}
+
+static int pipe_name_eq(const char *a, const char *b)
+{
+    int i = 0;
+    while (i < 15 && a[i] && b[i] && a[i] == b[i]) i++;
+    return (a[i] == 0 && b[i] == 0);
+}
+
+int sys_pipe_create(const char *name)
+{
+    if (!is_ptr_safe(name, 1)) return -1;
+    pipes_init();
+    for (int i = 0; i < MAX_PIPES; i++) {
+        if (k_pipes[i].id == 0) {
+            k_pipes[i].id = i + 1;
+            strncpy(k_pipes[i].name, name, 15);
+            k_pipes[i].name[15] = 0;
+            k_pipes[i].head = 0;
+            k_pipes[i].tail = 0;
+            k_pipes[i].count = 0;
+            k_pipes[i].blocked_reader = -1;
+            k_pipes[i].blocked_writer = -1;
+            return i + 1;
+        }
+    }
+    return -1;
+}
+
+int sys_pipe_open(const char *name)
+{
+    if (!is_ptr_safe(name, 1)) return -1;
+    pipes_init();
+    for (int i = 0; i < MAX_PIPES; i++) {
+        if (k_pipes[i].id != 0 && pipe_name_eq(k_pipes[i].name, name))
+            return i + 1;
+    }
+    return -1;
+}
+
+int sys_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len)
+{
+    if (pipe_id < 1 || pipe_id > MAX_PIPES) return -1;
+    kpipe_t *p = &k_pipes[pipe_id - 1];
+    if (p->id == 0 || !buf || len == 0) return -1;
+    if (!is_ptr_safe(buf, len)) return -1;
+
+    for (uint32_t w = 0; w < len; w++) {
+        while (p->count >= PIPE_BUF_SIZE) {
+            p->blocked_writer = current_process->pid;
+            current_process->state = PROCESS_BLOCKED;
+            current_process->wake_up_time = 0;
+            k_scheduler_yield();
+        }
+        p->buf[p->tail] = buf[w];
+        p->tail = (p->tail + 1) % PIPE_BUF_SIZE;
+        p->count++;
+        if (p->blocked_reader != -1) {
+            process_t *r = k_proc_find_by_id(p->blocked_reader);
+            if (r && r->state == PROCESS_BLOCKED) r->state = PROCESS_READY;
+            p->blocked_reader = -1;
+        }
+    }
+    return (int)len;
+}
+
+int sys_pipe_read(int pipe_id, uint8_t *buf, uint32_t len)
+{
+    if (pipe_id < 1 || pipe_id > MAX_PIPES) return -1;
+    kpipe_t *p = &k_pipes[pipe_id - 1];
+    if (p->id == 0 || !buf || len == 0) return -1;
+    if (!is_ptr_safe(buf, len)) return -1;
+
+    for (uint32_t r = 0; r < len; r++) {
+        while (p->count == 0) {
+            p->blocked_reader = current_process->pid;
+            current_process->state = PROCESS_BLOCKED;
+            current_process->wake_up_time = 0;
+            k_scheduler_yield();
+        }
+        buf[r] = p->buf[p->head];
+        p->head = (p->head + 1) % PIPE_BUF_SIZE;
+        p->count--;
+        if (p->blocked_writer != -1) {
+            process_t *w = k_proc_find_by_id(p->blocked_writer);
+            if (w && w->state == PROCESS_BLOCKED) w->state = PROCESS_READY;
+            p->blocked_writer = -1;
+        }
+    }
+    return (int)len;
+}
+
+int sys_pipe_close(int pipe_id)
+{
+    if (pipe_id < 1 || pipe_id > MAX_PIPES) return -1;
+    kpipe_t *p = &k_pipes[pipe_id - 1];
+    if (p->id == 0) return -1;
+    if (p->blocked_reader != -1) {
+        process_t *r = k_proc_find_by_id(p->blocked_reader);
+        if (r && r->state == PROCESS_BLOCKED) r->state = PROCESS_READY;
+    }
+    if (p->blocked_writer != -1) {
+        process_t *w = k_proc_find_by_id(p->blocked_writer);
+        if (w && w->state == PROCESS_BLOCKED) w->state = PROCESS_READY;
+    }
+    p->id = 0;
+    return 0;
+}
+
+#define MAX_ALARMS 32
+
+typedef struct { int pid; uint64_t fire_at; } k_alarm_entry_t;
+static k_alarm_entry_t k_alarms[MAX_ALARMS];
+static int k_alarms_inited = 0;
+
+static void alarms_init(void)
+{
+    if (k_alarms_inited) return;
+    for (int i = 0; i < MAX_ALARMS; i++) k_alarms[i].pid = 0;
+    k_alarms_inited = 1;
+}
+
+int sys_set_alarm(uint32_t ms)
+{
+    alarms_init();
+    
+    int free_slot = -1;
+    for (int i = 0; i < MAX_ALARMS; i++) {
+        if (k_alarms[i].pid == current_process->pid) {
+            k_alarms[i].pid = 0;
+            if (free_slot < 0) free_slot = i;
+        } else if (k_alarms[i].pid == 0 && free_slot < 0) {
+            free_slot = i;
+        }
+    }
+    if (ms == 0) return 0; 
+    if (free_slot < 0) return -1;
+    k_alarms[free_slot].pid = current_process->pid;
+    k_alarms[free_slot].fire_at = get_uptime_ms() + ms;
+    return 0;
+}
+
+void sys_alarm_tick(uint64_t now_ms)
+{
+    if (!k_alarms_inited) return;
+    for (int i = 0; i < MAX_ALARMS; i++) {
+        if (k_alarms[i].pid > 0 && now_ms >= k_alarms[i].fire_at) {
+            process_t *target = k_proc_find_by_id(k_alarms[i].pid);
+            k_alarms[i].pid = 0;
+            if (!target) continue;
+            if (target->ipc_queue.count >= IPC_QUEUE_SIZE) continue;
+            message_t amsg;
+            memset(&amsg, 0, sizeof(amsg));
+            amsg.type = MSG_ALARM;
+            amsg.sender_pid = 0;
+            message_t *slot = &target->ipc_queue.messages[target->ipc_queue.tail];
+            memcpy(slot, &amsg, sizeof(message_t));
+            target->ipc_queue.tail = (target->ipc_queue.tail + 1) % IPC_QUEUE_SIZE;
+            target->ipc_queue.count++;
+            if (target->state == PROCESS_BLOCKED || target->state == PROCESS_IPC_WAIT)
+                target->state = PROCESS_READY;
+        }
+    }
+}
+
+int sys_setenv(const char *kv)
+{
+    if (!is_ptr_safe(kv, 1)) return -1;
+    const char *eq = kv;
+    while (*eq && *eq != '=') eq++;
+    if (*eq != '=') return -1;
+    uint32_t klen = (uint32_t)(eq - kv);
+    if (klen == 0 || klen > 63) return -1;
+
+    
+    static char tmp[256];
+    uint32_t kv_len = 0;
+    while (kv[kv_len]) kv_len++;
+
+    uint32_t out = 0;
+    const char *p = current_process->env;
+    while (*p) {
+        const char *entry = p;
+        while (*p) p++;
+        p++;
+        
+        uint32_t elen = (uint32_t)(p - entry - 1);
+        int match = (elen > klen);
+        if (match) {
+            for (uint32_t i = 0; i < klen; i++)
+                if (entry[i] != kv[i]) { match = 0; break; }
+            if (match) match = (entry[klen] == '=');
+        }
+        if (!match) {
+            if (out + elen + 1 >= 256) return -1;
+            memcpy(tmp + out, entry, elen);
+            out += elen;
+            tmp[out++] = 0;
+        }
+    }
+    if (out + kv_len + 2 > 256) return -1;
+    memcpy(tmp + out, kv, kv_len);
+    out += kv_len;
+    tmp[out++] = 0;
+    tmp[out]   = 0;
+
+    memcpy(current_process->env, tmp, out + 1);
+    return 0;
+}
+
+int sys_getenv(const char *key, char *out, uint32_t maxlen)
+{
+    if (!is_ptr_safe(key, 1)) return -1;
+    if (!is_ptr_safe(out, maxlen)) return -1;
+
+    uint32_t klen = 0;
+    while (key[klen]) klen++;
+
+    const char *p = current_process->env;
+    while (*p) {
+        const char *next = p;
+        while (*next) next++;
+        next++;
+        
+        int match = 1;
+        for (uint32_t i = 0; i < klen; i++)
+            if (p[i] != key[i]) { match = 0; break; }
+        if (match && p[klen] == '=') {
+            const char *val = p + klen + 1;
+            strncpy(out, val, maxlen - 1);
+            out[maxlen - 1] = 0;
+            return 0;
+        }
+        p = next;
+    }
+    if (maxlen > 0) out[0] = 0;
+    return -1;
+}
+
+int sys_signal_send(int pid, int signum)
+{
+    if (signum == 9) {
+        
+        return sys_kill(pid);
+    }
+    process_t *target = k_proc_find_by_id(pid);
+    if (!target) return -1;
+    if (target->ipc_queue.count >= IPC_QUEUE_SIZE) return -1;
+
+    message_t smsg;
+    memset(&smsg, 0, sizeof(smsg));
+    smsg.type = MSG_SIGNAL;
+    smsg.sender_pid = current_process->pid;
+    smsg.data1 = (uint32_t)signum;
+
+    message_t *slot = &target->ipc_queue.messages[target->ipc_queue.tail];
+    memcpy(slot, &smsg, sizeof(message_t));
+    target->ipc_queue.tail = (target->ipc_queue.tail + 1) % IPC_QUEUE_SIZE;
+    target->ipc_queue.count++;
+    if (target->state == PROCESS_BLOCKED || target->state == PROCESS_IPC_WAIT)
+        target->state = PROCESS_READY;
+    return 0;
+}
+
 void k_syscall_entry(struct InterruptRegisters *regs)
 {
     switch (regs->eax) {
@@ -780,6 +1082,39 @@ void k_syscall_entry(struct InterruptRegisters *regs)
     case 63:
         regs->eax = (uint32_t)drv_sb16_ready();
         break;
+
+    
+    case 64:
+        regs->eax = (uint32_t)sys_waitpid((int)regs->ebx);
+        break;
+    case 65:
+        regs->eax = (uint32_t)sys_pipe_create((const char *)regs->ebx);
+        break;
+    case 66:
+        regs->eax = (uint32_t)sys_pipe_open((const char *)regs->ebx);
+        break;
+    case 67:
+        regs->eax = (uint32_t)sys_pipe_write((int)regs->ebx, (const uint8_t *)regs->ecx, regs->edx);
+        break;
+    case 68:
+        regs->eax = (uint32_t)sys_pipe_read((int)regs->ebx, (uint8_t *)regs->ecx, regs->edx);
+        break;
+    case 69:
+        regs->eax = (uint32_t)sys_pipe_close((int)regs->ebx);
+        break;
+    case 70:
+        regs->eax = (uint32_t)sys_set_alarm(regs->ebx);
+        break;
+    case 71:
+        regs->eax = (uint32_t)sys_setenv((const char *)regs->ebx);
+        break;
+    case 72:
+        regs->eax = (uint32_t)sys_getenv((const char *)regs->ebx, (char *)regs->ecx, regs->edx);
+        break;
+    case 73:
+        regs->eax = (uint32_t)sys_signal_send((int)regs->ebx, (int)regs->ecx);
+        break;
+
     default:
         regs->eax = -1;
         break;

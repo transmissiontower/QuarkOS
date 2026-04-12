@@ -3,6 +3,7 @@
 #include "lib/stdlib.h"
 #include "user/lib/icons_def.h"
 #include "user/lib/libapi.h"
+#include "user/lib/window.h"
 
 #define WIN_W 400
 #define WIN_H 540
@@ -10,6 +11,8 @@
 
 static int comp_pid = -1;
 static int selected_pid = -1;
+static process_info_t last_procs[14];
+static int last_count = 0;
 
 void draw_rect_rpc(int x, int y, int w, int h, uint32_t color)
 {
@@ -88,8 +91,9 @@ void render_ui()
     qk_print_at(75, ty + 6, 0xFF61AFEF, "NAME");
     qk_print_at(275, ty + 6, 0xFF61AFEF, "STATE");
 
-    process_info_t procs[14];
-    int count = qk_get_procs(procs, 14);
+    last_count = qk_get_procs(last_procs, 14);
+    process_info_t *procs = last_procs;
+    int count = last_count;
 
     for (int i = 0; i < count; i++) {
         int ry = 190 + (i * 24);
@@ -158,18 +162,16 @@ int main()
         while (qk_ipc_recv_nb(&msg) == 0) {
             if (msg.type == MSG_MOUSE_EVENT && msg.data1 == EVENT_MOUSE_DOWN) {
                 int mx = msg.data2;
-                int my = msg.data3;
-                if (my >= 190 && my < 190 + (14 * 24)) {
+                int my = msg.data3 - (TITLE_BAR_HEIGHT + WIN_CONTENT_GAP);
+                if (my >= 190 && my < 190 + (last_count * 24)) {
                     int idx = (my - 190) / 24;
-                    process_info_t temp[14];
-                    int cnt = qk_get_procs(temp, 14);
-                    if (idx >= 0 && idx < cnt) {
-                        if (selected_pid == temp[idx].pid && mx > WIN_W - 55 &&
-                            temp[idx].pid != 0) {
-                            qk_sys_kill(temp[idx].pid);
+                    if (idx >= 0 && idx < last_count) {
+                        if (selected_pid == last_procs[idx].pid && mx > WIN_W - 55 &&
+                            last_procs[idx].pid != 0) {
+                            qk_sys_kill(last_procs[idx].pid);
                             selected_pid = -1;
                         } else {
-                            selected_pid = temp[idx].pid;
+                            selected_pid = last_procs[idx].pid;
                         }
                     }
                 } else {

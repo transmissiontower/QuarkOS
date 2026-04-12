@@ -298,3 +298,53 @@ int qk_pcspk_pwm_ready(void)
     return syscall(53, 0, 0, 0);
 }
 
+int qk_waitpid(int pid)
+{
+    return syscall(64, pid, 0, 0);
+}
+
+int qk_pipe_create(const char *name)
+{
+    return syscall(65, (int)name, 0, 0);
+}
+
+int qk_pipe_open(const char *name)
+{
+    return syscall(66, (int)name, 0, 0);
+}
+
+int qk_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len)
+{
+    return syscall(67, pipe_id, (int)buf, (int)len);
+}
+
+int qk_pipe_read(int pipe_id, uint8_t *buf, uint32_t len)
+{
+    return syscall(68, pipe_id, (int)buf, (int)len);
+}
+
+int qk_pipe_close(int pipe_id)
+{
+    return syscall(69, pipe_id, 0, 0);
+}
+
+int qk_set_alarm(uint32_t ms)
+{
+    return syscall(70, (int)ms, 0, 0);
+}
+
+int qk_setenv(const char *kv)
+{
+    return syscall(71, (int)kv, 0, 0);
+}
+
+int qk_getenv(const char *key, char *out, uint32_t maxlen)
+{
+    return syscall(72, (int)key, (int)out, (int)maxlen);
+}
+
+int qk_signal_send(int pid, int signum)
+{
+    return syscall(73, pid, signum, 0);
+}
+

@@ -12,6 +12,11 @@
 #define MOUSE_SPEED_MULTIPLIER 2
 #define BUTTON_QUEUE_CAP 32
 
+#define KEY_MOD_SHIFT 0x01
+#define KEY_MOD_CTRL  0x02
+#define KEY_MOD_ALT   0x04
+#define KEY_MOD_CAPS  0x08
+
 typedef struct {
     EventType type;
     uint8_t button;
@@ -128,16 +133,57 @@ static void flush_mouse_events(int comp_pid)
     }
 }
 
+static bool shift_held = false;
+static bool ctrl_held  = false;
+static bool alt_held   = false;
+static bool caps_lock  = false;
+static bool e0_pending = false;
+
 static void handle_keyboard(int comp_pid, uint8_t scancode)
 {
+    
+    if (scancode == 0xE0) {
+        e0_pending = true;
+        return;
+    }
+
+    bool release = (scancode & 0x80) != 0;
+    uint8_t code = scancode & 0x7F;
+    bool extended = e0_pending;
+    e0_pending = false;
+
+    if (!extended) {
+        
+        if (code == 0x2A || code == 0x36) { 
+            shift_held = !release;
+        } else if (code == 0x1D) {           
+            ctrl_held = !release;
+        } else if (code == 0x38) {           
+            alt_held = !release;
+        } else if (code == 0x3A && !release) { 
+            caps_lock = !caps_lock;
+        }
+    } else {
+        if (code == 0x1D) ctrl_held = !release; 
+        if (code == 0x38) alt_held  = !release; 
+    }
+
+    uint32_t mods = 0;
+    if (shift_held) mods |= KEY_MOD_SHIFT;
+    if (ctrl_held)  mods |= KEY_MOD_CTRL;
+    if (alt_held)   mods |= KEY_MOD_ALT;
+    if (caps_lock)  mods |= KEY_MOD_CAPS;
+
     message_t msg;
     memset(&msg, 0, sizeof(message_t));
-    msg.type = MSG_KEY_EVENT;
-    msg.data1 = (uint32_t)scancode;
+    msg.type  = MSG_KEY_EVENT;
+    
+    msg.data1 = (uint32_t)code | (release ? 0x80U : 0) | (extended ? 0x100U : 0);
+    msg.data2 = mods;
 
     Event *ev = (Event *)msg.payload;
-    ev->type = (scancode & 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
-    ev->key = scancode & 0x7F;
+    ev->type = release ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
+    ev->key  = (uint32_t)code | (extended ? 0x100U : 0);
 
     (void)qk_sys_ipc_send(comp_pid, &msg);
 }

@@ -8,7 +8,36 @@ FONT_SIZE = 14
 OUTPUT_FILE = "Asm/boot/font_atlas.bin"
 IMG_WIDTH = 512
 
-CHARS = "".join([chr(i) for i in range(32, 127)])
+def _build_chars():
+    ranges = [
+        (0x0020, 0x007F),  # Basic ASCII
+        (0x00A0, 0x0100),  # Latin-1 Supplement
+        (0x0100, 0x0180),  # Latin Extended-A
+        (0x0180, 0x0250),  # Latin Extended-B
+        (0x0370, 0x0400),  # Greek and Coptic
+        (0x0400, 0x0500),  # Cyrillic
+        (0x2000, 0x2070),  # General Punctuation
+        (0x20A0, 0x20D0),  # Currency Symbols
+        (0x2100, 0x2150),  # Letterlike Symbols
+        (0x2190, 0x2200),  # Arrows
+        (0x2200, 0x2300),  # Mathematical Operators
+        (0x2300, 0x2400),  # Miscellaneous Technical
+        (0x2500, 0x2580),  # Box Drawing
+        (0x2580, 0x25A0),  # Block Elements
+        (0x25A0, 0x2600),  # Geometric Shapes
+        (0x2600, 0x2700),  # Miscellaneous Symbols
+        (0x2700, 0x27C0),  # Dingbats
+    ]
+    chars = []
+    seen = set()
+    for start, end in ranges:
+        for cp in range(start, end):
+            if cp not in seen:
+                seen.add(cp)
+                chars.append(chr(cp))
+    return chars
+
+CHARS = _build_chars()
 
 def bake():
     if not os.path.exists(FONT_FILENAME):
@@ -20,7 +49,7 @@ def bake():
     line_height = ascent + descent
     print(f"Font loaded. Size: {FONT_SIZE}, Line Height: {line_height}")
 
-    img = Image.new("RGBA", (IMG_WIDTH, 1024), (0, 0, 0, 0))
+    img = Image.new("RGBA", (IMG_WIDTH, 4096), (0, 0, 0, 0))
 
     current_x = 2
     current_y = 2
@@ -28,7 +57,7 @@ def bake():
 
     metrics = []
 
-    for char in CHARS:
+    for char in sorted(CHARS, key=ord):
         temp_img = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp_img)
 
@@ -60,6 +89,7 @@ def bake():
         advance = int(font.getlength(char))
 
         metrics.append({
+            'cp': ord(char),
             'x': current_x,
             'y': current_y,
             'w': w,
@@ -86,7 +116,8 @@ def bake():
         f.write(struct.pack('<I', len(metrics)))
 
         for m in metrics:
-            f.write(struct.pack('<HHHHhhh',
+            f.write(struct.pack('<IHHHHhhh',
+                m['cp'],
                 m['x'], m['y'], m['w'], m['h'],
                 m['adv'], m['off_x'], m['off_y']))
 
