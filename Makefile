@@ -84,6 +84,7 @@ USER_ELFDEMO_OBJ  = $(USER_LIB_OBJ) src/user/elfdemo.o
 USER_FETCH_OBJ    = $(USER_LIB_OBJ) src/user/fetch.o
 USER_IMGVIEW_OBJ  = $(USER_LIB_OBJ) src/user/imgview.o
 USER_FILEMGR_OBJ  = $(USER_LIB_OBJ) src/user/filemgr.o
+USER_VKBD_OBJ     = $(USER_LIB_OBJ) src/user/vkbd.o
 
 MUSIC_SPK = Asm/boot/music.spk
 MUSIC_WAV = Asm/boot/music.wav
@@ -162,7 +163,8 @@ $(MUSIC_WAV): music.flac
 user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
           $(USER_STORAGE_SERVER_OBJ) $(USER_INPUT_SERVER_OBJ) $(USER_TIME_SERVER_OBJ) \
           $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ) $(USER_ELFDEMO_OBJ) \
-          $(USER_FETCH_OBJ) $(USER_IMGVIEW_OBJ) $(USER_CLOCK_OBJ) $(USER_FILEMGR_OBJ)
+          $(USER_FETCH_OBJ) $(USER_IMGVIEW_OBJ) $(USER_CLOCK_OBJ) $(USER_FILEMGR_OBJ) \
+          $(USER_VKBD_OBJ)
 	mkdir -p Asm/boot
 	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_TEST_OBJ)
 	cp test.elf Asm/boot/test.elf
@@ -218,6 +220,10 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 	cp filemgr.elf Asm/boot/filemgr.elf
 	$(OBJCOPY) -O binary filemgr.elf filemgr.bin
 	python3 tools/qex_builder.py filemgr.bin Asm/boot/filemgr.qex
+	$(LD) -m elf_i386 -T src/user/linker.ld -o vkbd.elf $(USER_VKBD_OBJ)
+	cp vkbd.elf Asm/boot/vkbd.elf
+	$(OBJCOPY) -O binary vkbd.elf vkbd.bin
+	python3 tools/qex_builder.py vkbd.bin Asm/boot/vkbd.qex
 
 
 # ==================================================
