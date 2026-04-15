@@ -1,8 +1,6 @@
 #ifndef FONT_ATLAS_H
 #define FONT_ATLAS_H
-
 #include "lib/stdint.h"
-
 typedef struct {
     uint32_t codepoint;
     uint16_t x;
@@ -13,7 +11,6 @@ typedef struct {
     int16_t off_x;
     int16_t off_y;
 } __attribute__((packed)) GlyphInfo;
-
 typedef struct {
     uint32_t tex_width;
     uint32_t tex_height;
@@ -23,9 +20,7 @@ typedef struct {
     GlyphInfo *glyphs;
     uint32_t *bitmap;
 } AtlasFont;
-
 extern AtlasFont *main_font;
-
 void font_atlas_init(uint8_t *rawData);
 int utf8_decode(const uint8_t *s, uint32_t *cp);
 int draw_codepoint_vector(int x, int y, uint32_t cp, uint32_t color);
@@ -35,5 +30,4 @@ int get_string_width(const char *str);
 int get_codepoint_width(uint32_t cp);
 int get_char_width(char c);
 int get_font_height();
-
 #endif

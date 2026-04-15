@@ -2,7 +2,6 @@
 #include "lib/math.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
-
 static uint32_t local_isqrt64(uint64_t n)
 {
     uint64_t res = 0;
@@ -19,12 +18,10 @@ static uint32_t local_isqrt64(uint64_t n)
     }
     return (uint32_t)res;
 }
-
 static inline int local_abs(int n)
 {
     return (n < 0) ? -n : n;
 }
-
 Texture *create_texture(int w, int h)
 {
     Texture *t = (Texture *)malloc(sizeof(Texture));
@@ -38,7 +35,6 @@ Texture *create_texture(int w, int h)
     }
     return t;
 }
-
 uint32_t gfx_blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha)
 {
     if (alpha == 255)
@@ -53,7 +49,6 @@ uint32_t gfx_blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha)
     uint32_t b = (b1 * alpha + b2 * inv) >> 8;
     return 0xFF000000 | (r << 16) | (g << 8) | b;
 }
-
 void gfx_put_pixel_aa(gfx_context_t *ctx, int x, int y, uint32_t color, uint8_t alpha)
 {
     if (x < 0 || x >= (int)ctx->width || y < 0 || y >= (int)ctx->height)
@@ -61,14 +56,12 @@ void gfx_put_pixel_aa(gfx_context_t *ctx, int x, int y, uint32_t color, uint8_t 
     uint32_t bg = ctx->buffer[y * ctx->width + x];
     ctx->buffer[y * ctx->width + x] = gfx_blend_colors(color, bg, alpha);
 }
-
 void gfx_put_pixel(gfx_context_t *ctx, int x, int y, uint32_t color)
 {
     if (x < 0 || x >= (int)ctx->width || y < 0 || y >= (int)ctx->height)
         return;
     ctx->buffer[y * ctx->width + x] = color;
 }
-
 void gfx_rect_fill(gfx_context_t *ctx, int x, int y, int w, int h, uint32_t color)
 {
     for (int i = 0; i < h; i++) {
@@ -83,7 +76,6 @@ void gfx_rect_fill(gfx_context_t *ctx, int x, int y, int w, int h, uint32_t colo
         }
     }
 }
-
 void gfx_rect_rounded_fill(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint32_t color)
 {
     if (r <= 0) {
@@ -113,7 +105,6 @@ void gfx_rect_rounded_fill(gfx_context_t *ctx, int x, int y, int w, int h, int r
         }
     }
 }
-
 void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint32_t color,
                        uint8_t *mask)
 {
@@ -121,11 +112,9 @@ void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, ui
         gfx_rect_rounded_fill(ctx, x, y, w, h, r, color);
         return;
     }
-
     gfx_rect_fill(ctx, x + r, y, w - 2 * r, h, color);
     gfx_rect_fill(ctx, x, y + r, r, h - 2 * r, color);
     gfx_rect_fill(ctx, x + w - r, y + r, r, h - 2 * r, color);
-
     for (int i = 0; i < r; i++) {
         for (int j = 0; j < r; j++) {
             uint8_t a = mask[j * r + i];
@@ -155,7 +144,6 @@ void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, ui
         }
     }
 }
-
 void gfx_draw_shadow(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint8_t opacity)
 {
     int s_size = 12;
@@ -179,7 +167,6 @@ void gfx_draw_shadow(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint
         }
     }
 }
-
 void gfx_draw_sprite(gfx_context_t *ctx, int x, int y, int w, int h, const uint8_t *data,
                      const uint32_t *palette)
 {
@@ -194,7 +181,6 @@ void gfx_draw_sprite(gfx_context_t *ctx, int x, int y, int w, int h, const uint8
         }
     }
 }
-
 void draw_texture(gfx_context_t *ctx, Texture *t, int x, int y)
 {
     if (!t || !t->data)
@@ -207,7 +193,6 @@ void draw_texture(gfx_context_t *ctx, Texture *t, int x, int y)
         }
     }
 }
-
 uint8_t *corner_mask_texture(int r)
 {
     uint8_t *mask = malloc(r * r);
@@ -226,52 +211,38 @@ uint8_t *corner_mask_texture(int r)
     }
     return mask;
 }
-
 Texture *rhombus_rounded(int w, int h, int r, uint32_t color)
 {
     int size = (int)sqrt(w * w + h * h) + 4;
     Texture *tex = create_texture(size, size);
-
     double cx = size / 2.0;
     double cy = size / 2.0;
-
     double box_w = w / 2.0 - r;
     double box_h = h / 2.0 - r;
-
     double angle = 45.0 * PI / 180.0;
     double c = cos(-angle);
     double s = sin(-angle);
-
     for (int y = 0; y < size; y++) {
         for (int x = 0; x < size; x++) {
-
             double dx = x - cx;
             double dy = y - cy;
             double rx = dx * c - dy * s;
             double ry = dx * s + dy * c;
-
             double px = fabs(rx);
             double py = fabs(ry);
-
             double qx = px - box_w;
             double qy = py - box_h;
-
             double out_x = (qx > 0) ? qx : 0;
             double out_y = (qy > 0) ? qy : 0;
             double dist_out = sqrt(out_x * out_x + out_y * out_y);
-
             double inside_val = (qx > qy) ? qx : qy;
             double dist_in = (inside_val > 0) ? 0 : inside_val;
-
             double dist = dist_out + dist_in - r;
-
             double alpha_f = 0.5 - dist;
-
             if (alpha_f < 0)
                 alpha_f = 0;
             if (alpha_f > 1)
                 alpha_f = 1;
-
             if (alpha_f > 0) {
                 uint8_t alpha = (uint8_t)(alpha_f * 255.0);
                 tex->data[y * size + x] = (color & 0x00FFFFFF) | ((uint32_t)alpha << 24);

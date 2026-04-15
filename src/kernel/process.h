@@ -1,9 +1,7 @@
 #ifndef PROCESS_H
 #define PROCESS_H
-
 #include "kernel/ipc.h"
 #include "lib/stdint.h"
-
 typedef enum {
     PROCESS_READY,
     PROCESS_RUNNING,
@@ -13,7 +11,6 @@ typedef enum {
     PROCESS_IPC_WAIT,
     PROCESS_WAIT_PID
 } process_state_t;
-
 typedef struct process {
     int pid;
     uint32_t esp;
@@ -23,11 +20,9 @@ typedef struct process {
     uint32_t image_base;
     uint32_t image_end;
     struct process *next;
-
     process_state_t state;
     uint64_t wake_up_time;
     char name[16];
-
     message_queue_t ipc_queue;
     uint32_t io_privilege_mask;
     int waiting_irq;
@@ -39,7 +34,6 @@ typedef struct process {
     int waitpid_target;
     char env[256];
 } process_t;
-
 typedef struct {
     uint32_t magic;
     uint32_t entry;
@@ -47,15 +41,12 @@ typedef struct {
     uint32_t data_size;
     uint32_t bss_size;
 } __attribute__((packed)) QuarkExec;
-
 typedef struct {
     int pid;
     process_state_t state;
     char name[16];
 } process_info_t;
-
 extern process_t *current_process;
-
 void k_scheduler_init();
 void k_scheduler_update_sleeps();
 process_t *k_proc_spawn(uint8_t *code, uint32_t size);
@@ -68,5 +59,4 @@ void process_wake_on_irq(int irq);
 void k_proc_terminate(int pid);
 process_t *k_proc_find_by_id(int pid);
 process_t *get_current_process();
-
 #endif

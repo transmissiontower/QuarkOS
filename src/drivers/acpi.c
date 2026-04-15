@@ -1,29 +1,23 @@
 #include "drivers/acpi.h"
 #include "mm/memory.h"
 #include "util/util.h"
-
 #define RSDP_SIGNATURE "RSD PTR "
 #define SCI_EN_FLAG 0x0001
 #define SLP_EN_FLAG 0x2000
 #define SLP_TYP_SHIFT 10
 #define LEGACY_SHUTDOWN_PORT 0x604
-
 static struct rsdp_descriptor *acpi_rsdp;
 static struct acpi_header *acpi_rsdt;
 static struct fadt_header *acpi_fadt;
-
 static uint16_t pm1a_cnt_block;
 static uint16_t pm1b_cnt_block;
 static uint8_t s5_slp_typ_a;
 static uint8_t s5_slp_typ_b;
-
 static struct acpi_generic_address reset_reg;
 static uint8_t reset_value;
-
 static bool acpi_initialized = false;
 static bool power_capable = false;
 static bool reset_capable = false;
-
 static uint8_t acpi_calculate_checksum(uint8_t *ptr, uint32_t length)
 {
     uint8_t sum = 0;
@@ -32,7 +26,6 @@ static uint8_t acpi_calculate_checksum(uint8_t *ptr, uint32_t length)
     }
     return sum;
 }
-
 static struct rsdp_descriptor *acpi_scan_rsdp(uint32_t start, uint32_t end)
 {
     for (uint8_t *ptr = (uint8_t *)start; ptr < (uint8_t *)end; ptr += 16) {
@@ -45,12 +38,10 @@ static struct rsdp_descriptor *acpi_scan_rsdp(uint32_t start, uint32_t end)
     }
     return 0;
 }
-
 static struct rsdp_descriptor *acpi_find_rsdp(void)
 {
     return acpi_scan_rsdp(0xE0000, 0x100000);
 }
-
 static struct acpi_header *acpi_map_full_table(uint32_t phys_addr)
 {
     struct acpi_header *hdr =
@@ -59,14 +50,12 @@ static struct acpi_header *acpi_map_full_table(uint32_t phys_addr)
         return 0;
     return (struct acpi_header *)map_module(phys_addr, hdr->length);
 }
-
 static bool acpi_validate_table(struct acpi_header *hdr)
 {
     if (!hdr)
         return false;
     return acpi_calculate_checksum((uint8_t *)hdr, hdr->length) == 0;
 }
-
 static uint32_t acpi_parse_pkg_length(uint8_t **ptr, uint8_t *end)
 {
     if (*ptr >= end)
@@ -81,7 +70,6 @@ static uint32_t acpi_parse_pkg_length(uint8_t **ptr, uint8_t *end)
     }
     return length;
 }
-
 static uint32_t acpi_parse_pkg_value(uint8_t **ptr, uint8_t *end)
 {
     if (*ptr >= end)
@@ -114,20 +102,16 @@ static uint32_t acpi_parse_pkg_value(uint8_t **ptr, uint8_t *end)
         return prefix;
     }
 }
-
 static void acpi_extract_s5(void)
 {
     if (!acpi_fadt || !acpi_fadt->dsdt)
         return;
-
     struct acpi_header *dsdt_hdr = acpi_map_full_table(acpi_fadt->dsdt);
     if (!dsdt_hdr)
         return;
-
     uint8_t *start = (uint8_t *)dsdt_hdr;
     uint8_t *end = start + dsdt_hdr->length;
     uint8_t *ptr = start + sizeof(struct acpi_header);
-
     while (ptr < end - 4) {
         if (memcmp(ptr, "_S5_", 4) == 0) {
             uint8_t *pkg = ptr + 4;
@@ -144,7 +128,6 @@ static void acpi_extract_s5(void)
             uint8_t elements = *pkg++;
             if (elements < 2)
                 break;
-
             uint32_t val_a = acpi_parse_pkg_value(&pkg, end);
             uint32_t val_b = acpi_parse_pkg_value(&pkg, end);
             s5_slp_typ_a = (uint8_t)val_a;
@@ -155,7 +138,6 @@ static void acpi_extract_s5(void)
         ptr++;
     }
 }
-
 static void acpi_enable(void)
 {
     if (!acpi_fadt)
@@ -170,56 +152,44 @@ static void acpi_enable(void)
         }
     }
 }
-
 int acpi_init(void)
 {
     acpi_rsdp = acpi_find_rsdp();
     if (!acpi_rsdp)
         return 0;
-
     acpi_rsdt = acpi_map_full_table(acpi_rsdp->rsdt_address);
     if (!acpi_validate_table(acpi_rsdt))
         return 0;
-
     acpi_fadt = (struct fadt_header *)acpi_find_table("FACP");
     if (!acpi_fadt || !acpi_validate_table(&acpi_fadt->header))
         return 0;
-
     pm1a_cnt_block = (uint16_t)acpi_fadt->PM1a_CNT_BLK;
     pm1b_cnt_block = (uint16_t)acpi_fadt->PM1b_CNT_BLK;
     reset_reg = acpi_fadt->reset_reg;
     reset_value = acpi_fadt->reset_value;
-
     reset_capable = (reset_reg.address != 0);
-
     acpi_extract_s5();
-
     acpi_initialized = true;
     return acpi_initialized;
 }
-
 bool acpi_power_ready(void)
 {
     return acpi_initialized && power_capable && pm1a_cnt_block;
 }
-
 bool acpi_power_button_available(void)
 {
     return acpi_initialized && power_capable;
 }
-
 bool acpi_reset_available(void)
 {
     return acpi_initialized && reset_capable;
 }
-
 void *acpi_find_table(const char *sig)
 {
     if (!acpi_rsdt)
         return 0;
     uint32_t entries = (acpi_rsdt->length - sizeof(struct acpi_header)) / 4;
     uint32_t *table_ptrs = (uint32_t *)((uint8_t *)acpi_rsdt + sizeof(struct acpi_header));
-
     for (uint32_t i = 0; i < entries; i++) {
         uint32_t phys = table_ptrs[i];
         if (!phys)
@@ -234,7 +204,6 @@ void *acpi_find_table(const char *sig)
     }
     return 0;
 }
-
 int acpi_get_cpu_count(void)
 {
     struct madt_header *madt = (struct madt_header *)acpi_find_table("APIC");
@@ -255,7 +224,6 @@ int acpi_get_cpu_count(void)
     }
     return count > 0 ? count : 1;
 }
-
 void acpi_shutdown(void)
 {
     asm volatile("cli");
@@ -274,7 +242,6 @@ void acpi_shutdown(void)
         asm volatile("hlt");
     }
 }
-
 void acpi_reboot(void)
 {
     asm volatile("cli");

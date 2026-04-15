@@ -122,6 +122,22 @@ static void render_vkbd(void)
         ky += VKBD_KEY_H + VKBD_GAP;
     }
 }
+static void push_geom_to_comp(int comp_pid)
+{
+    int pw = vkbd_panel_w();
+    int ph = vkbd_panel_h();
+    message_t reply;
+    memset(&reply, 0, sizeof(reply));
+    reply.type  = MSG_VKBD_GEOM;
+    reply.data1 = (uint32_t)vkbd_visible;
+    reply.data2 = (uint32_t)vkbd_x;
+    reply.data3 = (uint32_t)vkbd_y;
+    uint32_t *pl = (uint32_t *)reply.payload;
+    pl[0] = (uint32_t)pw;
+    pl[1] = (uint32_t)ph;
+    pl[2] = (uint32_t)vkbd_buf;
+    qk_sys_ipc_send(comp_pid, &reply);
+}
 static void send_key_to_comp(int comp_pid, uint8_t sc, int release)
 {
     message_t msg;
@@ -148,8 +164,10 @@ static void handle_mouse(Event *e, int comp_pid)
             if (vkbd_x + pw > screen_w) vkbd_x = screen_w - pw;
             if (vkbd_y + ph > screen_h) vkbd_y = screen_h - ph;
         }
-        if (e->type == EVENT_MOUSE_UP)
+        if (e->type == EVENT_MOUSE_UP) {
             vkbd_dragging = 0;
+            push_geom_to_comp(comp_pid);  
+        }
         return;
     }
     if (e->x < vkbd_x || e->x >= vkbd_x + pw ||
@@ -239,17 +257,7 @@ void main(void)
                 vkbd_pressed_sc = 0;
             render_vkbd();
         } else if (msg.type == MSG_VKBD_GEOM) {
-            message_t reply;
-            memset(&reply, 0, sizeof(reply));
-            reply.type  = MSG_VKBD_GEOM;
-            reply.data1 = (uint32_t)vkbd_visible;
-            reply.data2 = (uint32_t)vkbd_x;
-            reply.data3 = (uint32_t)vkbd_y;
-            uint32_t *pl = (uint32_t *)reply.payload;
-            pl[0] = (uint32_t)pw;
-            pl[1] = (uint32_t)ph;
-            pl[2] = (uint32_t)vkbd_buf;
-            qk_sys_ipc_send(msg.sender_pid, &reply);
+            push_geom_to_comp(comp_pid);
         }
     }
 }

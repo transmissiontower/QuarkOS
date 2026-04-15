@@ -1,4 +1,3 @@
-
 #include "kernel/ipc.h"
 #include "lib/stdbool.h"
 #include "lib/stdlib.h"
@@ -7,10 +6,8 @@
 #include "user/lib/icons_def.h"
 #include "user/lib/libapi.h"
 #include "user/lib/window.h"
-
 #define WIN_W  900
 #define WIN_H  580
-
 #define HEADER_H   34
 #define SIDEBAR_W  185
 #define CONTENT_X  SIDEBAR_W
@@ -18,13 +15,11 @@
 #define SB_ITEM_H  28
 #define SB_ICON_SZ 16
 #define SCROLLBAR_W 8
-
 #define GCOLS      4
 #define GITEM_W    160
 #define GITEM_H    110
 #define GICON_W    100
 #define GICON_H    80
-
 #define CB_HEADER   0xFF192425u
 #define CB_SIDEBAR  0xFF1B2526u
 #define CB_CONTENT  0xFF1E2830u
@@ -34,56 +29,46 @@
 #define C_TEXT      0xFFDDDDDDu
 #define C_DIM       0xFF6B7C7Cu
 #define C_ACCENT    0xFF59B2D4u
-
 #define CF_BODY     0xFF78AEE8u  
 #define CF_TOP      0xFF5A8FD0u  
 #define CF_TAB      0xFF1F5DA8u  
 #define CF_SHADE    0xFF96C3F0u  
 #define CF_SHADOW   0xFF2A4E8Au  
-
 #define CF_FILE     0xFFDCE3EAu
 #define CF_FFOLD    0xFFAAB6C2u
-
 #define CF_EXE      0xFF80CC80u
 #define CF_EFOLD    0xFF52A452u
-
 #define C_SBICO     0xFF8BAAB2u
-
 static int       comp_pid    = -1;
 static int       storage_pid = -1;
 static uint32_t *gfx         = 0;
 static int       gfx_w       = 0;
 static int       gfx_h       = 0;
 static int       win_id      = -1;
-
 #define MAX_DEPTH   12
 static uint16_t dir_stack[MAX_DEPTH];
 static char     dir_names[MAX_DEPTH][16];
 static int      dir_depth   = 0;
 static uint16_t cur_cluster = 0;
 static char     cur_path[128] = "/";
-
 #define MAX_ENTRIES 128
 typedef struct {
     int      is_dir;
     uint16_t cluster;
     char     name[16];
 } fm_entry_t;
-
 static fm_entry_t entries[MAX_ENTRIES];
 static int        entry_count = 0;
 static int        selected    = -1;
 static int        grid_scroll = 0;   
 static int        hover_sb    = -1;  
 static int        hover_grid  = -1;  
-
 typedef struct {
     const char *label;
     const char *path;
     int         kind;    
     uint32_t    icon_id; 
 } sb_item_t;
-
 static const sb_item_t sb[] = {
     {"Home",      "/USERS/DEFAULT",      0, ICON_HOME},
     {"Apps",      "/APPS",               0, ICON_TERMINAL},
@@ -97,7 +82,6 @@ static const sb_item_t sb[] = {
     {"Root",      "/",                   0, ICON_HARD_DRIVE},
 };
 #define SB_N  10
-
 static void fill(int x, int y, int w, int h, uint32_t c)
 {
     if (w <= 0 || h <= 0) return;
@@ -111,33 +95,28 @@ static void fill(int x, int y, int w, int h, uint32_t c)
         for (int k = 0; k < w; k++) p[k] = c;
     }
 }
-
 static void fill_round(int x, int y, int w, int h, uint32_t c)
 {
     if (w <= 0 || h <= 0) return;
     fill(x + 2, y,     w - 4, h,     c);
     fill(x,     y + 2, 2,     h - 4, c);
     fill(x+w-2, y + 2, 2,     h - 4, c);
-    
     fill(x + 1, y + 1, 1, 1, c);
     fill(x+w-2, y + 1, 1, 1, c);
     fill(x + 1, y+h-2, 1, 1, c);
     fill(x+w-2, y+h-2, 1, 1, c);
 }
-
 static void dstr(int x, int y, const char *s, uint32_t c)
 {
     gfx_context_t ctx = {gfx, (uint32_t)gfx_w, (uint32_t)gfx_h, (uint32_t)gfx_w};
     draw_string_vector(&ctx, x, y, s, c);
 }
-
 static int str_w(const char *s)
 {
     int w = 0;
     while (*s) { w += get_char_width(*s); s++; }
     return w;
 }
-
 static bool str_ends_ext(const char *n, const char *ext3)
 {
     int l = 0;
@@ -150,7 +129,6 @@ static bool str_ends_ext(const char *n, const char *ext3)
     }
     return true;
 }
-
 static int str_eq_ci(const char *a, const char *b)
 {
     for (;;) {
@@ -161,46 +139,29 @@ static int str_eq_ci(const char *a, const char *b)
         if (!ca) return 1;
     }
 }
-
 static void draw_folder_icon(int x, int y, int w, int h)
 {
     int tab_h  = h / 6;               
     int tab_w  = (w * 50) / 100;      
     int body_y = y + tab_h;
     int body_h = h - tab_h;
-
-    
     fill(x + 4, y + h + 1, w - 4, 3, CF_SHADOW);
     fill(x + w, body_y + 2, 3, body_h - 2, CF_SHADOW);
-
-    
     fill(x, body_y, w, body_h, CF_BODY);
-
-    
     fill(x, body_y, w, 3, CF_SHADE);
-
-    
     fill(x, body_y + body_h - 5, w, 5, CF_TOP);
-
-    
     fill(x, y, tab_w, tab_h, CF_TAB);
-    
     fill(x + tab_w, body_y, 2, 2, CF_BODY);
 }
-
 static void draw_file_icon(int x, int y, int w, int h, uint32_t bg, uint32_t fold)
 {
     int fc = w / 5;
-    
     fill(x,           y,       w - fc, h,       bg);
     fill(x + w - fc,  y + fc,  fc,     h - fc,  bg);
-    
     fill(x + w - fc,  y,       fc,     fc,      CB_CONTENT);
-    
     fill(x + w - fc,  y,       1,      fc,      fold);
     fill(x + w - fc,  y + fc - 1, fc,  1,       fold);
 }
-
 static void rebuild_path(void)
 {
     if (dir_depth == 0) { cur_path[0]='/'; cur_path[1]=0; return; }
@@ -212,7 +173,6 @@ static void rebuild_path(void)
     }
     cur_path[pos] = 0;
 }
-
 static void load_dir(void)
 {
     entry_count = 0; selected = -1; grid_scroll = 0;
@@ -221,7 +181,6 @@ static void load_dir(void)
     req.type  = MSG_DIR_REQ;
     req.data1 = cur_cluster;
     qk_sys_ipc_send(storage_pid, &req);
-
     while (1) {
         message_t resp;
         qk_ipc_recv(&resp);
@@ -240,38 +199,31 @@ static void load_dir(void)
             while (*ptr && *ptr != '\n' && ni < 15) e.name[ni++] = *ptr++;
             e.name[ni] = 0;
             if (*ptr == '\n') ptr++;
-            
             if (ni > 0 && !(e.name[0] == '.' && (ni == 1 || (ni == 2 && e.name[1] == '.'))))
                 entries[entry_count++] = e;
         }
         if (resp.data1 == 0) break;
     }
 }
-
 static int navigate_to_path(const char *path)
 {
     if (!path || path[0] != '/') return 0;
     dir_depth   = 0;
     cur_cluster = 0;
     if (path[1] == 0) { rebuild_path(); return 1; }
-
     const char *p = path + 1;
     while (*p) {
-        
         char seg[16];
         int si = 0;
         while (*p && *p != '/' && si < 15) seg[si++] = *p++;
         seg[si] = 0;
         if (*p == '/') p++;
         if (si == 0) continue;
-
-        
         message_t req;
         memset(&req, 0, sizeof(req));
         req.type  = MSG_DIR_REQ;
         req.data1 = cur_cluster;
         qk_sys_ipc_send(storage_pid, &req);
-
         int found = 0;
         uint16_t fc = 0;
         while (1) {
@@ -297,7 +249,6 @@ static int navigate_to_path(const char *path)
             if (resp.data1 == 0) break;
         }
         if (!found) return 0;
-
         if (dir_depth < MAX_DEPTH - 1) {
             dir_depth++;
             dir_stack[dir_depth] = fc;
@@ -309,7 +260,6 @@ static int navigate_to_path(const char *path)
     rebuild_path();
     return 1;
 }
-
 static void render(void)
 {
     if (!gfx) return;
@@ -317,24 +267,16 @@ static void render(void)
     if (!user_font) { qk_win_dirty(comp_pid); return; }
     int fh = get_font_height();
     if (fh <= 0) { qk_win_dirty(comp_pid); return; }
-
     int content_w = gfx_w - SIDEBAR_W;
     int content_h = gfx_h - HEADER_H;
     int item_w    = GITEM_W;
-
-    
     fill(0, 0, gfx_w, HEADER_H, CB_HEADER);
     fill(0, HEADER_H - 1, gfx_w, 1, C_SEP);
-
-    
     {
         int tw = str_w("Files");
         dstr((SIDEBAR_W - tw) / 2, (HEADER_H - fh) / 2, "Files", C_TEXT);
     }
-    
     fill(SIDEBAR_W - 1, 0, 1, HEADER_H, C_SEP);
-
-    
     {
         int icon_y = (HEADER_H - 16) / 2;
         gfx_context_t ctx2 = {gfx, (uint32_t)gfx_w, (uint32_t)gfx_h, (uint32_t)gfx_w};
@@ -349,8 +291,6 @@ static void render(void)
             dstr(CONTENT_X + 26, (HEADER_H - fh) / 2, ">", C_DIM);
         }
     }
-
-    
     {
         int pill_x = CONTENT_X + 54;
         int pill_y = 5;
@@ -360,19 +300,14 @@ static void render(void)
         const char *disp = (cur_path[0]=='/'&&cur_path[1]==0) ? "Root" : cur_path;
         dstr(pill_x + 10, pill_y + (pill_h - fh) / 2, disp, C_TEXT);
     }
-
-    
     fill(0, HEADER_H, SIDEBAR_W, gfx_h - HEADER_H, CB_SIDEBAR);
     fill(SIDEBAR_W - 1, HEADER_H, 1, gfx_h - HEADER_H, C_SEP);
-
-    
     int active_sb = -1;
     for (int i = 0; i < SB_N; i++) {
         if (sb[i].kind == 0 && sb[i].path && str_eq_ci(cur_path, sb[i].path)) {
             active_sb = i; break;
         }
     }
-
     {
         int sy = HEADER_H + 8;
         for (int i = 0; i < SB_N; i++) {
@@ -382,12 +317,10 @@ static void render(void)
                 continue;
             }
             if (!sb[i].label) continue;
-            
             if (i == active_sb)
                 fill_round(6, sy + 2, SIDEBAR_W - 14, SB_ITEM_H - 4, CB_SEL);
             else if (i == hover_sb)
                 fill_round(6, sy + 2, SIDEBAR_W - 14, SB_ITEM_H - 4, CB_HOVER);
-            
             uint32_t col = i == active_sb ? C_TEXT : C_DIM;
             int row_y = sy + (SB_ITEM_H - fh) / 2;
             if (sb[i].icon_id && gui_icons) {
@@ -399,8 +332,6 @@ static void render(void)
             sy += SB_ITEM_H;
         }
     }
-
-    
     if (entry_count == 0) {
         const char *msg = "Empty directory";
         int tw = str_w(msg);
@@ -409,7 +340,6 @@ static void render(void)
         qk_win_dirty(comp_pid);
         return;
     }
-
     int rows_total = (entry_count + GCOLS - 1) / GCOLS;
     int rows_vis   = content_h / GITEM_H;
     if (rows_vis < 1) rows_vis = 1;
@@ -417,27 +347,19 @@ static void render(void)
     if (max_scroll < 0) max_scroll = 0;
     if (grid_scroll > max_scroll) grid_scroll = max_scroll;
     if (grid_scroll < 0) grid_scroll = 0;
-
-    
     int icon_draw = 48;
-
     for (int row = 0; row <= rows_vis; row++) {
         int real_row = row + grid_scroll;
         if (real_row >= rows_total) break;
-
         for (int col = 0; col < GCOLS; col++) {
             int idx = real_row * GCOLS + col;
             if (idx >= entry_count) break;
-
             fm_entry_t *e = &entries[idx];
             int cx = CONTENT_X + col * item_w;
             int cy = CONTENT_Y + row * GITEM_H;
-
             if (cy >= gfx_h) continue;
             int visible_h = gfx_h - cy;
             if (visible_h <= 0) continue;
-
-            
             if (idx == selected || idx == hover_grid) {
                 int bx = cx + 10, by = cy + 6;
                 int bw = item_w - 20;
@@ -446,8 +368,6 @@ static void render(void)
                 fill_round(bx, by, bw, bh,
                            idx == selected ? CB_SEL : CB_HOVER);
             }
-
-            
             if (gui_icons) {
                 #define GICON_SZ 40
                 int ix = cx + (item_w - GICON_SZ) / 2;
@@ -462,7 +382,6 @@ static void render(void)
                 draw_icon_sized(&ctx2, gui_icons, ix, iy, icon_id, ic, GICON_SZ);
                 (void)icon_draw;
             } else {
-                
                 int ix = cx + (item_w - GICON_W) / 2;
                 int iy = cy + 18;
                 if (iy + GICON_H <= gfx_h) {
@@ -474,8 +393,6 @@ static void render(void)
                         draw_file_icon(ix, iy, GICON_W, GICON_H, CF_FILE, CF_FFOLD);
                 }
             }
-
-            
             int ty = cy + 20 + GICON_SZ + 6; 
             if (ty + fh <= gfx_h) {
                 char label[16];
@@ -492,8 +409,6 @@ static void render(void)
             }
         }
     }
-
-    
     if (rows_total > rows_vis) {
         int sx  = gfx_w - SCROLLBAR_W;
         int sy  = CONTENT_Y;
@@ -506,10 +421,8 @@ static void render(void)
             ty2 = sy + (sh - th) * grid_scroll / (rows_total - rows_vis);
         fill_round(sx + 1, ty2, SCROLLBAR_W - 2, th, C_DIM);
     }
-
     qk_win_dirty(comp_pid);
 }
-
 static int spawn_qex(const char *qex_path)
 {
     message_t req, resp;
@@ -519,11 +432,9 @@ static int spawn_qex(const char *qex_path)
     strncpy((char *)req.payload, qex_path, sizeof(req.payload) - 1);
     qk_ipc_send_recv(storage_pid, &req, &resp);
     if (resp.type != MSG_FILE_SIZE || resp.data1 == 0) return -1;
-
     uint32_t size = resp.data1;
     uint8_t *buf  = (uint8_t *)malloc(size);
     if (!buf) return -1;
-
     uint32_t off = 0;
     while (off < size) {
         memset(&req, 0, sizeof(req));
@@ -542,7 +453,6 @@ static int spawn_qex(const char *qex_path)
     free(buf);
     return pid;
 }
-
 static void open_with(const char *app_qex, const char *file_path)
 {
     int pid = spawn_qex(app_qex);
@@ -553,12 +463,10 @@ static void open_with(const char *app_qex, const char *file_path)
     strncpy((char *)msg.payload, file_path, sizeof(msg.payload) - 1);
     qk_sys_ipc_send(pid, &msg);
 }
-
 static void launch_entry(int idx)
 {
     if (idx < 0 || idx >= entry_count) return;
     fm_entry_t *e = &entries[idx];
-
     if (e->is_dir) {
         if (dir_depth < MAX_DEPTH - 1) {
             dir_depth++;
@@ -572,14 +480,12 @@ static void launch_entry(int idx)
         render();
         return;
     }
-
     char full_path[128];
     strncpy(full_path, cur_path, sizeof(full_path) - 20);
     int plen = strlen(full_path);
     if (plen > 0 && full_path[plen-1] != '/') full_path[plen++] = '/';
     strncpy(full_path + plen, e->name, sizeof(full_path) - plen - 1);
     full_path[sizeof(full_path)-1] = 0;
-
     if (str_ends_ext(e->name, "BMP"))
         { open_with("/APPS/IMGVIEW.QEX", full_path); return; }
     if (str_ends_ext(e->name, "TXT"))
@@ -587,23 +493,19 @@ static void launch_entry(int idx)
     if (str_ends_ext(e->name, "QEX"))
         { spawn_qex(full_path); return; }
 }
-
 int main(void)
 {
     comp_pid    = qk_get_server_pid(QK_SERVER_COMPOSITOR);
     storage_pid = qk_get_server_pid(QK_SERVER_STORAGE);
     if (comp_pid < 0 || storage_pid < 0) return 1;
-
     void *font_addr = 0;
     if (qk_map_font_atlas(&font_addr) == 0)
         font_atlas_init((uint8_t *)font_addr);
-
     void *icons_addr = 0;
     if (qk_map_icons_atlas(&icons_addr) == 0 && icons_addr) {
         gui_icons = (AtlasFont *)malloc(sizeof(AtlasFont));
         font_atlas_init_for_ptr(gui_icons, (uint8_t *)icons_addr);
     }
-
     message_t msg;
     memset(&msg, 0, sizeof(msg));
     msg.type  = MSG_WIN_CREATE;
@@ -613,21 +515,17 @@ int main(void)
     qk_sys_ipc_send(comp_pid, &msg);
     while (1) { qk_ipc_recv(&msg); if (msg.type == MSG_WIN_CREATED) break; }
     win_id = (int)msg.data1;
-
     gfx = (uint32_t *)qk_win_map_buffer(comp_pid, win_id, &gfx_w, &gfx_h);
     qk_set_proc_name(-1, "filemgr");
-
     dir_depth = 0;
     dir_stack[0] = 0;
     cur_cluster = 0;
     rebuild_path();
     load_dir();
     render();
-
     while (1) {
         qk_ipc_recv(&msg);
         int needs_render = 0;
-
         do {
             if (msg.type == MSG_WIN_RESIZED) {
                 uint32_t *ng = (uint32_t *)qk_win_map_buffer(comp_pid, win_id, &gfx_w, &gfx_h);
@@ -635,7 +533,6 @@ int main(void)
                 needs_render = 1;
             } else if (msg.type == MSG_MOUSE_EVENT) {
                 Event *ev = (Event *)msg.payload;
-
                 if (ev->type == EVENT_MOUSE_SCROLL) {
                     grid_scroll += ev->scroll;
                     needs_render = 1;
@@ -643,7 +540,6 @@ int main(void)
                     int mx = ev->x;
                     int my = ev->y - TITLE_BAR_HEIGHT;
                     int new_hsb = -1, new_hg = -1;
-
                     if (mx >= 0 && mx < SIDEBAR_W && my >= HEADER_H) {
                         int sy2 = HEADER_H + 8;
                         for (int i = 0; i < SB_N; i++) {
@@ -673,7 +569,6 @@ int main(void)
                 } else if (ev->type == EVENT_MOUSE_DOWN && ev->button == MOUSE_BTN_LEFT) {
                     int cx = ev->x;
                     int cy = ev->y - TITLE_BAR_HEIGHT;
-
                     if (cy >= 0 && cy < HEADER_H &&
                         cx >= CONTENT_X + 4 && cx < CONTENT_X + 38 &&
                         dir_depth > 0) {
@@ -721,7 +616,6 @@ int main(void)
                     int rows_vis_k   = (gfx_h - HEADER_H) / GITEM_H;
                     int max_s = rows_total_k - rows_vis_k;
                     if (max_s < 0) max_s = 0;
-
                     if (sc == 0x4B) { if (selected > 0) selected--; needs_render = 1; }
                     else if (sc == 0x4D) { if (selected < entry_count - 1) selected++; needs_render = 1; }
                     else if (sc == 0x48) { if (selected >= GCOLS) selected -= GCOLS; needs_render = 1; }
@@ -737,7 +631,6 @@ int main(void)
                             needs_render = 1;
                         }
                     }
-
                     if (needs_render && selected >= 0) {
                         int sel_row = selected / GCOLS;
                         if (sel_row < grid_scroll) grid_scroll = sel_row;
@@ -749,7 +642,6 @@ int main(void)
                 }
             }
         } while (qk_ipc_recv_nb(&msg) == 0);
-
         if (needs_render) render();
     }
     return 0;

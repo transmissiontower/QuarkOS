@@ -1,15 +1,10 @@
-
-
 #ifndef RICK_ROLL_H
 #define RICK_ROLL_H
-
 #include "lib/stdint.h"
-
 #ifndef NOTE_T_DEFINED
 #define NOTE_T_DEFINED
 typedef struct { uint32_t freq; uint32_t ms; } note_t;
 #endif
-
 #define RK_W   2100  
 #define RK_H   1050  
 #define RK_Q    530  
@@ -18,7 +13,6 @@ typedef struct { uint32_t freq; uint32_t ms; } note_t;
 #define RK_DQ   790  
 #define RK_DE   390  
 #define RK_DH  1580  
-
 #define RK_A4   440
 #define RK_B4   494
 #define RK_CS5  554
@@ -27,33 +21,27 @@ typedef struct { uint32_t freq; uint32_t ms; } note_t;
 #define RK_FS5  740
 #define RK_G5   784
 #define RK_A5   880
-
 static const note_t rick_roll[] = {
     {RK_D5,RK_DQ},{RK_E5,RK_DQ},{RK_A4,RK_Q},
     {RK_E5,RK_DQ},{RK_FS5,RK_DQ},{RK_A5,RK_S},{RK_G5,RK_S},{RK_FS5,RK_E},
     {RK_D5,RK_DQ},{RK_E5,RK_DQ},{RK_A4,RK_H},
     {RK_A4,RK_S},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_E},{RK_D5,RK_S},
-
     {RK_D5,RK_DQ},{RK_E5,RK_DQ},{RK_A4,RK_Q},
     {RK_E5,RK_DQ},{RK_FS5,RK_DQ},{RK_A5,RK_S},{RK_G5,RK_S},{RK_FS5,RK_E},
     {RK_D5,RK_DQ},{RK_E5,RK_DQ},{RK_A4,RK_H},
     {RK_A4,RK_S},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_E},{RK_D5,RK_S},
-
     {0,RK_Q},{RK_B4,RK_E},{RK_CS5,RK_E},{RK_D5,RK_E},{RK_D5,RK_E},{RK_E5,RK_E},{RK_CS5,RK_DE},
     {RK_B4,RK_S},{RK_A4,RK_H},{0,RK_Q},
-
     {0,RK_E},{RK_B4,RK_E},{RK_B4,RK_E},{RK_CS5,RK_E},{RK_D5,RK_E},{RK_B4,RK_Q},{RK_A4,RK_E},
     {RK_A5,RK_E},{0,RK_E},{RK_A5,RK_E},{RK_E5,RK_DQ},{0,RK_Q},
     {RK_B4,RK_E},{RK_B4,RK_E},{RK_CS5,RK_E},{RK_D5,RK_E},{RK_B4,RK_E},{RK_D5,RK_E},{RK_E5,RK_E},{0,RK_E},
     {0,RK_E},{RK_CS5,RK_E},{RK_B4,RK_E},{RK_A4,RK_DQ},{0,RK_Q},
     {0,RK_E},{RK_B4,RK_E},{RK_B4,RK_E},{RK_CS5,RK_E},{RK_D5,RK_E},{RK_B4,RK_E},{RK_A4,RK_Q},
     {RK_E5,RK_E},{RK_E5,RK_E},{RK_E5,RK_E},{RK_FS5,RK_E},{RK_E5,RK_Q},{0,RK_Q},
-
     {RK_D5,RK_H},{RK_E5,RK_E},{RK_FS5,RK_E},{RK_D5,RK_E},
     {RK_E5,RK_E},{RK_E5,RK_E},{RK_E5,RK_E},{RK_FS5,RK_E},{RK_E5,RK_Q},{RK_A4,RK_Q},
     {0,RK_H},{RK_B4,RK_E},{RK_CS5,RK_E},{RK_D5,RK_E},{RK_B4,RK_E},
     {0,RK_E},{RK_E5,RK_E},{RK_FS5,RK_E},{RK_E5,RK_DQ},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_S},{RK_B4,RK_S},
-
     {RK_FS5,RK_DE},{RK_FS5,RK_DE},{RK_E5,RK_DQ},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_S},{RK_B4,RK_S},
     {RK_E5,RK_DE},{RK_E5,RK_DE},{RK_D5,RK_DE},{RK_CS5,RK_S},{RK_B4,RK_DE},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_S},{RK_B4,RK_S},
     {RK_D5,RK_Q},{RK_E5,RK_E},{RK_CS5,RK_DE},{RK_B4,RK_S},{RK_A4,RK_E},{RK_A4,RK_E},{RK_A4,RK_E},
@@ -62,7 +50,6 @@ static const note_t rick_roll[] = {
     {RK_A5,RK_Q},{RK_CS5,RK_E},{RK_D5,RK_DE},{RK_CS5,RK_S},{RK_B4,RK_E},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_S},{RK_B4,RK_S},
     {RK_D5,RK_Q},{RK_E5,RK_E},{RK_CS5,RK_DE},{RK_B4,RK_S},{RK_A4,RK_Q},{RK_A4,RK_E},
     {RK_E5,RK_Q},{RK_D5,RK_H},{0,RK_Q},
-
     {0,RK_E},{RK_B4,RK_E},{RK_D5,RK_E},{RK_B4,RK_E},{RK_D5,RK_E},{RK_E5,RK_Q},{0,RK_E},
     {0,RK_E},{RK_CS5,RK_E},{RK_B4,RK_E},{RK_A4,RK_DQ},{0,RK_Q},
     {0,RK_E},{RK_B4,RK_E},{RK_B4,RK_E},{RK_CS5,RK_E},{RK_D5,RK_E},{RK_B4,RK_E},{RK_A4,RK_Q},
@@ -73,7 +60,6 @@ static const note_t rick_roll[] = {
     {0,RK_E},{RK_E5,RK_E},{RK_E5,RK_E},{RK_FS5,RK_Q},{RK_E5,RK_DQ},
     {RK_D5,RK_H},{RK_D5,RK_E},{RK_E5,RK_E},{RK_FS5,RK_E},{RK_E5,RK_Q},
     {RK_E5,RK_E},{RK_E5,RK_E},{RK_FS5,RK_E},{RK_E5,RK_E},{RK_A4,RK_E},{RK_A4,RK_Q},
-
     {0,RK_DQ},{RK_A4,RK_E},{RK_B4,RK_E},{RK_CS5,RK_E},{RK_D5,RK_E},{RK_B4,RK_E},
     {0,RK_E},{RK_E5,RK_E},{RK_FS5,RK_E},{RK_E5,RK_DQ},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_S},{RK_B4,RK_S},
     {RK_FS5,RK_DE},{RK_FS5,RK_DE},{RK_E5,RK_DQ},{RK_A4,RK_S},{RK_B4,RK_S},{RK_D5,RK_S},{RK_B4,RK_S},
@@ -93,7 +79,6 @@ static const note_t rick_roll[] = {
     {RK_D5,RK_Q},{RK_E5,RK_E},{RK_CS5,RK_DE},{RK_B4,RK_S},{RK_A4,RK_Q},{RK_A4,RK_E},
     {RK_E5,RK_Q},{RK_D5,RK_H},{0,RK_Q},
 };
-
 #undef RK_W
 #undef RK_H
 #undef RK_Q
@@ -110,5 +95,4 @@ static const note_t rick_roll[] = {
 #undef RK_FS5
 #undef RK_G5
 #undef RK_A5
-
 #endif 

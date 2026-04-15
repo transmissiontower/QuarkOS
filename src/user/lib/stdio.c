@@ -1,23 +1,18 @@
-
-
 #include "user/lib/stdio.h"
 #include "user/lib/libapi.h"
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
-
 static FILE _stderr_impl = {0, 0, -1, 0, 1};
 static FILE _stdout_impl = {0, 0, -1, 0, 1};
 static FILE _stdin_impl  = {0, 0, -1, 0, 1};
 FILE *stderr = &_stderr_impl;
 FILE *stdout = &_stdout_impl;
 FILE *stdin  = &_stdin_impl;
-
 static void _putc_buf(char *buf, uint32_t *pos, uint32_t max, char c)
 {
     if (*pos < max - 1)
         buf[(*pos)++] = c;
 }
-
 static void _puts_buf(char *buf, uint32_t *pos, uint32_t max,
                       const char *s, int width, int left, int zero)
 {
@@ -32,7 +27,6 @@ static void _puts_buf(char *buf, uint32_t *pos, uint32_t max,
     if (left)
         for (int i = 0; i < pad; i++) _putc_buf(buf, pos, max, ' ');
 }
-
 static void _puti_buf(char *buf, uint32_t *pos, uint32_t max,
                       long val, int base, int upper,
                       int width, int left, int zero, int sign)
@@ -50,7 +44,6 @@ static void _puti_buf(char *buf, uint32_t *pos, uint32_t max,
     tmp[len] = '\0';
     _puts_buf(buf, pos, max, tmp, width, left, zero);
 }
-
 int vsnprintf(char *buf, uint32_t n, const char *fmt, va_list ap)
 {
     if (!buf || n == 0) return 0;
@@ -115,26 +108,22 @@ int vsnprintf(char *buf, uint32_t n, const char *fmt, va_list ap)
     buf[pos]='\0';
     return (int)pos;
 }
-
 int vsprintf(char *buf, const char *fmt, va_list ap)
 {
     return vsnprintf(buf, 4096, fmt, ap);
 }
-
 int snprintf(char *buf, uint32_t n, const char *fmt, ...)
 {
     va_list ap; va_start(ap,fmt);
     int r = vsnprintf(buf,n,fmt,ap);
     va_end(ap); return r;
 }
-
 int sprintf(char *buf, const char *fmt, ...)
 {
     va_list ap; va_start(ap,fmt);
     int r = vsnprintf(buf,4096,fmt,ap);
     va_end(ap); return r;
 }
-
 int printf(const char *fmt, ...)
 {
     char buf[512];
@@ -144,7 +133,6 @@ int printf(const char *fmt, ...)
     qk_print_at(0,0,0xFFFFFFFF,buf);
     return (int)strlen(buf);
 }
-
 int fprintf(FILE *stream, const char *fmt, ...)
 {
     (void)stream;
@@ -155,24 +143,19 @@ int fprintf(FILE *stream, const char *fmt, ...)
     qk_print_at(0,0,0xFFFF4444,buf);
     return (int)strlen(buf);
 }
-
 int fputs(const char *s, FILE *stream) { (void)stream; qk_print_at(0,0,0xFFFFFFFF,s); return 0; }
 int fputc(int c, FILE *stream) { (void)stream; (void)c; return c; }
 int puts(const char *s) { qk_print_at(0,0,0xFFFFFFFF,s); return 0; }
 int putchar(int c) { (void)c; return c; }
-
 #define CHUNK 120   
-
 static FILE  _open_file;
 static int   _file_in_use = 0;
-
 FILE *fopen(const char *path, const char *mode)
 {
     (void)mode;
     if (_file_in_use) return (FILE *)0;
     int spid = qk_get_server_pid(QK_SERVER_STORAGE);
     if (spid < 0) return (FILE *)0;
-
     message_t req, rep;
     memset(&req,0,sizeof(req));
     req.type  = MSG_FILE_OPEN;
@@ -180,7 +163,6 @@ FILE *fopen(const char *path, const char *mode)
     strncpy((char *)req.payload, path, sizeof(req.payload)-1);
     if (qk_ipc_send_recv(spid,&req,&rep) != 0) return (FILE *)0;
     if (rep.type != MSG_FILE_SIZE) return (FILE *)0;
-
     _open_file.size        = rep.data1;
     _open_file.pos         = 0;
     _open_file.storage_pid = spid;
@@ -189,7 +171,6 @@ FILE *fopen(const char *path, const char *mode)
     _file_in_use           = 1;
     return &_open_file;
 }
-
 int fclose(FILE *fp)
 {
     if (!fp || fp->is_stub) return 0;
@@ -197,7 +178,6 @@ int fclose(FILE *fp)
     fp->is_open = 0; _file_in_use = 0;
     return 0;
 }
-
 uint32_t fread(void *buf, uint32_t elem_size, uint32_t count, FILE *fp)
 {
     if (!fp || !fp->is_open || fp->is_stub) return 0;
@@ -221,12 +201,10 @@ uint32_t fread(void *buf, uint32_t elem_size, uint32_t count, FILE *fp)
     }
     return (elem_size > 0) ? (read / elem_size) : 0;
 }
-
 uint32_t fwrite(const void *buf, uint32_t size, uint32_t count, FILE *fp)
 {
     (void)buf; (void)size; (void)fp; return count; 
 }
-
 int fseek(FILE *fp, long offset, int whence)
 {
     if (!fp || fp->is_stub) return 0;
@@ -243,17 +221,14 @@ int fseek(FILE *fp, long offset, int whence)
     fp->pos = (uint32_t)np;
     return 0;
 }
-
 long  ftell(FILE *fp) { return (!fp||!fp->is_open) ? -1 : (long)fp->pos; }
 void  rewind(FILE *fp) { if (fp&&fp->is_open) fp->pos=0; }
 int   feof(FILE *fp)  { return (!fp||!fp->is_open) ? 1 : (fp->pos>=fp->size); }
-
 int fgetc(FILE *fp)
 {
     uint8_t c;
     return (fread(&c,1,1,fp)==1) ? (int)c : EOF;
 }
-
 char *fgets(char *buf, int n, FILE *fp)
 {
     if (!buf||n<=0) return (char *)0;

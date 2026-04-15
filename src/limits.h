@@ -1,6 +1,5 @@
 #ifndef _STUB_LIMITS_H
 #define _STUB_LIMITS_H
-
 #define CHAR_BIT   8
 #define SCHAR_MIN  (-128)
 #define SCHAR_MAX  127
@@ -16,5 +15,4 @@
 #define LONG_MIN   INT_MIN
 #define LONG_MAX   INT_MAX
 #define ULONG_MAX  UINT_MAX
-
 #endif 

@@ -1,10 +1,7 @@
 #ifndef GDT_H
 #define GDT_H
-
 #include "lib/stdint.h"
-
 typedef uint32_t addr_t;
-
 struct gdt_entry_struct {
     uint16_t limit;
     uint16_t base_low;
@@ -12,14 +9,11 @@ struct gdt_entry_struct {
     uint8_t access;
     uint8_t flags;
     uint8_t base_high;
-
 } __attribute__((packed));
-
 struct gdt_ptr_struct {
     uint16_t limit;
     unsigned int base;
 } __attribute__((packed));
-
 struct tss_entry_struct {
     uint32_t prev_tss;
     uint32_t esp0;
@@ -49,11 +43,9 @@ struct tss_entry_struct {
     uint32_t trap;
     uint32_t iomap_base;
 } __attribute__((packed));
-
 void arch_gdt_init();
 void arch_gdt_set_gate(uint32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
 void arch_tss_init(uint32_t num, uint16_t ss0, uint32_t esp0);
 void arch_tss_set_stack(uint32_t kernel_stack);
 extern void arch_tss_flush();
-
 #endif

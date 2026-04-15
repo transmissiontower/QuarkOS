@@ -1,9 +1,7 @@
 #ifndef IDT_H
 #define IDT_H
-
 #include "lib/stdint.h"
 #include "util/util.h"
-
 struct idt_entry_struct {
     uint16_t base_low;
     uint16_t sel;
@@ -11,19 +9,15 @@ struct idt_entry_struct {
     uint8_t flags;
     uint16_t base_high;
 } __attribute__((packed));
-
 struct idt_ptr_struct {
     uint16_t limit;
     uint32_t base;
 } __attribute__((packed));
-
 void arch_idt_init();
 void arch_set_idt_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags);
 void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r));
 void irq_uninstall_handler(int irq);
-
 void arch_isr_dispatcher(struct InterruptRegisters *resgs);
-
 extern void isr0();
 extern void isr1();
 extern void isr2();
@@ -56,7 +50,6 @@ extern void isr28();
 extern void isr29();
 extern void isr30();
 extern void isr31();
-
 extern void irq0();
 extern void irq1();
 extern void irq2();
@@ -73,8 +66,6 @@ extern void irq12();
 extern void irq13();
 extern void irq14();
 extern void irq15();
-
 extern void isr128();
 extern void isr177();
-
 #endif

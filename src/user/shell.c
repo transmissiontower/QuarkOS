@@ -6,12 +6,10 @@
 #include "user/lib/storage_client.h"
 #include "user/lib/window.h"
 #include <stddef.h>
-
 static int storage_pid = -1;
 static int comp_pid = -1;
 static uint16_t current_dir_cluster = 0;
 static char current_path[128] = "/";
-
 #define MAX_PATH_DEPTH 16
 #define NANO_BUFFER_SIZE 4096
 #define QUILL_SCROLL_LINES 12
@@ -22,13 +20,11 @@ static char current_path[128] = "/";
 static uint16_t dir_stack[MAX_PATH_DEPTH] = {0};
 static char dir_names[MAX_PATH_DEPTH][16];
 static int dir_depth = 0;
-
 typedef struct {
     int is_dir;
     uint16_t cluster;
     char name[16];
 } dir_entry_info_t;
-
 static int ensure_server_pids(void)
 {
     if (storage_pid < 0)
@@ -39,7 +35,6 @@ static int ensure_server_pids(void)
         return -1;
     return 0;
 }
-
 int my_strcmp(const char *s1, const char *s2)
 {
     while (*s1 && (*s1 == *s2)) {
@@ -48,7 +43,6 @@ int my_strcmp(const char *s1, const char *s2)
     }
     return *(const unsigned char *)s1 - *(const unsigned char *)s2;
 }
-
 int str_starts_with(const char *str, const char *prefix)
 {
     while (*prefix) {
@@ -57,7 +51,6 @@ int str_starts_with(const char *str, const char *prefix)
     }
     return 1;
 }
-
 static int cmd_is(const char *input, const char *primary, const char *alias)
 {
     if (my_strcmp(input, primary) == 0)
@@ -66,7 +59,6 @@ static int cmd_is(const char *input, const char *primary, const char *alias)
         return 1;
     return 0;
 }
-
 static const char *cmd_arg_ptr(const char *input, const char *primary, const char *alias)
 {
     uint32_t len = strlen(primary);
@@ -79,18 +71,14 @@ static const char *cmd_arg_ptr(const char *input, const char *primary, const cha
     }
     return 0;
 }
-
 #define KEY_MOD_SHIFT 0x01
 #define KEY_MOD_CTRL  0x02
 #define KEY_MOD_ALT   0x04
 #define KEY_MOD_CAPS  0x08
-
 char scancode_to_char(uint8_t code, uint32_t mods)
 {
     bool shifted = (mods & KEY_MOD_SHIFT) != 0;
     bool caps    = (mods & KEY_MOD_CAPS)  != 0;
-
-    
     const char *row1    = "1234567890-=";
     const char *row1_sh = "!@#$%^&*()_+";
     const char *row2    = "qwertyuiop[]";
@@ -99,16 +87,13 @@ char scancode_to_char(uint8_t code, uint32_t mods)
     const char *row3_sh = "ASDFGHJKL:\"~";
     const char *row4    = "zxcvbnm,./";
     const char *row4_sh = "ZXCVBNM<>?";
-
     if (code >= 0x02 && code <= 0x0D)
         return shifted ? row1_sh[code - 0x02] : row1[code - 0x02];
-
     if (code >= 0x10 && code <= 0x1B) {
         bool upper = shifted ^ caps;
         return upper ? row2_sh[code - 0x10] : row2[code - 0x10];
     }
     if (code >= 0x1E && code <= 0x29) {
-        
         if (code <= 0x26) { 
             bool upper = shifted ^ caps;
             return upper ? row3_sh[code - 0x1E] : row3[code - 0x1E];
@@ -129,7 +114,6 @@ char scancode_to_char(uint8_t code, uint32_t mods)
     if (code == 0x35) return shifted ? '?' : '/';
     return 0;
 }
-
 void shell_print(const char *text)
 {
     message_t msg;
@@ -141,7 +125,6 @@ void shell_print(const char *text)
     msg.payload[len] = 0;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-
 static void shell_print_long(const char *text)
 {
     if (!text)
@@ -159,7 +142,6 @@ static void shell_print_long(const char *text)
         shell_print(chunk);
     }
 }
-
 static void shell_print_range(const char *start, const char *end)
 {
     if (!start || !end || start >= end)
@@ -177,7 +159,6 @@ static void shell_print_range(const char *start, const char *end)
         shell_print(chunk);
     }
 }
-
 static void shell_trigger_page_fault(void)
 {
     shell_print("Triggering page fault (press R to reboot)...\n");
@@ -185,14 +166,12 @@ static void shell_trigger_page_fault(void)
     *bad = 0xAB;
     shell_print("Failed to trigger page fault.\n");
 }
-
 static void shell_trigger_kernel_panic(void)
 {
     shell_print("Triggering kernel panic (press R to reboot)...\n");
     qk_trigger_panic("Shell requested kernel panic");
     shell_print("Kernel panic syscall returned unexpectedly.\n");
 }
-
 static int quill_count_lines(const char *text)
 {
     if (!text || !*text)
@@ -204,7 +183,6 @@ static int quill_count_lines(const char *text)
     }
     return lines;
 }
-
 static void quill_show_scroll_window(const char *buffer, int scroll_offset_lines, int window_lines)
 {
     if (!buffer || !*buffer) {
@@ -229,7 +207,6 @@ static void quill_show_scroll_window(const char *buffer, int scroll_offset_lines
     int start_line = total_lines - display_lines - scroll_offset_lines;
     if (start_line < 0)
         start_line = 0;
-
     const char *start_ptr = buffer;
     int current_line = 0;
     while (*start_ptr && current_line < start_line) {
@@ -237,7 +214,6 @@ static void quill_show_scroll_window(const char *buffer, int scroll_offset_lines
             current_line++;
         start_ptr++;
     }
-
     const char *end_ptr = start_ptr;
     int lines_collected = 0;
     while (*end_ptr && lines_collected < display_lines) {
@@ -253,7 +229,6 @@ static void quill_show_scroll_window(const char *buffer, int scroll_offset_lines
     if (!*end_ptr && lines_collected < display_lines) {
         lines_collected = display_lines;
     }
-
     shell_print("---- quill view ");
     char num_buf[16];
     int_to_str(start_line + 1, num_buf, 0);
@@ -272,27 +247,23 @@ static void quill_show_scroll_window(const char *buffer, int scroll_offset_lines
     }
     shell_print("-----------------------\n");
 }
-
 void shell_clear()
 {
     message_t msg;
     msg.type = MSG_WIN_CLEAR;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-
 void shell_show_prompt()
 {
     shell_print(current_path);
     shell_print(" $ ");
 }
-
 static char upcase(char c)
 {
     if (c >= 'a' && c <= 'z')
         return c - 32;
     return c;
 }
-
 static uint32_t hex_to_uint(const char *s)
 {
     uint32_t val = 0;
@@ -313,7 +284,6 @@ static uint32_t hex_to_uint(const char *s)
     }
     return val;
 }
-
 static int shell_name_equals(const char *a, const char *b)
 {
     if (!a || !b)
@@ -326,7 +296,6 @@ static int shell_name_equals(const char *a, const char *b)
     }
     return (*a == 0 && *b == 0);
 }
-
 static void shell_rebuild_path()
 {
     if (dir_depth == 0) {
@@ -347,7 +316,6 @@ static void shell_rebuild_path()
     }
     current_path[pos] = 0;
 }
-
 static int shell_dir_lookup(uint16_t dir_cluster, const char *target, dir_entry_info_t *out_entry)
 {
     if (!target || !*target)
@@ -357,7 +325,6 @@ static int shell_dir_lookup(uint16_t dir_cluster, const char *target, dir_entry_
     req.type = MSG_DIR_REQ;
     req.data1 = dir_cluster;
     qk_sys_ipc_send(storage_pid, &req);
-
     int found = 0;
     dir_entry_info_t result;
     while (1) {
@@ -401,7 +368,6 @@ static int shell_dir_lookup(uint16_t dir_cluster, const char *target, dir_entry_
         *out_entry = result;
     return found ? 0 : -1;
 }
-
 static int shell_resolve_target(const char *input, uint16_t *out_dir_cluster, char *out_name)
 {
     if (!input || !*input)
@@ -409,7 +375,6 @@ static int shell_resolve_target(const char *input, uint16_t *out_dir_cluster, ch
     char temp[128];
     strncpy(temp, input, sizeof(temp) - 1);
     temp[sizeof(temp) - 1] = 0;
-
     int len = strlen(temp);
     while (len > 1 && temp[len - 1] == '/') {
         temp[len - 1] = 0;
@@ -419,7 +384,6 @@ static int shell_resolve_target(const char *input, uint16_t *out_dir_cluster, ch
         return -1;
     if (temp[0] == '/' && temp[1] == 0)
         return -1;
-
     if (strstr(temp, "/")) {
         if (qk_path_resolve_ext(current_dir_cluster, temp, out_dir_cluster, out_name) != 0)
             return -1;
@@ -435,7 +399,6 @@ static int shell_resolve_target(const char *input, uint16_t *out_dir_cluster, ch
     }
     return 0;
 }
-
 static int shell_read_line_blocking(char *out, int max_len, uint8_t *special_scancode)
 {
     int ptr = 0;
@@ -455,7 +418,6 @@ static int shell_read_line_blocking(char *out, int max_len, uint8_t *special_sca
         uint8_t is_release = (raw & 0x80) != 0;
         uint8_t code = (uint8_t)(raw & 0x7F);
         int extended = (raw & 0x100) != 0;
-        
         if (!extended && code == 0x00) {
             awaiting_extended = 1;
             continue;
@@ -511,7 +473,6 @@ static int shell_read_line_blocking(char *out, int max_len, uint8_t *special_sca
         }
     }
 }
-
 static void shell_procs()
 {
     process_info_t info[32];
@@ -521,7 +482,6 @@ static void shell_procs()
     for (int i = 0; i < count; i++) {
         char pid_str[16];
         uint_to_hex(info[i].pid, pid_str);
-
         const char *state_str = "UNKNOWN";
         if (info[i].state == 0)
             state_str = "READY";
@@ -533,11 +493,9 @@ static void shell_procs()
             state_str = "ZOMBIE";
         else if (info[i].state == 4)
             state_str = "WAIT_IRQ";
-
         char line[128];
         char pid_val[16];
         int_to_str(info[i].pid, pid_val, 0);
-
         line[0] = 0;
         strcat(line, pid_val);
         strcat(line, "    ");
@@ -548,7 +506,6 @@ static void shell_procs()
         shell_print(line);
     }
 }
-
 void *shell_read_file(const char *filename, uint32_t *out_size)
 {
     if (storage_pid < 0)
@@ -556,38 +513,32 @@ void *shell_read_file(const char *filename, uint32_t *out_size)
     uint16_t dir_cluster = current_dir_cluster;
     char resolved_name[16];
     const char *target_name = filename;
-
     if (strstr(filename, "/")) {
         if (qk_path_resolve_ext(current_dir_cluster, filename, &dir_cluster, resolved_name) != 0) {
             return 0;
         }
         target_name = resolved_name;
     }
-
     message_t req;
     memset(&req, 0, sizeof(req));
     req.type = MSG_FILE_OPEN;
     req.data1 = dir_cluster;
     strncpy((char *)req.payload, target_name, 12);
     qk_sys_ipc_send(storage_pid, &req);
-
     message_t resp;
     while (1) {
         qk_ipc_recv(&resp);
         if (resp.sender_pid == storage_pid)
             break;
     }
-
     if (resp.type != MSG_FILE_SIZE) {
         return 0;
     }
-
     uint32_t size = resp.data1;
     *out_size = size;
     uint8_t *buffer = malloc(size);
     if (!buffer)
         return 0;
-
     uint32_t offset = 0;
     while (offset < size) {
         memset(&req, 0, sizeof(req));
@@ -595,29 +546,23 @@ void *shell_read_file(const char *filename, uint32_t *out_size)
         req.data1 = offset;
         req.data2 = 100;
         qk_sys_ipc_send(storage_pid, &req);
-
         while (1) {
             qk_ipc_recv(&resp);
             if (resp.sender_pid == storage_pid && resp.type == MSG_FILE_DATA)
                 break;
         }
-
         uint32_t bytes_got = resp.data1;
         if (bytes_got == 0)
             break;
-
         memcpy(buffer + offset, resp.payload, bytes_got);
         offset += bytes_got;
     }
-
     return buffer;
 }
-
 void shell_cat(const char *filename)
 {
     uint32_t size = 0;
     char *data = (char *)shell_read_file(filename, &size);
-
     if (data && size > 0) {
         char pbuf[100];
         uint32_t p = 0;
@@ -637,7 +582,6 @@ void shell_cat(const char *filename)
         shell_print("Error: File not found.\n");
     }
 }
-
 void shell_hex(const char *filename)
 {
     uint32_t size = 0;
@@ -648,14 +592,12 @@ void shell_hex(const char *filename)
             free(data);
         return;
     }
-
     const char *hexchars = "0123456789ABCDEF";
     for (uint32_t offset = 0; offset < size; offset += 16) {
         char off_buf[16];
         uint_to_hex(offset, off_buf);
         shell_print(off_buf);
         shell_print(": ");
-
         char hex_chunk[16 * 3 + 1];
         int hex_idx = 0;
         for (int i = 0; i < 16; i++) {
@@ -672,7 +614,6 @@ void shell_hex(const char *filename)
         }
         hex_chunk[hex_idx] = 0;
         shell_print(hex_chunk);
-
         shell_print("|");
         for (int i = 0; i < 16 && (offset + i) < size; i++) {
             uint8_t byte = data[offset + i];
@@ -684,7 +625,6 @@ void shell_hex(const char *filename)
     }
     free(data);
 }
-
 int shell_save_file(const char *path, const char *data, uint32_t size)
 {
     if (!path || !*path)
@@ -696,7 +636,6 @@ int shell_save_file(const char *path, const char *data, uint32_t size)
     const uint8_t *bytes = (const uint8_t *)data;
     return storage_send_file(storage_pid, dir_cluster, entry_name, bytes, size);
 }
-
 void shell_ls()
 {
     message_t req;
@@ -707,7 +646,6 @@ void shell_ls()
     shell_print(current_path);
     shell_print("\n");
     qk_sys_ipc_send(storage_pid, &req);
-
     message_t resp;
     while (1) {
         qk_ipc_recv(&resp);
@@ -745,7 +683,6 @@ void shell_ls()
         }
     }
 }
-
 void shell_touch(const char *path)
 {
     if (!path || !*path) {
@@ -763,7 +700,6 @@ void shell_touch(const char *path)
     else
         shell_print("touch: failed.\n");
 }
-
 void shell_mkdir(const char *path)
 {
     if (!path || !*path) {
@@ -794,7 +730,6 @@ void shell_mkdir(const char *path)
     else
         shell_print("mkdir: failed.\n");
 }
-
 void shell_cd(const char *target)
 {
     if (!target || !*target || my_strcmp(target, "/") == 0) {
@@ -822,7 +757,6 @@ void shell_cd(const char *target)
     current_dir_cluster = entry.cluster;
     shell_rebuild_path();
 }
-
 void shell_nano(const char *name)
 {
     if (!name || !*name) {
@@ -845,9 +779,7 @@ void shell_nano(const char *name)
     }
     if (existing)
         free(existing);
-
     shell_print("Entering quill mode. Commands: .save/.safe, .quit, .clear\n");
-
     uint32_t initial_len = strlen(buffer);
     if (initial_len > 0) {
         shell_print_long(buffer);
@@ -905,7 +837,6 @@ void shell_nano(const char *name)
     }
     free(buffer);
 }
-
 void shell_sysgraph()
 {
     shell_print("=== core flux monitor ===\n");
@@ -921,7 +852,6 @@ void shell_sysgraph()
         shell_print(line);
     }
 }
-
 void shell_memscope()
 {
     shell_print("=== memscope snapshot ===\n");
@@ -938,17 +868,14 @@ void shell_memscope()
         shell_print("\n");
     }
 }
-
 #include "user/still_alive.h"
 #include "user/rick_roll.h"
-
 static void alive_sleep(uint32_t ms)
 {
     uint32_t start = qk_get_uptime();
     while (qk_get_uptime() - start < ms)
         qk_yield();
 }
-
 static void shell_cmd_alive(void)
 {
     uint32_t n = sizeof(still_alive) / sizeof(still_alive[0]);
@@ -969,7 +896,6 @@ static void shell_cmd_alive(void)
     }
     qk_pcspk_stop();
 }
-
 static void shell_cmd_rick(void)
 {
     uint32_t n = sizeof(rick_roll) / sizeof(rick_roll[0]);
@@ -990,7 +916,6 @@ static void shell_cmd_rick(void)
     }
     qk_pcspk_stop();
 }
-
 static void shell_cmd_beep(const char *arg)
 {
     uint32_t freq = 880;
@@ -1032,7 +957,6 @@ static void shell_cmd_beep(const char *arg)
     qk_sleep(duration);
     qk_pcspk_stop();
 }
-
 static void shell_spawn_app(const char *path, const char *arg)
 {
     uint32_t sz = 0;
@@ -1052,7 +976,6 @@ static void shell_spawn_app(const char *path, const char *arg)
         shell_print("\n");
     }
 }
-
 void shell_exec(const char *path)
 {
     if (!path || !*path) {
@@ -1079,7 +1002,6 @@ void shell_exec(const char *path)
         shell_print("\n");
     }
 }
-
 int main()
 {
     if (ensure_server_pids() != 0)
@@ -1090,37 +1012,29 @@ int main()
     create_msg.data2 = 350;
     strncpy((char *)create_msg.payload, "Quark Shell", 16);
     qk_sys_ipc_send(comp_pid, &create_msg);
-
     message_t resp;
     while (1) {
         qk_ipc_recv(&resp);
         if (resp.type == MSG_WIN_CREATED)
             break;
     }
-
     dir_depth = 0;
     dir_stack[0] = 0;
     current_dir_cluster = 0;
     shell_rebuild_path();
     shell_cd("/USERS/DEFAULT");
     qk_set_proc_name(-1, "shell");
-
-    
     qk_setenv("HOME=/USERS/DEFAULT");
     qk_setenv("PATH=/APPS");
     qk_setenv("SHELL=shell");
-
     shell_print("QuarkOS Shell Ready\nType 'guide'.\n\n");
     shell_show_prompt();
-
     char cmd_buffer[64];
     int cmd_ptr = 0;
     memset(cmd_buffer, 0, 64);
-
     while (1) {
         message_t input_msg;
         qk_ipc_recv(&input_msg);
-
         if (input_msg.type == MSG_KEY_EVENT) {
             uint32_t raw = input_msg.data1;
             if (raw & 0x80)   
@@ -1195,7 +1109,6 @@ int main()
                         strncpy(imgview_path + plen, arg, sizeof(imgview_path) - 1 - plen);
                         imgview_path[sizeof(imgview_path) - 1] = '\0';
                     }
-                    
                     {
                         int ip = 0; while (imgview_path[ip]) ip++;
                         int has_dot = 0;
@@ -1255,7 +1168,6 @@ int main()
                         shell_print("getenv: not set.\n");
                     }
                 } else if (cmd_is(cmd_buffer, "env", 0)) {
-                    
                     char all[256];
                     if (qk_getenv("HOME", all, sizeof(all)) == 0) { shell_print("HOME="); shell_print(all); shell_print("\n"); }
                     if (qk_getenv("PATH", all, sizeof(all)) == 0) { shell_print("PATH="); shell_print(all); shell_print("\n"); }
@@ -1264,7 +1176,6 @@ int main()
                     int pid = 0;
                     int signum = 9; 
                     const char *p = arg;
-                    
                     if (*p == '-') {
                         p++;
                         int s = 0;

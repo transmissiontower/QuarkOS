@@ -7,58 +7,49 @@
 #include "user/lib/libapi.h"
 #include "user/lib/path.h"
 #include "user/lib/window.h"
-
 fb_info_t fb;
 gfx_context_t ctx;
 static gfx_context_t fb_ctx;
 int32_t mx = 512, my = 384;
 uint32_t fps_counter = 0, last_fps_update = 0, *wallpaper_data = 0;
 int current_fps = 0;
-
 static int debug_overlay_visible = 0;
 static uint32_t total_ipc_messages = 0;
-
 typedef struct {
     int x, y, w, h;
 } ui_rect_t;
-
 typedef enum {
     POWER_ACTION_SHUTDOWN = 0,
     POWER_ACTION_REBOOT,
     POWER_ACTION_SLEEP
 } power_action_type_t;
-
 typedef struct {
     const char *label;
     int icon_id;
     power_action_type_t type;
     ui_rect_t bounds;
 } power_action_t;
-
 #define POWER_ACTION_COUNT 3
 #define POWER_MENU_WIDTH 125
 #define POWER_MENU_ITEM_H 40
 #define POWER_MENU_RADIUS 9
 #define POWER_ICON_SCALE 1
 #define POWER_MENU_UP_OFFSET 8
-
 static ui_rect_t power_button_rect = {0, 0, 0, 0};
 static ui_rect_t terminal_button_rect = {0, 0, 0, 0};
 static ui_rect_t brightness_button_rect = {0, 0, 0, 0};
+static ui_rect_t keyboard_button_rect = {0, 0, 0, 0};
 static int power_overlay_visible = 0;
 static int power_overlay_hover = -1;
 static int sleep_mode_active = 0;
-
 static power_action_t power_actions[POWER_ACTION_COUNT] = {
     {"Shutdown", ICON_SHUTDOWN, POWER_ACTION_SHUTDOWN, {0, 0, 0, 0}},
     {"Reboot", ICON_UP, POWER_ACTION_REBOOT, {0, 0, 0, 0}},
     {"Sleep", ICON_SUN, POWER_ACTION_SLEEP, {0, 0, 0, 0}}};
-
 #define BRIGHTNESS_LEVEL_COUNT 4
 static const uint8_t brightness_alpha_levels[BRIGHTNESS_LEVEL_COUNT] = {0, 40, 90, 150};
 static const int brightness_percent_levels[BRIGHTNESS_LEVEL_COUNT] = {100, 85, 65, 40};
 static int brightness_level_index = 0;
-
 static uint32_t *blur_buffer = 0;
 static int blur_buf_w = 0;
 static int blur_buf_h = 0;
@@ -66,7 +57,6 @@ static uint32_t *blur_snapshot = 0;
 static int blur_snapshot_w = 0;
 static int blur_snapshot_h = 0;
 static int blur_snapshot_valid = 0;
-
 typedef struct {
     int x0, y0, x1, y1;
 } rect_i_t;
@@ -74,16 +64,19 @@ static rect_i_t prev_cursor_rect = {0, 0, 0, 0};
 static int prev_cursor_valid = 0;
 static int storage_server_pid = -1;
 static uint32_t current_time_ms = 0;
-
 static uint32_t desktop_notification_until = 0;
 static char desktop_notification_text[64];
 static uint8_t *terminal_binary = 0;
 static uint32_t terminal_binary_size = 0;
-
+static uint8_t *vkbd_binary = 0;
+static uint32_t vkbd_binary_size = 0;
+static int vkbd_pid = -1;
+static int vkbd_is_visible = 0;
+static uint32_t *vkbd_mapped_buf = 0;
+static int vkbd_buf_w = 0, vkbd_buf_h = 0;
+static int vkbd_pos_x = 0, vkbd_pos_y = 0;
 #define DESKTOP_NOTIFICATION_MS 3200
-
 static void process_message(message_t *msg);
-
 static inline int clamp_int(int v, int min, int max)
 {
     if (v < min)
@@ -92,38 +85,16 @@ static inline int clamp_int(int v, int min, int max)
         return max;
     return v;
 }
-
 static inline int abs_int(int v)
 {
     return (v < 0) ? -v : v;
 }
-
-static uint8_t bilinear_sample_alpha(const GlyphInfo *g, int u_fp, int v_fp)
-{
-    int x = u_fp >> 16;
-    int y = v_fp >> 16;
-    int wu = (u_fp >> 8) & 0xFF;
-    int wv = (v_fp >> 8) & 0xFF;
-    const uint32_t *bmp = gui_icons->bitmap;
-    int stride = gui_icons->tex_width;
-    uint8_t a00 = bmp[(g->y + y) * stride + (g->x + x)] >> 24;
-    uint8_t a10 = (x + 1 < g->w) ? (bmp[(g->y + y) * stride + (g->x + x + 1)] >> 24) : a00;
-    uint8_t a01 = (y + 1 < g->h) ? (bmp[(g->y + y + 1) * stride + (g->x + x)] >> 24) : a00;
-    uint8_t a11 = (x + 1 < g->w && y + 1 < g->h)
-                      ? (bmp[(g->y + y + 1) * stride + (g->x + x + 1)] >> 24)
-                      : a10;
-    int top = a00 + ((a10 - a00) * wu >> 8);
-    int bottom = a01 + ((a11 - a01) * wu >> 8);
-    return (uint8_t)(top + ((bottom - top) * wv >> 8));
-}
-
 static int ensure_storage_pid(void)
 {
     if (storage_server_pid < 0)
         storage_server_pid = qk_get_server_pid(QK_SERVER_STORAGE);
     return (storage_server_pid < 0) ? -1 : 0;
 }
-
 static void desktop_show_notification(const char *text)
 {
     if (!text)
@@ -131,7 +102,6 @@ static void desktop_show_notification(const char *text)
     strncpy(desktop_notification_text, text, sizeof(desktop_notification_text) - 1);
     desktop_notification_until = qk_get_uptime() + DESKTOP_NOTIFICATION_MS;
 }
-
 static int wait_for_storage_reply(message_t *resp)
 {
     if (!resp)
@@ -147,7 +117,6 @@ static int wait_for_storage_reply(message_t *resp)
         process_message(&msg);
     }
 }
-
 static void *load_file_from_storage(const char *filename, uint32_t *out_size)
 {
     if (out_size)
@@ -207,7 +176,6 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size)
     }
     return buffer;
 }
-
 static void cache_terminal_binary(void)
 {
     if (terminal_binary)
@@ -222,7 +190,20 @@ static void cache_terminal_binary(void)
     terminal_binary = (uint8_t *)buf;
     terminal_binary_size = size;
 }
-
+static void cache_vkbd_binary(void)
+{
+    if (vkbd_binary)
+        return;
+    uint32_t size = 0;
+    void *buf = load_file_from_storage("/APPS/VKBD.QEX", &size);
+    if (!buf || size == 0) {
+        if (buf)
+            free(buf);
+        return;
+    }
+    vkbd_binary = (uint8_t *)buf;
+    vkbd_binary_size = size;
+}
 static void ensure_blur_buffer(int w, int h)
 {
     if (blur_buffer && blur_buf_w == w && blur_buf_h == h)
@@ -233,7 +214,6 @@ static void ensure_blur_buffer(int w, int h)
     blur_buf_w = w;
     blur_buf_h = h;
 }
-
 static void ensure_blur_snapshot(int w, int h)
 {
     if (blur_snapshot && blur_snapshot_w == w && blur_snapshot_h == h)
@@ -244,16 +224,13 @@ static void ensure_blur_snapshot(int w, int h)
     blur_snapshot_w = w;
     blur_snapshot_h = h;
 }
-
 static void invalidate_blur_snapshot(void)
 {
     blur_snapshot_valid = 0;
 }
-
 static const int GAUSS_RADIUS = 4;
 static const int gauss_kernel[9] = {1, 8, 28, 56, 70, 56, 28, 8, 1};
 static const int gauss_weight_sum = 256;
-
 static void blur_horizontal(uint32_t *src, uint32_t *dst, int w, int h)
 {
     for (int y = 0; y < h; y++) {
@@ -273,7 +250,6 @@ static void blur_horizontal(uint32_t *src, uint32_t *dst, int w, int h)
         }
     }
 }
-
 static void blur_vertical(uint32_t *src, uint32_t *dst, int w, int h)
 {
     for (int y = 0; y < h; y++) {
@@ -292,7 +268,6 @@ static void blur_vertical(uint32_t *src, uint32_t *dst, int w, int h)
         }
     }
 }
-
 static void blur_buffer_inplace(uint32_t *buffer, int w, int h, int intensity)
 {
     if (intensity <= 0)
@@ -304,7 +279,6 @@ static void blur_buffer_inplace(uint32_t *buffer, int w, int h, int intensity)
         blur_vertical(blur_buffer, buffer, w, h);
     }
 }
-
 static void apply_screen_dim(gfx_context_t *context, uint32_t color, uint8_t alpha)
 {
     if (!alpha)
@@ -314,7 +288,6 @@ static void apply_screen_dim(gfx_context_t *context, uint32_t color, uint8_t alp
         context->buffer[i] = gfx_blend_colors(color, context->buffer[i], alpha);
     }
 }
-
 static void apply_brightness_overlay(void)
 {
     uint8_t alpha = brightness_alpha_levels[brightness_level_index];
@@ -322,7 +295,6 @@ static void apply_brightness_overlay(void)
         return;
     apply_screen_dim(&ctx, 0xFF000000, alpha);
 }
-
 static void cycle_brightness_level(void)
 {
     brightness_level_index = (brightness_level_index + 1) % BRIGHTNESS_LEVEL_COUNT;
@@ -333,38 +305,10 @@ static void cycle_brightness_level(void)
     strcat(msg, "%");
     desktop_show_notification(msg);
 }
-
-static void draw_icon_scaled_centered(int icon_id, int center_x, int center_y, int scale,
-                                      uint32_t color)
-{
-    if (!gui_icons || icon_id < 32 || scale <= 0)
-        return;
-    GlyphInfo *g = &gui_icons->glyphs[icon_id - 32];
-    int icon_w = g->w * scale;
-    int icon_h = g->h * scale;
-    int start_x = center_x - icon_w / 2;
-    int start_y = center_y - icon_h / 2;
-    int step_fp = (1 << 16) / scale;
-    for (int dy = 0; dy < icon_h; dy++) {
-        int v_fp = dy * step_fp;
-        for (int dx = 0; dx < icon_w; dx++) {
-            int u_fp = dx * step_fp;
-            uint8_t a = bilinear_sample_alpha(g, u_fp, v_fp);
-            if (a > 2) {
-                int sharp_a = (a * 1.2);
-                if (sharp_a > 255)
-                    sharp_a = 255;
-                gfx_put_pixel_aa(&ctx, start_x + dx, start_y + dy, color, (uint8_t)sharp_a);
-            }
-        }
-    }
-}
-
 static int point_in_rect(ui_rect_t rect, int px, int py)
 {
     return (px >= rect.x && px < rect.x + rect.w && py >= rect.y && py < rect.y + rect.h);
 }
-
 static void layout_power_menu(void)
 {
     if (!ctx.width || !ctx.height)
@@ -378,7 +322,6 @@ static void layout_power_menu(void)
         power_actions[i].bounds.h = POWER_MENU_ITEM_H;
     }
 }
-
 static int find_power_action_at(int x, int y)
 {
     for (int i = 0; i < POWER_ACTION_COUNT; i++) {
@@ -387,14 +330,12 @@ static int find_power_action_at(int x, int y)
     }
     return -1;
 }
-
 static void close_power_overlay(void)
 {
     power_overlay_visible = 0;
     power_overlay_hover = -1;
     invalidate_blur_snapshot();
 }
-
 static void open_power_overlay(void)
 {
     power_overlay_visible = 1;
@@ -402,20 +343,17 @@ static void open_power_overlay(void)
     layout_power_menu();
     invalidate_blur_snapshot();
 }
-
 static void exit_sleep_mode(void)
 {
     sleep_mode_active = 0;
     invalidate_blur_snapshot();
 }
-
 static void enter_sleep_mode(void)
 {
     sleep_mode_active = 1;
     close_power_overlay();
     invalidate_blur_snapshot();
 }
-
 static void trigger_power_action(power_action_type_t type)
 {
     switch (type) {
@@ -430,7 +368,6 @@ static void trigger_power_action(power_action_type_t type)
         break;
     }
 }
-
 static void launch_terminal_process(void)
 {
     if (!terminal_binary || terminal_binary_size == 0) {
@@ -440,7 +377,69 @@ static void launch_terminal_process(void)
     if (qk_spawn(terminal_binary, terminal_binary_size) < 0)
         desktop_show_notification("Failed to launch terminal");
 }
-
+static void request_vkbd_geom(void)
+{
+    if (vkbd_pid < 0)
+        return;
+    message_t req;
+    memset(&req, 0, sizeof(req));
+    req.type = MSG_VKBD_GEOM;
+    qk_sys_ipc_send(vkbd_pid, &req);
+}
+static void apply_vkbd_geom(message_t *rep)
+{
+    int vis          = (int)rep->data1;
+    int nx           = (int)rep->data2;
+    int ny           = (int)rep->data3;
+    uint32_t *pl     = (uint32_t *)rep->payload;
+    int nw           = (int)pl[0];
+    int nh           = (int)pl[1];
+    uint32_t remote_buf = pl[2];
+    if (!vis || nw <= 0 || nh <= 0 || remote_buf == 0)
+        return;
+    vkbd_pos_x = nx;
+    vkbd_pos_y = ny;
+    if (nw != vkbd_buf_w || nh != vkbd_buf_h || !vkbd_mapped_buf) {
+        vkbd_buf_w = nw;
+        vkbd_buf_h = nh;
+        vkbd_mapped_buf = (uint32_t *)qk_map_foreign_mem(vkbd_pid, remote_buf,
+                                                          (uint32_t)(nw * nh * 4));
+    }
+}
+static void launch_vkbd_process(void)
+{
+    if (!vkbd_binary || vkbd_binary_size == 0) {
+        desktop_show_notification("Keyboard unavailable");
+        return;
+    }
+    if (vkbd_pid >= 0) {
+        message_t tmsg;
+        memset(&tmsg, 0, sizeof(tmsg));
+        tmsg.type = MSG_VKBD_TOGGLE;
+        qk_sys_ipc_send(vkbd_pid, &tmsg);
+        vkbd_is_visible = !vkbd_is_visible;
+        vkbd_mapped_buf = 0;
+        if (vkbd_is_visible)
+            request_vkbd_geom();
+        return;
+    }
+    int pid = qk_spawn(vkbd_binary, vkbd_binary_size);
+    if (pid < 0) {
+        desktop_show_notification("Failed to launch keyboard");
+        return;
+    }
+    vkbd_pid = pid;
+    vkbd_is_visible = 1;
+    vkbd_mapped_buf = 0;
+    uint32_t t = qk_get_uptime();
+    while (qk_get_uptime() - t < 80)
+        qk_yield();
+    message_t tmsg;
+    memset(&tmsg, 0, sizeof(tmsg));
+    tmsg.type = MSG_VKBD_TOGGLE;
+    qk_sys_ipc_send(vkbd_pid, &tmsg);
+    request_vkbd_geom();
+}
 static int handle_mouse_for_ui(Event *e)
 {
     if (sleep_mode_active) {
@@ -473,6 +472,10 @@ static int handle_mouse_for_ui(Event *e)
             cycle_brightness_level();
             return 1;
         }
+        if (point_in_rect(keyboard_button_rect, e->x, e->y)) {
+            launch_vkbd_process();
+            return 1;
+        }
         if (point_in_rect(power_button_rect, e->x, e->y)) {
             if (power_overlay_visible)
                 close_power_overlay();
@@ -483,12 +486,10 @@ static int handle_mouse_for_ui(Event *e)
     }
     return 0;
 }
-
 void draw_pill(int x, int y, int w, int h)
 {
     gfx_rect_rounded_fill(&ctx, x, y, w, h, 7, UI_SURFACE_COLOR);
 }
-
 void render_top_bar()
 {
     int y = 10;
@@ -543,6 +544,10 @@ void render_top_bar()
     brightness_button_rect.y = buttons_y - 4;
     brightness_button_rect.w = 28;
     brightness_button_rect.h = 28;
+    keyboard_button_rect.x = buttons_x + 68 - 4;
+    keyboard_button_rect.y = buttons_y - 4;
+    keyboard_button_rect.w = 28;
+    keyboard_button_rect.h = 28;
     power_button_rect.x = buttons_x + 98 - 4;
     power_button_rect.y = buttons_y - 4;
     power_button_rect.w = 28;
@@ -556,7 +561,6 @@ void render_top_bar()
     draw_string_vector(&ctx, fps_x + 20, fps_y, "FPS", fg);
     draw_string_vector(&ctx, fps_x + 60, fps_y, fps_buf, fg);
 }
-
 void render_power_overlay(void)
 {
     if (!power_overlay_visible)
@@ -572,13 +576,12 @@ void render_power_overlay(void)
         ui_rect_t r = power_actions[i].bounds;
         if (i == power_overlay_hover)
             gfx_rect_rounded_fill(&ctx, r.x, r.y, r.w, r.h, 8, 0x33000000);
-        draw_icon_scaled_centered(power_actions[i].icon_id, r.x + 16, r.y + r.h / 2,
-                                  POWER_ICON_SCALE, COLOR_WIN_ACTIVE);
+        draw_icon_sized(&ctx, gui_icons, r.x + 7, r.y + (r.h - 18) / 2,
+                        power_actions[i].icon_id, COLOR_WIN_ACTIVE, 18);
         draw_string_vector(&ctx, r.x + 36, r.y + r.h / 2 - 8, power_actions[i].label,
                            COLOR_WIN_ACTIVE);
     }
 }
-
 void render_sleep_screen(void)
 {
     if (!sleep_mode_active)
@@ -592,7 +595,6 @@ void render_sleep_screen(void)
     draw_string_vector(&ctx, cx - (int)strlen(hint) * 4, (int)ctx.height / 2 + 20, hint,
                        COLOR_WIN_ACTIVE);
 }
-
 static void render_desktop_notification(void)
 {
     if (!desktop_notification_until || current_time_ms >= desktop_notification_until ||
@@ -609,7 +611,6 @@ static void render_desktop_notification(void)
     gfx_rect_rounded_fill(&ctx, x, y, w, h, 16, 0xAA000000);
     draw_string_vector(&ctx, x + padding, y + 12, desktop_notification_text, COLOR_WIN_ACTIVE);
 }
-
 void render_debug_overlay(void)
 {
     if (!debug_overlay_visible)
@@ -621,39 +622,32 @@ void render_debug_overlay(void)
     uint32_t uptime = qk_get_uptime();
     process_info_t procs[32];
     int task_count = qk_get_procs(procs, 32);
-
     char buf[64];
     char val[16];
-
     draw_string_vector(&ctx, x, y, "--- SYSTEM DEBUG ---", 0xFFFFFFFF);
-
     memset(buf, 0, 64);
     strcat(buf, "CPU Load: ");
     int_to_str(cpu_load, val, 10);
     strcat(buf, val);
     strcat(buf, "%");
     draw_string_vector(&ctx, x, y + 25, buf, 0xFF55FF55);
-
     memset(buf, 0, 64);
     strcat(buf, "Memory: ");
     int_to_str(used_mem / 1024 / 1024, val, 10);
     strcat(buf, val);
     strcat(buf, " MB used");
     draw_string_vector(&ctx, x, y + 45, buf, 0xFF55FFFF);
-
     memset(buf, 0, 64);
     strcat(buf, "Uptime: ");
     int_to_str(uptime / 1000, val, 10);
     strcat(buf, val);
     strcat(buf, "s");
     draw_string_vector(&ctx, x, y + 65, buf, 0xFFFFFF55);
-
     memset(buf, 0, 64);
     strcat(buf, "Tasks: ");
     int_to_str(task_count, val, 10);
     strcat(buf, val);
     draw_string_vector(&ctx, x, y + 85, buf, 0xFFFF55FF);
-
     memset(buf, 0, 64);
     strcat(buf, "IPC Events: ");
     int_to_str(total_ipc_messages, val, 10);
@@ -680,6 +674,12 @@ static void process_message(message_t *msg)
                     close_power_overlay();
                 return;
             }
+        }
+        if (vkbd_pid >= 0 && vkbd_is_visible &&
+            (e->type == EVENT_MOUSE_MOVE || e->type == EVENT_MOUSE_DOWN ||
+             e->type == EVENT_MOUSE_UP || e->type == EVENT_KEY_PRESS ||
+             e->type == EVENT_KEY_RELEASE)) {
+            qk_sys_ipc_send(vkbd_pid, msg);
         }
         int consumed = 0;
         if (e->type == EVENT_MOUSE_MOVE || e->type == EVENT_MOUSE_DOWN ||
@@ -757,7 +757,6 @@ static void process_message(message_t *msg)
             if (window_stack[i]->owner_pid == msg->sender_pid)
                 window_set_color(window_stack[i], msg->data1);
     } else if (msg->type == MSG_WIN_BLIT_PIXELS) {
-        
         for (int i = 0; i < window_count; i++) {
             if (window_stack[i]->owner_pid == msg->sender_pid) {
                 Window *win = window_stack[i];
@@ -776,7 +775,6 @@ static void process_message(message_t *msg)
             }
         }
     } else if (msg->type == MSG_WIN_MAP_BUFFER) {
-        
         int win_id = (int)msg->data1;
         Window *win = 0;
         for (int i = 0; i < window_count; i++) {
@@ -792,8 +790,6 @@ static void process_message(message_t *msg)
             int content_h = win->h - TITLE_BAR_HEIGHT;
             if (content_h < 1) content_h = 1;
             uint32_t buf_size = (uint32_t)win->w * (uint32_t)content_h * 4;
-            
-
             reply.type  = MSG_WIN_BUFFER_INFO;
             reply.data1 = buf_size;                            
             reply.data2 = (uint32_t)win->w;
@@ -804,7 +800,6 @@ static void process_message(message_t *msg)
         }
         qk_sys_ipc_send(msg->sender_pid, &reply);
     } else if (msg->type == MSG_WIN_DIRTY) {
-        
         (void)msg; 
     } else if (msg->type == MSG_PROCESS_TERMINATED) {
         int target_pid = msg->data1;
@@ -814,16 +809,38 @@ static void process_message(message_t *msg)
                 i--;
             }
         }
+        if (target_pid == vkbd_pid) {
+            vkbd_pid = -1;
+            vkbd_is_visible = 0;
+            vkbd_mapped_buf = 0;
+        }
+    } else if (msg->type == MSG_VKBD_GEOM && msg->sender_pid == vkbd_pid) {
+        apply_vkbd_geom(msg);
+    } else if (msg->type == MSG_VKBD_KEY) {
+        if (msg->data2 == 0xFFFFFFFFU) {
+            debug_overlay_visible = !debug_overlay_visible;
+        } else if (window_count > 0) {
+            uint8_t sc      = (uint8_t)(msg->data1 & 0x7F);
+            int     release = (msg->data1 & 0x80) != 0;
+            message_t km;
+            memset(&km, 0, sizeof(km));
+            km.type  = MSG_KEY_EVENT;
+            km.data1 = msg->data1;  
+            km.data2 = msg->data2;  
+            Event *e = (Event *)km.payload;
+            e->type  = release ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
+            e->key   = sc;
+            Window *top = window_stack[window_count - 1];
+            qk_sys_ipc_send(top->owner_pid, &km);
+        }
     }
 }
-
 static inline void copy_row_segment(uint8_t *dst_row, uint8_t *src_row, int start_px, int end_px)
 {
     if (end_px <= start_px)
         return;
     memcpy(dst_row + start_px * 4, src_row + start_px * 4, (end_px - start_px) * 4);
 }
-
 static inline int rect_has_area(rect_i_t r)
 {
     return (r.x1 > r.x0) && (r.y1 > r.y0);
@@ -832,7 +849,6 @@ static inline int rect_equals(rect_i_t a, rect_i_t b)
 {
     return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1;
 }
-
 static inline rect_i_t clamp_cursor_rect(int x, int y, int max_w, int max_h)
 {
     rect_i_t r;
@@ -842,7 +858,6 @@ static inline rect_i_t clamp_cursor_rect(int x, int y, int max_w, int max_h)
     r.y1 = clamp_int(y + CURSOR_H, 0, max_h);
     return r;
 }
-
 static void copy_rect_from_ctx(rect_i_t r, uint8_t *dst, uint8_t *src, int dst_stride,
                                int src_stride)
 {
@@ -852,11 +867,9 @@ static void copy_rect_from_ctx(rect_i_t r, uint8_t *dst, uint8_t *src, int dst_s
     for (int y = r.y0; y < r.y1; ++y)
         memcpy(dst + y * dst_stride + r.x0 * 4, src + y * src_stride + r.x0 * 4, w_bytes);
 }
-
 typedef struct {
     int x0, x1;
 } interval_t;
-
 static inline void add_interval_for_row(rect_i_t r, int y, interval_t *out, int *count, int max_w)
 {
     if (y < r.y0 || y >= r.y1)
@@ -872,7 +885,6 @@ static inline void add_interval_for_row(rect_i_t r, int y, interval_t *out, int 
     out[*count].x1 = x1;
     (*count)++;
 }
-
 static void present_frame(void)
 {
     if (!fb.buffer || !ctx.buffer)
@@ -940,7 +952,6 @@ static void present_frame(void)
     } else
         prev_cursor_valid = 0;
 }
-
 void render()
 {
     if (wallpaper_data)
@@ -967,6 +978,31 @@ void render()
     }
     render_power_overlay();
     render_sleep_screen();
+    if (vkbd_pid >= 0 && vkbd_is_visible) {
+        if (!vkbd_mapped_buf)
+            request_vkbd_geom();
+        if (vkbd_mapped_buf && vkbd_buf_w > 0 && vkbd_buf_h > 0) {
+            int sw = (int)ctx.width;
+            int sh = (int)ctx.height;
+            for (int vy = 0; vy < vkbd_buf_h; vy++) {
+                int dy = vkbd_pos_y + vy;
+                if (dy < 0 || dy >= sh) continue;
+                for (int vx = 0; vx < vkbd_buf_w; vx++) {
+                    int dx = vkbd_pos_x + vx;
+                    if (dx < 0 || dx >= sw) continue;
+                    uint32_t px = vkbd_mapped_buf[vy * vkbd_buf_w + vx];
+                    uint8_t  a  = (uint8_t)(px >> 24);
+                    if (a == 0) continue;
+                    if (a == 0xFF) {
+                        ctx.buffer[dy * sw + dx] = px;
+                    } else {
+                        ctx.buffer[dy * sw + dx] =
+                            gfx_blend_colors(px, ctx.buffer[dy * sw + dx], a);
+                    }
+                }
+            }
+        }
+    }
     if (!sleep_mode_active)
         apply_brightness_overlay();
     render_desktop_notification();
@@ -974,7 +1010,6 @@ void render()
     present_frame();
     fps_counter++;
 }
-
 int main()
 {
     void *icons_addr = 0, *font_addr = 0;
@@ -993,6 +1028,7 @@ int main()
         font_atlas_init((uint8_t *)font_addr);
     window_manager_init();
     cache_terminal_binary();
+    cache_vkbd_binary();
     last_fps_update = qk_get_uptime();
     uint32_t last_render_ms = qk_get_uptime();
     message_t msg;
@@ -1009,13 +1045,10 @@ int main()
             fps_counter = 0;
             last_fps_update = now;
         }
-        
-
         if (got_msg || (now - last_render_ms) >= 30) {
             render();
             last_render_ms = now;
         }
-        
         qk_yield();
     }
     return 0;

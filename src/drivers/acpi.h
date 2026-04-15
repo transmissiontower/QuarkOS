@@ -1,9 +1,7 @@
 #ifndef ACPI_H
 #define ACPI_H
-
 #include "lib/stdbool.h"
 #include "lib/stdint.h"
-
 struct acpi_header {
     char signature[4];
     uint32_t length;
@@ -15,7 +13,6 @@ struct acpi_header {
     uint32_t creator_id;
     uint32_t creator_revision;
 } __attribute__((packed));
-
 struct rsdp_descriptor {
     char signature[8];
     uint8_t checksum;
@@ -23,18 +20,15 @@ struct rsdp_descriptor {
     uint8_t revision;
     uint32_t rsdt_address;
 } __attribute__((packed));
-
 struct madt_header {
     struct acpi_header header;
     uint32_t lapic_addr;
     uint32_t flags;
 } __attribute__((packed));
-
 struct madt_entry_header {
     uint8_t type;
     uint8_t length;
 } __attribute__((packed));
-
 struct acpi_generic_address {
     uint8_t address_space;
     uint8_t bit_width;
@@ -42,7 +36,6 @@ struct acpi_generic_address {
     uint8_t access_size;
     uint64_t address;
 } __attribute__((packed));
-
 struct fadt_header {
     struct acpi_header header;
     uint32_t firmware_ctrl;
@@ -87,7 +80,6 @@ struct fadt_header {
     uint8_t reset_value;
     uint8_t reserved3[3];
 } __attribute__((packed));
-
 int acpi_init(void);
 void *acpi_find_table(const char *sig);
 int acpi_get_cpu_count(void);
@@ -96,5 +88,4 @@ void acpi_reboot(void);
 bool acpi_power_ready(void);
 bool acpi_power_button_available(void);
 bool acpi_reset_available(void);
-
 #endif
