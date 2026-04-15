@@ -257,6 +257,7 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boo
 	$(MCOPY) -i disk.img Asm/boot/fetch.qex ::APPS/FETCH.QEX
 	$(MCOPY) -i disk.img Asm/boot/imgview.qex ::APPS/IMGVIEW.QEX
 	$(MCOPY) -i disk.img Asm/boot/filemgr.qex ::APPS/FILEMGR.QEX
+	$(MCOPY) -i disk.img Asm/boot/vkbd.qex ::APPS/VKBD.QEX
 	$(if $(wildcard $(MUSIC_SPK)),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYSTEM/DATA/MUSIC.SPK,)
 	$(if $(MUSIC_SRC),$(MCOPY) -i disk.img $(MUSIC_WAV) ::USERS/DEFAULT/DESK/MUSIC.WAV,)
 	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYSTEM/DATA/ATL.BIN

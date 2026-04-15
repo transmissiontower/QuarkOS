@@ -1,8 +1,6 @@
 #ifndef STDLIB_H
 #define STDLIB_H
-
 #include "lib/stdint.h"
-
 void reverse(char *str, int len);
 int int_to_str(int x, char str[], int d);
 void time_to_str(int x, char *buf);
@@ -14,5 +12,4 @@ void bzero(void *dest, int len);
 void uint_to_hex(uint32_t val, char *buf);
 char *strstr(const char *haystack, const char *needle);
 char *strcat(char *dest, const char *src);
-
 #endif

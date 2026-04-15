@@ -1,10 +1,7 @@
 #ifndef BMP_H
 #define BMP_H
-
 #include "lib/stdint.h"
-
 #pragma pack(push, 1)
-
 typedef struct {
     uint16_t bf_type;
     uint32_t bf_size;
@@ -12,7 +9,6 @@ typedef struct {
     uint16_t bf_reserved2;
     uint32_t bf_off_bits;
 } BITMAPFILEHEADER;
-
 typedef struct {
     uint32_t biSize;
     int32_t bi_width;
@@ -26,9 +22,6 @@ typedef struct {
     uint32_t bi_clr_used;
     uint32_t bi_clr_important;
 } BITMAPINFOHEADER;
-
 #pragma pack(pop)
-
 void draw_bmp(void *bmp_data, int x, int y);
-
 #endif

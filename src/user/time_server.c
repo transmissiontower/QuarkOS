@@ -1,14 +1,11 @@
 #include "user/lib/libapi.h"
-
 #define CMOS_ADDR 0x70
 #define CMOS_DATA 0x71
-
 uint8_t read_cmos(uint8_t reg)
 {
     qk_hw_outb(CMOS_ADDR, reg);
     return qk_hw_inb(CMOS_DATA);
 }
-
 int main()
 {
     message_t msg;

@@ -16,7 +16,6 @@
 #include "lib/stdlib.h"
 #include "mm/kmalloc.h"
 #include "mm/memory.h"
-
 extern uint32_t _kernel_end;
 extern uint32_t stack_top;
 extern process_t *ready_queue;
@@ -24,7 +23,6 @@ extern int sys_set_server_pid(int type, int pid);
 extern int sys_grant_io_privilege(int pid, uint32_t mask);
 extern void k_scheduler_update_sleeps();
 extern uint32_t total_phys_pages;
-
 uint32_t k_font_size = 0;
 uint32_t k_font_phys_addr = 0;
 void *k_font_virt_addr = 0;
@@ -34,14 +32,11 @@ uint32_t k_wallpaper_phys_addr = 0;
 uint32_t k_wallpaper_size = 0;
 uint32_t k_logo_phys_addr = 0;
 uint32_t k_logo_size = 0;
-
 volatile Time sys_time;
 static int ticks_counter = 0;
-
 uint32_t cpu_usage_pct = 0;
 static uint32_t busy_ticks = 0;
 static uint32_t total_ticks_count = 0;
-
 void k_tick_handler()
 {
     total_ticks_count++;
@@ -68,7 +63,6 @@ void k_tick_handler()
     }
     k_scheduler_yield();
 }
-
 static int kernel_exec_internal(struct multiboot_info *boot_info)
 {
     int launched = 0;
@@ -147,7 +141,6 @@ static int kernel_exec_internal(struct multiboot_info *boot_info)
     }
     return launched;
 }
-
 void kmain(uint32_t magic, struct multiboot_info *boot_info)
 {
     (void)magic;
@@ -185,7 +178,6 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info)
     drv_fb_init(boot_info);
     boot_log_add_framebuffer_info();
     k_scheduler_init();
-
     ready_queue->kernel_stack = (uint32_t)&stack_top;
     arch_tss_set_stack((uint32_t)&stack_top);
     boot_log_add("Scheduler initialized");

@@ -1,6 +1,5 @@
 #include "lib/stdlib.h"
 #include "lib/stdint.h"
-
 void reverse(char *str, int len)
 {
     int i = 0, j = len - 1;
@@ -12,7 +11,6 @@ void reverse(char *str, int len)
         j--;
     }
 }
-
 int int_to_str(int x, char str[], int d)
 {
     int i = 0;
@@ -34,7 +32,6 @@ int int_to_str(int x, char str[], int d)
     str[i] = '\0';
     return i;
 }
-
 void time_to_str(int x, char *buf)
 {
     if (x < 10) {
@@ -44,7 +41,6 @@ void time_to_str(int x, char *buf)
         int_to_str(x, buf, 0);
     }
 }
-
 uint32_t strlen(const char *str)
 {
     uint32_t len = 0;
@@ -54,7 +50,6 @@ uint32_t strlen(const char *str)
         len++;
     return len;
 }
-
 char *strncpy(char *dest, const char *src, uint32_t n)
 {
     uint32_t i;
@@ -64,7 +59,6 @@ char *strncpy(char *dest, const char *src, uint32_t n)
         dest[i] = '\0';
     return dest;
 }
-
 char *strcat(char *dest, const char *src)
 {
     char *ptr = dest + strlen(dest);
@@ -73,14 +67,12 @@ char *strcat(char *dest, const char *src)
     *ptr = '\0';
     return dest;
 }
-
 void bzero(void *dest, int len)
 {
     char *d = (char *)dest;
     while (len--)
         *d++ = 0;
 }
-
 void uint_to_hex(uint32_t val, char *buf)
 {
     char *chars = "0123456789ABCDEF";
@@ -92,7 +84,6 @@ void uint_to_hex(uint32_t val, char *buf)
     }
     buf[10] = '\0';
 }
-
 char *strstr(const char *haystack, const char *needle)
 {
     if (!*needle)

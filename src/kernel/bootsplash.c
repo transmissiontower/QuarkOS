@@ -1,35 +1,29 @@
 #include "kernel/bootsplash.h"
-
 #include "drivers/GUI/framebuffer.h"
 #include "gfx/bmp.h"
 #include "lib/stdbool.h"
 #include "lib/stdlib.h"
 #include "mm/memory.h"
 #include "util/util.h"
-
 #define BOOT_LOG_MAX_LINES 64
 #define BOOT_LOG_LINE_LEN 128
 #define BOOT_LOG_DEFAULT_DELTA_US 150000
-
 typedef struct {
     uint32_t codepoint;
     uint16_t x, y, w, h;
     int16_t advance, off_x, off_y;
 } __attribute__((packed)) K_GlyphInfo;
-
 typedef struct {
     uint32_t magic;
     uint32_t tex_width, tex_height, line_height, ascent, count;
     K_GlyphInfo *glyphs;
     uint32_t *bitmap;
 } K_AtlasFont;
-
 extern uint32_t k_font_size;
 extern uint32_t k_font_phys_addr;
 extern void *k_font_virt_addr;
 extern uint32_t k_logo_phys_addr;
 extern uint32_t k_logo_size;
-
 static char boot_log_lines[BOOT_LOG_MAX_LINES][BOOT_LOG_LINE_LEN];
 static const char *boot_log_entries[BOOT_LOG_MAX_LINES];
 static uint64_t boot_log_timestamps[BOOT_LOG_MAX_LINES];
@@ -45,7 +39,6 @@ static char boot_cpu_vendor[13];
 static char boot_cpu_brand[48];
 static bool boot_cpu_brand_valid = false;
 static K_AtlasFont k_boot_font;
-
 static void boot_log_line_append(char *dest, const char *text);
 static inline uint64_t boot_read_tsc(void);
 static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uint64_t multiplier);
@@ -60,14 +53,12 @@ static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t 
 static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext);
 static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t *b, uint32_t *c,
                          uint32_t *d);
-
 static inline uint64_t boot_read_tsc(void)
 {
     uint32_t lo, hi;
     asm volatile("rdtsc" : "=a"(lo), "=d"(hi));
     return ((uint64_t)hi << 32) | lo;
 }
-
 static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uint64_t multiplier)
 {
     if (!start || !end || start >= end)
@@ -99,7 +90,6 @@ static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uin
         hz += (frac * multiplier) / scale;
     return hz;
 }
-
 static uint64_t boot_extract_freq_value(const char *brand, const char *unit_pos,
                                         uint64_t multiplier)
 {
@@ -119,7 +109,6 @@ static uint64_t boot_extract_freq_value(const char *brand, const char *unit_pos,
     }
     return boot_parse_decimal_to_hz(start, end, multiplier);
 }
-
 static uint64_t boot_brand_freq_from_string(const char *brand)
 {
     if (!brand)
@@ -138,7 +127,6 @@ static uint64_t boot_brand_freq_from_string(const char *brand)
     }
     return 0;
 }
-
 static void boot_cpuid_cache(void)
 {
     if (boot_cpuid_cached)
@@ -148,7 +136,6 @@ static void boot_cpuid_cache(void)
         boot_detect_cpu_brand(boot_cpu_brand, sizeof(boot_cpu_brand), boot_cpuid_max_ext);
     boot_cpuid_cached = true;
 }
-
 static void boot_time_ensure_initialized(void)
 {
     if (boot_time_ready)
@@ -181,7 +168,6 @@ static void boot_time_ensure_initialized(void)
     boot_time_tsc_start = boot_read_tsc();
     boot_time_ready = true;
 }
-
 static uint64_t boot_time_now_us(void)
 {
     if (!boot_time_ready || boot_time_ticks_per_us == 0)
@@ -192,7 +178,6 @@ static uint64_t boot_time_now_us(void)
     uint64_t delta = now - boot_time_tsc_start;
     return delta / boot_time_ticks_per_us;
 }
-
 static uint64_t boot_log_next_timestamp(void)
 {
     if (!boot_time_ready)
@@ -203,7 +188,6 @@ static uint64_t boot_log_next_timestamp(void)
     boot_log_time_us += BOOT_LOG_DEFAULT_DELTA_US;
     return ts;
 }
-
 static void boot_log_format_timestamp(char *dest, uint64_t usec)
 {
     char digits[32];
@@ -221,10 +205,8 @@ static void boot_log_format_timestamp(char *dest, uint64_t usec)
             digits[len - 1 - i] = tmp;
         }
     }
-
     uint32_t idx = 0;
     dest[idx++] = '[';
-
     int int_len = (len > 6) ? (len - 6) : 1;
     if (len > 6) {
         for (int i = 0; i < int_len; ++i)
@@ -232,9 +214,7 @@ static void boot_log_format_timestamp(char *dest, uint64_t usec)
     } else {
         dest[idx++] = '0';
     }
-
     dest[idx++] = '.';
-
     int frac_start = (len > 6) ? int_len : 0;
     int frac_digits = len - frac_start;
     int frac_written = 0;
@@ -251,12 +231,10 @@ static void boot_log_format_timestamp(char *dest, uint64_t usec)
         dest[idx++] = '0';
         frac_written++;
     }
-
     dest[idx++] = ']';
     dest[idx++] = ' ';
     dest[idx] = '\0';
 }
-
 static void boot_log_render_entry(int index, const char *message, uint64_t timestamp)
 {
     if (index < 0 || index >= (int)BOOT_LOG_MAX_LINES)
@@ -265,13 +243,11 @@ static void boot_log_render_entry(int index, const char *message, uint64_t times
     boot_log_format_timestamp(line, timestamp);
     boot_log_line_append(line, message);
 }
-
 static void boot_log_reset(void)
 {
     boot_log_count = 0;
     boot_log_time_us = 0;
 }
-
 int boot_log_add(const char *message)
 {
     if (boot_log_count >= BOOT_LOG_MAX_LINES)
@@ -282,14 +258,12 @@ int boot_log_add(const char *message)
     boot_log_entries[boot_log_count] = boot_log_lines[boot_log_count];
     return (int)boot_log_count++;
 }
-
 void boot_log_replace(int index, const char *message)
 {
     if (index < 0 || index >= (int)boot_log_count)
         return;
     boot_log_render_entry(index, message, boot_log_timestamps[index]);
 }
-
 static void boot_log_line_append(char *dest, const char *text)
 {
     if (!text)
@@ -305,7 +279,6 @@ static void boot_log_line_append(char *dest, const char *text)
     }
     dest[dest_len + i] = '\0';
 }
-
 static void boot_log_add_pair(const char *label, const char *value)
 {
     char line[BOOT_LOG_LINE_LEN];
@@ -314,7 +287,6 @@ static void boot_log_add_pair(const char *label, const char *value)
     boot_log_line_append(line, value);
     boot_log_add(line);
 }
-
 void boot_log_add_dec(const char *label, uint32_t value, const char *suffix)
 {
     char line[BOOT_LOG_LINE_LEN];
@@ -326,7 +298,6 @@ void boot_log_add_dec(const char *label, uint32_t value, const char *suffix)
     boot_log_line_append(line, suffix);
     boot_log_add(line);
 }
-
 void boot_log_add_hex(const char *label, uint32_t value)
 {
     char line[BOOT_LOG_LINE_LEN];
@@ -337,7 +308,6 @@ void boot_log_add_hex(const char *label, uint32_t value)
     boot_log_line_append(line, hex);
     boot_log_add(line);
 }
-
 static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext)
 {
     if (max_ext < 0x80000004u || len < 48) {
@@ -356,7 +326,6 @@ static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext)
     out[47] = '\0';
     return true;
 }
-
 static void boot_log_add_cpu_signature(void)
 {
     uint32_t eax, ebx, ecx, edx;
@@ -370,7 +339,6 @@ static void boot_log_add_cpu_signature(void)
         family += ext_family;
     if (family == 0x6 || family == 0xF)
         model |= (ext_model << 4);
-
     char line[BOOT_LOG_LINE_LEN];
     char number[16];
     line[0] = '\0';
@@ -385,7 +353,6 @@ static void boot_log_add_cpu_signature(void)
     boot_log_line_append(line, number);
     boot_log_add(line);
 }
-
 static void boot_log_add_memory_info(struct multiboot_info *boot_info)
 {
     if (!boot_info || !(boot_info->flags & 0x1))
@@ -402,7 +369,6 @@ static void boot_log_add_memory_info(struct multiboot_info *boot_info)
     boot_log_line_append(line, " KB");
     boot_log_add(line);
 }
-
 static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
 {
     if (max_basic < 1)
@@ -414,15 +380,12 @@ static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
         uint32_t eax8, ebx8;
         cpuid(0x80000001u, 0, &eax8, &ebx8, &ecx8, &edx8);
     }
-
     typedef struct {
         const char *name;
         uint8_t reg;
         uint8_t bit;
     } feature_bit_t;
-
     enum { REG_ECX1, REG_EDX1, REG_ECX8, REG_EDX8 };
-
     static const feature_bit_t feature_bits[] = {
         {"MMX", REG_EDX1, 23},  {"SSE", REG_EDX1, 25},    {"SSE2", REG_EDX1, 26},
         {"PAE", REG_EDX1, 6},   {"APIC", REG_EDX1, 9},    {"SSE3", REG_ECX1, 0},
@@ -430,7 +393,6 @@ static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
         {"AVX", REG_ECX1, 28},  {"RDRAND", REG_ECX1, 30}, {"VMX", REG_ECX1, 5},
         {"NX", REG_EDX8, 20},   {"SVM", REG_ECX8, 2},
     };
-
     char line[BOOT_LOG_LINE_LEN];
     line[0] = '\0';
     boot_log_line_append(line, "CPU Features:");
@@ -461,7 +423,6 @@ static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
     if (count == 0)
         boot_log_line_append(line, " none");
     boot_log_add(line);
-
     char virt_line[BOOT_LOG_LINE_LEN];
     virt_line[0] = '\0';
     boot_log_line_append(virt_line, "Virtualization: ");
@@ -479,7 +440,6 @@ static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
     if (!virt_flag)
         boot_log_line_append(virt_line, "none");
     boot_log_add(virt_line);
-
     if (ecx1 & (1u << 31)) {
         char hv[13];
         if (max_basic >= 0x40000000u) {
@@ -504,7 +464,6 @@ static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
         boot_log_add("Hypervisor: none detected");
     }
 }
-
 void boot_log_add_framebuffer_info(void)
 {
     if (fb_width == 0 || fb_height == 0)
@@ -523,7 +482,6 @@ void boot_log_add_framebuffer_info(void)
     boot_log_line_append(line, " bpp");
     boot_log_add(line);
 }
-
 void boot_log_add_rtc_line(const Time *t)
 {
     if (!t)
@@ -536,7 +494,6 @@ void boot_log_add_rtc_line(const Time *t)
     time_to_str(t->day, day);
     time_to_str(t->month, month);
     int_to_str(t->year, year, 0);
-
     line[0] = '\0';
     boot_log_line_append(line, "RTC: ");
     boot_log_line_append(line, hh);
@@ -552,7 +509,6 @@ void boot_log_add_rtc_line(const Time *t)
     boot_log_line_append(line, day);
     boot_log_add(line);
 }
-
 void boot_log_add_acpi_capabilities(bool power_button, bool reset_capable_flag)
 {
     char line[BOOT_LOG_LINE_LEN];
@@ -560,22 +516,18 @@ void boot_log_add_acpi_capabilities(bool power_button, bool reset_capable_flag)
     boot_log_line_append(line, "ACPI S5 poweroff: ");
     boot_log_line_append(line, power_button ? "available" : "missing");
     boot_log_add(line);
-
     char reset_line[BOOT_LOG_LINE_LEN];
     reset_line[0] = '\0';
     boot_log_line_append(reset_line, "ACPI reset register: ");
     boot_log_line_append(reset_line, reset_capable_flag ? "available" : "missing");
     boot_log_add(reset_line);
 }
-
 void boot_log_record_boot_info(struct multiboot_info *boot_info)
 {
     boot_log_reset();
     boot_cpuid_cache();
     boot_log_add("Blanket core 0.3.1 (x86_32) booting...");
-
     boot_log_add_pair("CPU Vendor: ", boot_cpu_vendor);
-
     if (boot_cpu_brand_valid) {
         boot_log_add_pair("Detected CPU: ", boot_cpu_brand);
     } else {
@@ -593,7 +545,6 @@ void boot_log_record_boot_info(struct multiboot_info *boot_info)
         boot_log_add_dec("Boot modules: ", boot_info->mods_count, " loaded");
     }
 }
-
 static void k_font_init(void *data)
 {
     if (!data)
@@ -609,7 +560,6 @@ static void k_font_init(void *data)
     k_boot_font.bitmap =
         (uint32_t *)((uint8_t *)k_boot_font.glyphs + k_boot_font.count * sizeof(K_GlyphInfo));
 }
-
 static K_GlyphInfo *k_glyph_find(uint32_t cp)
 {
     int lo = 0, hi = (int)k_boot_font.count - 1;
@@ -622,7 +572,6 @@ static K_GlyphInfo *k_glyph_find(uint32_t cp)
     }
     return 0;
 }
-
 static int k_draw_string_atlas(int x, int y, const char *str, uint32_t color)
 {
     if (!k_font_virt_addr)
@@ -658,7 +607,6 @@ static int k_draw_string_atlas(int x, int y, const char *str, uint32_t color)
     }
     return x;
 }
-
 static void k_draw_boot_line(int x, int y, const char *str)
 {
     const char *bracket_end = str;
@@ -682,7 +630,6 @@ static void k_draw_boot_line(int x, int y, const char *str)
         k_draw_string_atlas(x, y, str, text_color);
     }
 }
-
 void draw_boot_splash()
 {
     if (k_logo_phys_addr == 0 || !k_font_virt_addr)
@@ -716,13 +663,11 @@ void draw_boot_splash()
             __asm__("pause");
     }
 }
-
 static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t *b, uint32_t *c,
                          uint32_t *d)
 {
     asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(subleaf));
 }
-
 static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t *max_ext)
 {
     uint32_t eax, ebx, ecx, edx;

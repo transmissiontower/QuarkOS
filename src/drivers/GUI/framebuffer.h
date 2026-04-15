@@ -1,9 +1,7 @@
 #ifndef FRAMEBUFFER_H
 #define FRAMEBUFFER_H
-
 #include "arch/x86/multiboot.h"
 #include "lib/stdint.h"
-
 #define COLOR_BLACK 0x00000000
 #define COLOR_WHITE 0x00FFFFFF
 #define COLOR_RED 0x00FF0000
@@ -11,9 +9,7 @@
 #define COLOR_BLUE 0x000000FF
 #define COLOR_ORANGE 0xEC5800
 #define VGA_STATUS 0x3DA
-
 #define RGB(r, g, b) (((r) << 16) | ((g) << 8) | (b))
-
 extern uint32_t *fb_ptr;
 extern uint8_t *back_buffer;
 extern uint32_t fb_width;
@@ -22,16 +18,13 @@ extern uint32_t fb_bpp;
 extern uint32_t fb_pitch;
 extern uint32_t fb_phy_addr;
 extern uint32_t fb_size_bytes;
-
 void drv_fb_init(struct multiboot_info *mb_info);
-
 void drv_fb_swap_buffers();
 void swap_rect(int x, int y, int w, int h);
 void wait_vblank();
 void put_pixel(int x, int y, uint32_t color);
 void put_pixel_AA(int x, int y, uint32_t color, uint8_t alpha);
 uint32_t get_pixel(int x, int y);
-
 void rect_fill(int x, int y, int w, int h, uint32_t color);
 void rect_draw(int x, int y, int w, int d, int h, uint32_t color);
 void circle_draw_AA(int xc, int yc, int r, uint32_t color);
@@ -44,5 +37,4 @@ void draw_corner_mask(int x, int y, int r, uint32_t color, const uint8_t *mask, 
 void shadow_draw(int x, int y, int w, int h);
 void clear_screen(uint32_t color);
 void drv_fb_swap_buffers();
-
 #endif

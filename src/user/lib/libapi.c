@@ -1,13 +1,11 @@
 #include "libapi.h"
 #include "lib/stdlib.h"
-
 static inline int syscall(int a, int b, int c, int d)
 {
     int ret;
     asm volatile("int $0x80" : "=a"(ret) : "a"(a), "b"(b), "c"(c), "d"(d) : "memory");
     return ret;
 }
-
 void qk_sys_exit(int code)
 {
     syscall(0, code, 0, 0);
@@ -102,7 +100,6 @@ void sys_window_close(int id)
 {
     syscall(24, id, 0, 0);
 }
-
 uint8_t qk_hw_inb(uint16_t p)
 {
     return (uint8_t)syscall(20, p, 0, 0);
@@ -126,7 +123,6 @@ int qk_sb16_init(void)
 int qk_sb16_play(const void *buf, uint32_t len, uint32_t rate,
                  uint8_t channels, uint8_t bits)
 {
-    
     uint32_t packed = (rate & 0xFFFF)
                     | ((uint32_t)channels << 16)
                     | ((uint32_t)bits     << 24);
@@ -144,22 +140,23 @@ void qk_outw(uint16_t p, uint16_t v)
 {
     syscall(23, p, v, 0);
 }
-
 int qk_ata_read_sectors(uint32_t lba, uint32_t count, void *buf)
 {
     return syscall(54, lba, count, (uint32_t)buf);
 }
-
 int qk_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out)
 {
     return syscall(56, (int)virt, (int)size, (int)out);
 }
-
 uint32_t qk_map_phys_list(uint32_t *phys_pages, uint32_t count)
 {
     return (uint32_t)syscall(57, (int)phys_pages, (int)count, 0);
 }
-
+void *qk_map_foreign_mem(int src_pid, uint32_t src_virt, uint32_t size)
+{
+    uint32_t mapped = (uint32_t)syscall(58, src_pid, (int)src_virt, (int)size);
+    return mapped ? (void *)mapped : 0;
+}
 void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out)
 {
     message_t msg, reply;
@@ -172,16 +169,13 @@ void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out)
         return 0;
     if (w_out) *w_out = (int)reply.data2;
     if (h_out) *h_out = (int)reply.data3;
-    
     uint32_t src_virt = ((uint32_t *)reply.payload)[0];
     uint32_t size     = reply.data1;
-    
     uint32_t mapped = (uint32_t)syscall(58, comp_pid, (int)src_virt, (int)size);
     if (!mapped)
         return 0;
     return (void *)mapped;
 }
-
 void qk_win_dirty(int comp_pid)
 {
     message_t msg;
@@ -189,7 +183,6 @@ void qk_win_dirty(int comp_pid)
     msg.type = MSG_WIN_DIRTY;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-
 void qk_print_at(int x, int y, uint32_t color, const char *str)
 {
     message_t msg;
@@ -205,7 +198,6 @@ void qk_print_at(int x, int y, uint32_t color, const char *str)
         return;
     qk_sys_ipc_send(comp_pid_cache, &msg);
 }
-
 void qk_blit_pixels(int comp_pid, int x, int y, uint32_t *pixels, int count)
 {
     while (count > 0) {
@@ -222,7 +214,6 @@ void qk_blit_pixels(int comp_pid, int x, int y, uint32_t *pixels, int count)
         count -= batch;
     }
 }
-
 void qk_compositor_suspend(int comp_pid)
 {
     message_t msg;
@@ -230,7 +221,6 @@ void qk_compositor_suspend(int comp_pid)
     msg.data1 = msg.data2 = msg.data3 = 0;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-
 void qk_compositor_resume(int comp_pid)
 {
     message_t msg;
@@ -238,12 +228,10 @@ void qk_compositor_resume(int comp_pid)
     msg.data1 = msg.data2 = msg.data3 = 0;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-
 int qk_getpid(void)
 {
     return syscall(55, 0, 0, 0);
 }
-
 void qk_input_redirect(int target_pid)
 {
     int input_pid = qk_get_server_pid(QK_SERVER_INPUT);
@@ -254,7 +242,6 @@ void qk_input_redirect(int target_pid)
     msg.data2 = msg.data3 = 0;
     qk_sys_ipc_send(input_pid, &msg);
 }
-
 void qk_input_restore(void)
 {
     int input_pid = qk_get_server_pid(QK_SERVER_INPUT);
@@ -264,7 +251,6 @@ void qk_input_restore(void)
     msg.data1 = msg.data2 = msg.data3 = 0;
     qk_sys_ipc_send(input_pid, &msg);
 }
-
 void qk_power_shutdown(void)
 {
     syscall(45, 0, 0, 0);
@@ -277,74 +263,59 @@ void qk_trigger_panic(const char *msg)
 {
     syscall(47, (int)msg, 0, 0);
 }
-
 void qk_pcspk_play(uint32_t freq)
 {
     syscall(50, (int)freq, 0, 0);
 }
-
 void qk_pcspk_stop(void)
 {
     syscall(51, 0, 0, 0);
 }
-
 void qk_pcspk_pwm_play(const uint8_t *buf, uint32_t len, uint32_t rate)
 {
     syscall(52, (int)buf, (int)len, (int)rate);
 }
-
 int qk_pcspk_pwm_ready(void)
 {
     return syscall(53, 0, 0, 0);
 }
-
 int qk_waitpid(int pid)
 {
     return syscall(64, pid, 0, 0);
 }
-
 int qk_pipe_create(const char *name)
 {
     return syscall(65, (int)name, 0, 0);
 }
-
 int qk_pipe_open(const char *name)
 {
     return syscall(66, (int)name, 0, 0);
 }
-
 int qk_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len)
 {
     return syscall(67, pipe_id, (int)buf, (int)len);
 }
-
 int qk_pipe_read(int pipe_id, uint8_t *buf, uint32_t len)
 {
     return syscall(68, pipe_id, (int)buf, (int)len);
 }
-
 int qk_pipe_close(int pipe_id)
 {
     return syscall(69, pipe_id, 0, 0);
 }
-
 int qk_set_alarm(uint32_t ms)
 {
     return syscall(70, (int)ms, 0, 0);
 }
-
 int qk_setenv(const char *kv)
 {
     return syscall(71, (int)kv, 0, 0);
 }
-
 int qk_getenv(const char *key, char *out, uint32_t maxlen)
 {
     return syscall(72, (int)key, (int)out, (int)maxlen);
 }
-
 int qk_signal_send(int pid, int signum)
 {
     return syscall(73, pid, signum, 0);
 }
-
