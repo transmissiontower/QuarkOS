@@ -106,6 +106,7 @@ def bake_icons():
 #define ICON_USERS        ICON_UNIEAFE
 #define ICON_CLOCK        ICON_UNIE970
 #define ICON_BINARY       ICON_UNIE9BF
+#define ICON_REFRESH      ICON_UNIEA8D
 """
     header_content += "\n#endif"
 
