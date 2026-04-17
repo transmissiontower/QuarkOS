@@ -60,9 +60,19 @@ typedef struct {
 static fm_entry_t entries[MAX_ENTRIES];
 static int        entry_count = 0;
 static int        selected    = -1;
-static int        grid_scroll = 0;   
-static int        hover_sb    = -1;  
-static int        hover_grid  = -1;  
+static int        grid_scroll = 0;
+static int        hover_sb    = -1;
+static int        hover_grid  = -1;
+static int        path_editing = 0;
+static char       edit_buf[128];
+static int        edit_len    = 0;
+static int        search_active  = 0;
+static char       search_buf[64];
+static int        search_len     = 0;
+static char       entry_paths[MAX_ENTRIES][96];
+static fm_entry_t search_cache[MAX_ENTRIES];
+static char       search_cache_paths[MAX_ENTRIES][96];
+static int        search_cache_count = 0;
 typedef struct {
     const char *label;
     const char *path;
@@ -129,6 +139,21 @@ static bool str_ends_ext(const char *n, const char *ext3)
     }
     return true;
 }
+static int str_contains_ci(const char *hay, const char *needle)
+{
+    if (!needle[0]) return 1;
+    for (int i = 0; hay[i]; i++) {
+        int j = 0;
+        for (; needle[j] && hay[i+j]; j++) {
+            char ch = hay[i+j], cn = needle[j];
+            if (ch >= 'a' && ch <= 'z') ch -= 32;
+            if (cn >= 'a' && cn <= 'z') cn -= 32;
+            if (ch != cn) break;
+        }
+        if (!needle[j]) return 1;
+    }
+    return 0;
+}
 static int str_eq_ci(const char *a, const char *b)
 {
     for (;;) {
@@ -176,6 +201,7 @@ static void rebuild_path(void)
 static void load_dir(void)
 {
     entry_count = 0; selected = -1; grid_scroll = 0;
+    search_active = 0; search_buf[0] = 0; search_len = 0;
     message_t req;
     memset(&req, 0, sizeof(req));
     req.type  = MSG_DIR_REQ;
@@ -260,6 +286,98 @@ static int navigate_to_path(const char *path)
     rebuild_path();
     return 1;
 }
+static void build_search_cache(void)
+{
+    search_cache_count = 0;
+
+    static uint16_t q_cls[64];
+    static char     q_path[64][96];
+    int qh = 0, qt = 0;
+    q_cls[0] = 0; q_path[0][0] = '/'; q_path[0][1] = 0; qt = 1;
+
+    while (qh != qt && search_cache_count < MAX_ENTRIES) {
+        uint16_t cls = q_cls[qh];
+        char dir_path[96];
+        strncpy(dir_path, q_path[qh], 95); dir_path[95] = 0;
+        qh = (qh + 1) % 64;
+
+        message_t req;
+        memset(&req, 0, sizeof(req));
+        req.type  = MSG_DIR_REQ;
+        req.data1 = cls;
+        qk_sys_ipc_send(storage_pid, &req);
+
+        while (1) {
+            message_t resp;
+            qk_ipc_recv(&resp);
+            if (resp.sender_pid != storage_pid || resp.type != MSG_DIR_REPLY) continue;
+            char *ptr = (char *)resp.payload;
+            while (*ptr && search_cache_count < MAX_ENTRIES) {
+                fm_entry_t e;
+                e.is_dir = (*ptr == '1') ? 1 : 0;
+                while (*ptr && *ptr != '|') ptr++;
+                if (*ptr == '|') ptr++;
+                int cl = 0;
+                while (*ptr >= '0' && *ptr <= '9') { cl = cl*10+(*ptr-'0'); ptr++; }
+                e.cluster = (uint16_t)cl;
+                if (*ptr == '|') ptr++;
+                int ni = 0;
+                while (*ptr && *ptr != '\n' && ni < 15) e.name[ni++] = *ptr++;
+                e.name[ni] = 0;
+                if (*ptr == '\n') ptr++;
+                if (ni == 0 || (e.name[0]=='.'&&(ni==1||(ni==2&&e.name[1]=='.')))) continue;
+
+                search_cache[search_cache_count] = e;
+                int dl = 0;
+                while (dir_path[dl] && dl < 94) { search_cache_paths[search_cache_count][dl] = dir_path[dl]; dl++; }
+                if (dl > 1 && search_cache_paths[search_cache_count][dl-1] != '/') search_cache_paths[search_cache_count][dl++] = '/';
+                for (int k = 0; e.name[k] && dl < 95; k++) search_cache_paths[search_cache_count][dl++] = e.name[k];
+                search_cache_paths[search_cache_count][dl] = 0;
+                search_cache_count++;
+
+                if (e.is_dir) {
+                    int nq = (qt + 1) % 64;
+                    if (nq != qh) {
+                        q_cls[qt] = e.cluster;
+                        int dl2 = 0;
+                        while (dir_path[dl2] && dl2 < 93) { q_path[qt][dl2] = dir_path[dl2]; dl2++; }
+                        if (dl2 > 1 && q_path[qt][dl2-1] != '/') q_path[qt][dl2++] = '/';
+                        for (int k = 0; e.name[k] && dl2 < 95; k++) q_path[qt][dl2++] = e.name[k];
+                        q_path[qt][dl2] = 0;
+                        qt = nq;
+                    }
+                }
+            }
+            if (resp.data1 == 0) break;
+        }
+    }
+}
+
+static void do_global_search(void)
+{
+    entry_count = 0; selected = -1; grid_scroll = 0;
+    if (!search_buf[0]) return;
+    for (int i = 0; i < search_cache_count && entry_count < MAX_ENTRIES; i++) {
+        if (str_contains_ci(search_cache[i].name, search_buf)) {
+            entries[entry_count] = search_cache[i];
+            strncpy(entry_paths[entry_count], search_cache_paths[i], 95);
+            entry_paths[entry_count][95] = 0;
+            entry_count++;
+        }
+    }
+    selected = (entry_count > 0) ? 0 : -1;
+}
+static char sc_to_char(uint8_t sc)
+{
+    static const char map[] = {
+      /*00*/  0,  0,'1','2','3','4','5','6','7','8','9','0','-', 0,  0,  0,
+      /*10*/ 'Q','W','E','R','T','Y','U','I','O','P',  0,  0,  0,  0,'A','S',
+      /*20*/ 'D','F','G','H','J','K','L',  0,  0,  0,  0,  0,'Z','X','C','V',
+      /*30*/ 'B','N','M',  0,  0,'/',
+    };
+    if (sc < (uint8_t)sizeof(map)) return map[sc];
+    return 0;
+}
 static void render(void)
 {
     if (!gfx) return;
@@ -275,6 +393,11 @@ static void render(void)
     {
         int tw = str_w("Files");
         dstr((SIDEBAR_W - tw) / 2, (HEADER_H - fh) / 2, "Files", C_TEXT);
+        if (gui_icons) {
+            gfx_context_t ctx2 = {gfx, (uint32_t)gfx_w, (uint32_t)gfx_h, (uint32_t)gfx_w};
+            draw_icon_sized(&ctx2, gui_icons, 8, (HEADER_H - 16) / 2,
+                            ICON_SEARCH, search_active ? C_ACCENT : C_DIM, 16);
+        }
     }
     fill(SIDEBAR_W - 1, 0, 1, HEADER_H, C_SEP);
     {
@@ -285,23 +408,47 @@ static void render(void)
                             ICON_ARROW_LEFT,  dir_depth > 0 ? C_TEXT : C_DIM, 16);
             draw_icon_sized(&ctx2, gui_icons, CONTENT_X + 30, icon_y,
                             ICON_ARROW_RIGHT, C_DIM, 16);
+            draw_icon_sized(&ctx2, gui_icons, CONTENT_X + 52, icon_y,
+                            ICON_REFRESH, C_TEXT, 16);
         } else {
             dstr(CONTENT_X + 10, (HEADER_H - fh) / 2, "<",
                  dir_depth > 0 ? C_TEXT : C_DIM);
             dstr(CONTENT_X + 26, (HEADER_H - fh) / 2, ">", C_DIM);
+            dstr(CONTENT_X + 48, (HEADER_H - fh) / 2, "R", C_TEXT);
         }
     }
     {
-        int pill_x = CONTENT_X + 54;
+        int pill_x = CONTENT_X + 76;
         int pill_y = 5;
-        int pill_w = content_w - 62;
+        int pill_w = content_w - 84;
         int pill_h = HEADER_H - 10;
-        fill_round(pill_x, pill_y, pill_w, pill_h, CB_SIDEBAR);
-        const char *disp = (cur_path[0]=='/'&&cur_path[1]==0) ? "Root" : cur_path;
-        dstr(pill_x + 10, pill_y + (pill_h - fh) / 2, disp, C_TEXT);
+        fill_round(pill_x, pill_y, pill_w, pill_h, path_editing ? CB_SEL : CB_SIDEBAR);
+        int pill_ty = pill_y + (pill_h - fh) / 2;
+        if (path_editing) {
+            dstr(pill_x + 10, pill_ty, edit_buf, C_TEXT);
+            int cx2 = pill_x + 10 + str_w(edit_buf);
+            fill(cx2, pill_ty, 1, fh, C_TEXT);
+        } else {
+            const char *disp = (cur_path[0]=='/'&&cur_path[1]==0) ? "Root" : cur_path;
+            dstr(pill_x + 10, pill_ty, disp, C_TEXT);
+        }
     }
     fill(0, HEADER_H, SIDEBAR_W, gfx_h - HEADER_H, CB_SIDEBAR);
     fill(SIDEBAR_W - 1, HEADER_H, 1, gfx_h - HEADER_H, C_SEP);
+    #define SB_SEARCH_H 26
+    if (search_active) {
+        fill(0, HEADER_H, SIDEBAR_W - 1, SB_SEARCH_H, CB_SEL);
+        fill(0, HEADER_H + SB_SEARCH_H - 1, SIDEBAR_W - 1, 1, C_SEP);
+        int sty = HEADER_H + (SB_SEARCH_H - fh) / 2;
+        if (search_buf[0]) {
+            dstr(8, sty, search_buf, C_TEXT);
+            fill(8 + str_w(search_buf), sty, 1, fh, C_TEXT);
+        } else {
+            dstr(8, sty, "Search...", C_DIM);
+            fill(8, sty, 1, fh, C_TEXT);
+        }
+    }
+    int sb_extra = search_active ? SB_SEARCH_H : 0;
     int active_sb = -1;
     for (int i = 0; i < SB_N; i++) {
         if (sb[i].kind == 0 && sb[i].path && str_eq_ci(cur_path, sb[i].path)) {
@@ -309,7 +456,7 @@ static void render(void)
         }
     }
     {
-        int sy = HEADER_H + 8;
+        int sy = HEADER_H + 8 + sb_extra;
         for (int i = 0; i < SB_N; i++) {
             if (sb[i].kind == 1) {
                 fill(12, sy + 4, SIDEBAR_W - 24, 1, C_SEP);
@@ -332,15 +479,16 @@ static void render(void)
             sy += SB_ITEM_H;
         }
     }
-    if (entry_count == 0) {
-        const char *msg = "Empty directory";
+    int dc = entry_count;
+    if (dc == 0) {
+        const char *msg = search_active ? (search_buf[0] ? "No results" : "Type to search...") : "Empty directory";
         int tw = str_w(msg);
         dstr(CONTENT_X + (content_w - tw) / 2,
              CONTENT_Y + (content_h - fh) / 2, msg, C_DIM);
         qk_win_dirty(comp_pid);
         return;
     }
-    int rows_total = (entry_count + GCOLS - 1) / GCOLS;
+    int rows_total = (dc + GCOLS - 1) / GCOLS;
     int rows_vis   = content_h / GITEM_H;
     if (rows_vis < 1) rows_vis = 1;
     int max_scroll = rows_total - rows_vis;
@@ -353,7 +501,7 @@ static void render(void)
         if (real_row >= rows_total) break;
         for (int col = 0; col < GCOLS; col++) {
             int idx = real_row * GCOLS + col;
-            if (idx >= entry_count) break;
+            if (idx >= dc) break;
             fm_entry_t *e = &entries[idx];
             int cx = CONTENT_X + col * item_w;
             int cy = CONTENT_Y + row * GITEM_H;
@@ -467,6 +615,20 @@ static void launch_entry(int idx)
 {
     if (idx < 0 || idx >= entry_count) return;
     fm_entry_t *e = &entries[idx];
+    if (search_active) {
+        const char *fp = entry_paths[idx];
+        if (e->is_dir) {
+            if (navigate_to_path(fp)) {
+                search_active = 0; search_buf[0] = 0; search_len = 0;
+                load_dir(); render();
+            }
+            return;
+        }
+        if (str_ends_ext(e->name, "BMP")) { open_with("/APPS/IMGVIEW.QEX", fp); return; }
+        if (str_ends_ext(e->name, "TXT")) { open_with("/APPS/NOTEPAD.QEX", fp); return; }
+        if (str_ends_ext(e->name, "QEX")) { spawn_qex(fp); return; }
+        return;
+    }
     if (e->is_dir) {
         if (dir_depth < MAX_DEPTH - 1) {
             dir_depth++;
@@ -486,12 +648,9 @@ static void launch_entry(int idx)
     if (plen > 0 && full_path[plen-1] != '/') full_path[plen++] = '/';
     strncpy(full_path + plen, e->name, sizeof(full_path) - plen - 1);
     full_path[sizeof(full_path)-1] = 0;
-    if (str_ends_ext(e->name, "BMP"))
-        { open_with("/APPS/IMGVIEW.QEX", full_path); return; }
-    if (str_ends_ext(e->name, "TXT"))
-        { open_with("/APPS/NOTEPAD.QEX", full_path); return; }
-    if (str_ends_ext(e->name, "QEX"))
-        { spawn_qex(full_path); return; }
+    if (str_ends_ext(e->name, "BMP")) { open_with("/APPS/IMGVIEW.QEX", full_path); return; }
+    if (str_ends_ext(e->name, "TXT")) { open_with("/APPS/NOTEPAD.QEX", full_path); return; }
+    if (str_ends_ext(e->name, "QEX")) { spawn_qex(full_path); return; }
 }
 int main(void)
 {
@@ -540,8 +699,9 @@ int main(void)
                     int mx = ev->x;
                     int my = ev->y - TITLE_BAR_HEIGHT;
                     int new_hsb = -1, new_hg = -1;
+                    int sb_extra_h = search_active ? SB_SEARCH_H : 0;
                     if (mx >= 0 && mx < SIDEBAR_W && my >= HEADER_H) {
-                        int sy2 = HEADER_H + 8;
+                        int sy2 = HEADER_H + 8 + sb_extra_h;
                         for (int i = 0; i < SB_N; i++) {
                             if (sb[i].kind == 1) { sy2 += 12; continue; }
                             if (!sb[i].label) continue;
@@ -577,8 +737,33 @@ int main(void)
                         rebuild_path();
                         load_dir();
                         needs_render = 1;
+                    } else if (cy >= 0 && cy < HEADER_H &&
+                               cx >= CONTENT_X + 48 && cx < CONTENT_X + 70) {
+                        load_dir();
+                        needs_render = 1;
+                    } else if (cy >= 5 && cy < HEADER_H - 5 &&
+                               cx >= CONTENT_X + 76 && cx < gfx_w - 8) {
+                        if (!path_editing) {
+                            path_editing = 1;
+                            strncpy(edit_buf, cur_path, 127);
+                            edit_buf[127] = 0;
+                            edit_len = strlen(edit_buf);
+                            needs_render = 1;
+                        }
+                    } else if (cx >= 0 && cx < SIDEBAR_W && cy >= 0 && cy < HEADER_H) {
+                        search_active = !search_active;
+                        if (!search_active) {
+                            search_buf[0] = 0; search_len = 0;
+                            load_dir();
+                        } else {
+                            search_buf[0] = 0; search_len = 0;
+                            build_search_cache();
+                            do_global_search();
+                        }
+                        needs_render = 1;
                     } else if (cx >= 0 && cx < SIDEBAR_W && cy >= HEADER_H) {
-                        int sy = HEADER_H + 8;
+                        int sb_extra_c = search_active ? SB_SEARCH_H : 0;
+                        int sy = HEADER_H + 8 + sb_extra_c;
                         for (int i = 0; i < SB_N; i++) {
                             if (sb[i].kind == 1) { sy += 12; continue; }
                             if (!sb[i].label) continue;
@@ -612,6 +797,47 @@ int main(void)
                 uint8_t sc = (uint8_t)(msg.data1 & 0x7F);
                 bool released = (msg.data1 & 0x80) != 0;
                 if (!released) {
+                if (path_editing) {
+                    if (sc == 0x01) {
+                        path_editing = 0;
+                        needs_render = 1;
+                    } else if (sc == 0x1C) {
+                        path_editing = 0;
+                        if (navigate_to_path(edit_buf)) {
+                            load_dir();
+                        }
+                        needs_render = 1;
+                    } else if (sc == 0x0E) {
+                        if (edit_len > 0) { edit_buf[--edit_len] = 0; needs_render = 1; }
+                    } else {
+                        char ch = sc_to_char(sc);
+                        if (ch && edit_len < 126) {
+                            edit_buf[edit_len++] = ch;
+                            edit_buf[edit_len]   = 0;
+                            needs_render = 1;
+                        }
+                    }
+                } else if (search_active) {
+                    if (sc == 0x01) {
+                        search_active = 0; search_buf[0] = 0; search_len = 0;
+                        load_dir(); needs_render = 1;
+                    } else if (sc == 0x0E) {
+                        if (search_len > 0) { search_buf[--search_len] = 0; do_global_search(); needs_render = 1; }
+                    } else if (sc == 0x1C) {
+                        if (selected >= 0 && selected < entry_count) {
+                            if (needs_render) render();
+                            needs_render = 0;
+                            launch_entry(selected);
+                        }
+                    } else {
+                        char ch = sc_to_char(sc);
+                        if (ch && search_len < 63) {
+                            search_buf[search_len++] = ch;
+                            search_buf[search_len]   = 0;
+                            do_global_search(); needs_render = 1;
+                        }
+                    }
+                } else {
                     int rows_total_k = (entry_count + GCOLS - 1) / GCOLS;
                     int rows_vis_k   = (gfx_h - HEADER_H) / GITEM_H;
                     int max_s = rows_total_k - rows_vis_k;
@@ -630,6 +856,9 @@ int main(void)
                             load_dir();
                             needs_render = 1;
                         }
+                    } else if (sc == 0x3F) {
+                        load_dir();
+                        needs_render = 1;
                     }
                     if (needs_render && selected >= 0) {
                         int sel_row = selected / GCOLS;
@@ -639,7 +868,8 @@ int main(void)
                         if (grid_scroll > max_s) grid_scroll = max_s;
                         if (grid_scroll < 0) grid_scroll = 0;
                     }
-                }
+                } 
+                } 
             }
         } while (qk_ipc_recv_nb(&msg) == 0);
         if (needs_render) render();
