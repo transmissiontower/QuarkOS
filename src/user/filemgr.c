@@ -20,12 +20,12 @@
 #define GITEM_H    110
 #define GICON_W    100
 #define GICON_H    80
-#define CB_HEADER   0xFF192425u
-#define CB_SIDEBAR  0xFF1B2526u
-#define CB_CONTENT  0xFF1E2830u
-#define CB_SEL      0xFF2C4446u
-#define CB_HOVER    0xFF283C3Eu
-#define C_SEP       0xFF293939u
+#define CB_HEADER   0xFF242424u
+#define CB_SIDEBAR  0xFF202020u
+#define CB_CONTENT  0xFF1A1A1Au
+#define CB_SEL      0xFF2E2E2Eu
+#define CB_HOVER    0xFF272727u
+#define C_SEP       0xFF333333u
 #define C_TEXT      0xFFDDDDDDu
 #define C_DIM       0xFF6B7C7Cu
 #define C_ACCENT    0xFF59B2D4u
@@ -59,6 +59,9 @@ typedef struct {
 } fm_entry_t;
 static fm_entry_t entries[MAX_ENTRIES];
 static int        entry_count = 0;
+#define STASH_SIZE 8
+static message_t  stash_buf[STASH_SIZE];
+static int        stash_count = 0;
 static int        selected    = -1;
 static int        grid_scroll = 0;
 static int        hover_sb    = -1;
@@ -202,6 +205,7 @@ static void load_dir(void)
 {
     entry_count = 0; selected = -1; grid_scroll = 0;
     search_active = 0; search_buf[0] = 0; search_len = 0;
+    stash_count = 0;
     message_t req;
     memset(&req, 0, sizeof(req));
     req.type  = MSG_DIR_REQ;
@@ -210,7 +214,10 @@ static void load_dir(void)
     while (1) {
         message_t resp;
         qk_ipc_recv(&resp);
-        if (resp.sender_pid != storage_pid || resp.type != MSG_DIR_REPLY) continue;
+        if (resp.sender_pid != storage_pid || resp.type != MSG_DIR_REPLY) {
+            if (stash_count < STASH_SIZE) stash_buf[stash_count++] = resp;
+            continue;
+        }
         char *ptr = (char *)resp.payload;
         while (*ptr && entry_count < MAX_ENTRIES) {
             fm_entry_t e;
@@ -255,7 +262,10 @@ static int navigate_to_path(const char *path)
         while (1) {
             message_t resp;
             qk_ipc_recv(&resp);
-            if (resp.sender_pid != storage_pid || resp.type != MSG_DIR_REPLY) continue;
+            if (resp.sender_pid != storage_pid || resp.type != MSG_DIR_REPLY) {
+                if (stash_count < STASH_SIZE) stash_buf[stash_count++] = resp;
+                continue;
+            }
             char *rp = (char *)resp.payload;
             while (*rp && !found) {
                 int is_d = (*rp == '1');
@@ -310,7 +320,10 @@ static void build_search_cache(void)
         while (1) {
             message_t resp;
             qk_ipc_recv(&resp);
-            if (resp.sender_pid != storage_pid || resp.type != MSG_DIR_REPLY) continue;
+            if (resp.sender_pid != storage_pid || resp.type != MSG_DIR_REPLY) {
+                if (stash_count < STASH_SIZE) stash_buf[stash_count++] = resp;
+                continue;
+            }
             char *ptr = (char *)resp.payload;
             while (*ptr && search_cache_count < MAX_ENTRIES) {
                 fm_entry_t e;
@@ -627,6 +640,7 @@ static void launch_entry(int idx)
         if (str_ends_ext(e->name, "BMP")) { open_with("/APPS/IMGVIEW.QEX", fp); return; }
         if (str_ends_ext(e->name, "TXT")) { open_with("/APPS/NOTEPAD.QEX", fp); return; }
         if (str_ends_ext(e->name, "QEX")) { spawn_qex(fp); return; }
+        if (str_ends_ext(e->name, "TTF") || str_ends_ext(e->name, "BIN")) return;
         return;
     }
     if (e->is_dir) {
@@ -651,6 +665,7 @@ static void launch_entry(int idx)
     if (str_ends_ext(e->name, "BMP")) { open_with("/APPS/IMGVIEW.QEX", full_path); return; }
     if (str_ends_ext(e->name, "TXT")) { open_with("/APPS/NOTEPAD.QEX", full_path); return; }
     if (str_ends_ext(e->name, "QEX")) { spawn_qex(full_path); return; }
+    if (str_ends_ext(e->name, "TTF") || str_ends_ext(e->name, "BIN")) return;
 }
 int main(void)
 {
@@ -683,7 +698,11 @@ int main(void)
     load_dir();
     render();
     while (1) {
-        qk_ipc_recv(&msg);
+        if (stash_count > 0) {
+            msg = stash_buf[--stash_count];
+        } else {
+            qk_ipc_recv(&msg);
+        }
         int needs_render = 0;
         do {
             if (msg.type == MSG_WIN_RESIZED) {
@@ -721,11 +740,10 @@ int main(void)
                                 new_hg = idx2;
                         }
                     }
-                    if (new_hsb != hover_sb || new_hg != hover_grid) {
-                        hover_sb   = new_hsb;
-                        hover_grid = new_hg;
+                    if (new_hsb != hover_sb || new_hg != hover_grid)
                         needs_render = 1;
-                    }
+                    hover_sb   = new_hsb;
+                    hover_grid = new_hg;
                 } else if (ev->type == EVENT_MOUSE_DOWN && ev->button == MOUSE_BTN_LEFT) {
                     int cx = ev->x;
                     int cy = ev->y - TITLE_BAR_HEIGHT;

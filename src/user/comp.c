@@ -70,6 +70,7 @@ static uint8_t *terminal_binary = 0;
 static uint32_t terminal_binary_size = 0;
 static uint8_t *vkbd_binary = 0;
 static uint32_t vkbd_binary_size = 0;
+
 static int vkbd_pid = -1;
 static int vkbd_is_visible = 0;
 static uint32_t *vkbd_mapped_buf = 0;
@@ -153,7 +154,7 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size)
     while (offset < size) {
         req.type = MSG_REQ_DATA;
         req.data1 = offset;
-        req.data2 = 100;
+        req.data2 = 4088;
         if (qk_sys_ipc_send(storage_server_pid, &req) != 0)
             break;
         if (wait_for_storage_reply(&resp) != 0)
@@ -181,7 +182,7 @@ static void cache_terminal_binary(void)
     if (terminal_binary)
         return;
     uint32_t size = 0;
-    void *buf = load_file_from_storage("/APPS/SHELL.QEX", &size);
+    void *buf = load_file_from_storage("/APPS/TERMINAL.QEX", &size);
     if (!buf || size == 0) {
         if (buf)
             free(buf);
@@ -370,6 +371,7 @@ static void trigger_power_action(power_action_type_t type)
 }
 static void launch_terminal_process(void)
 {
+    cache_terminal_binary();
     if (!terminal_binary || terminal_binary_size == 0) {
         desktop_show_notification("Terminal unavailable");
         return;
@@ -408,6 +410,7 @@ static void apply_vkbd_geom(message_t *rep)
 }
 static void launch_vkbd_process(void)
 {
+    cache_vkbd_binary();
     if (!vkbd_binary || vkbd_binary_size == 0) {
         desktop_show_notification("Keyboard unavailable");
         return;
@@ -488,7 +491,8 @@ static int handle_mouse_for_ui(Event *e)
 }
 void draw_pill(int x, int y, int w, int h)
 {
-    gfx_rect_rounded_fill(&ctx, x, y, w, h, 7, UI_SURFACE_COLOR);
+    gfx_draw_shadow(&ctx, x, y, w, h, 7, 12);
+    gfx_rect_rounded_fill(&ctx, x, y, w, h, 7, COLOR_WIN_HEADER);
 }
 void render_top_bar()
 {
@@ -527,7 +531,7 @@ void render_top_bar()
     int_to_str(t.day, tmp, 10);
     strcat(date_str, tmp);
     draw_string_vector(&ctx, clock_x + 20, clock_y, date_str, fg);
-    draw_string_vector(&ctx, clock_x + 100, clock_y, time_str, fg);
+    draw_string_vector(&ctx, clock_x + clock_w - 20 - get_string_width(time_str), clock_y, time_str, fg);
     int buttons_x = 1920 - 135;
     int buttons_w = 125;
     int buttons_y = 19;
@@ -1027,16 +1031,17 @@ int main()
     if (qk_map_font_atlas(&font_addr) == 0)
         font_atlas_init((uint8_t *)font_addr);
     window_manager_init();
-    cache_terminal_binary();
-    cache_vkbd_binary();
     last_fps_update = qk_get_uptime();
     uint32_t last_render_ms = qk_get_uptime();
     message_t msg;
     while (1) {
         int got_msg = 0;
+        int needs_render = 0;
         while (qk_ipc_recv_nb(&msg) == 0) {
             process_message(&msg);
             got_msg = 1;
+            if (msg.type != MSG_WIN_DIRTY)
+                needs_render = 1;
         }
         uint32_t now = qk_get_uptime();
         current_time_ms = now;
@@ -1045,7 +1050,7 @@ int main()
             fps_counter = 0;
             last_fps_update = now;
         }
-        if (got_msg || (now - last_render_ms) >= 30) {
+        if (needs_render || (now - last_render_ms) >= 30) {
             render();
             last_render_ms = now;
         }

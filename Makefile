@@ -49,6 +49,7 @@ KERNEL_C = \
 	src/fs/fat.c \
 	src/drivers/ata.c \
 	src/drivers/pcspk.c \
+	src/gfx/font_atlas.c \
 	src/gfx/bmp.c \
 	src/drivers/rtc.c \
 	src/drivers/acpi.c \
@@ -71,11 +72,10 @@ USER_LIB_OBJ = \
     src/user/lib/storage_client.o
 
 USER_TEST_OBJ = $(USER_LIB_OBJ) src/user/test.o
-USER_SHELL_OBJ = $(USER_LIB_OBJ) src/user/shell.o
 USER_COMP_OBJ = $(USER_LIB_OBJ) src/user/comp.o
 USER_NOTEPAD_OBJ = $(USER_LIB_OBJ) src/user/notepad.o
 USER_VMAP_OBJ = $(USER_LIB_OBJ) src/user/vmap.o
-USER_SYSINFO_OBJ = $(USER_LIB_OBJ) src/user/sysinfo.o
+USER_PROCMAN_OBJ = $(USER_LIB_OBJ) src/user/procman.o
 USER_STORAGE_SERVER_OBJ = $(USER_LIB_OBJ) src/user/storage_server.o
 USER_INPUT_SERVER_OBJ = $(USER_LIB_OBJ) src/user/input_server.o
 USER_TIME_SERVER_OBJ = $(USER_LIB_OBJ) src/user/time_server.o
@@ -85,6 +85,9 @@ USER_FETCH_OBJ    = $(USER_LIB_OBJ) src/user/fetch.o
 USER_IMGVIEW_OBJ  = $(USER_LIB_OBJ) src/user/imgview.o
 USER_FILEMGR_OBJ  = $(USER_LIB_OBJ) src/user/filemgr.o
 USER_VKBD_OBJ     = $(USER_LIB_OBJ) src/user/vkbd.o
+USER_PAINT_OBJ    = $(USER_LIB_OBJ) src/user/paint.o
+USER_TERMINAL_OBJ = $(USER_LIB_OBJ) src/user/terminal.o
+USER_TTYSH_OBJ    = $(USER_LIB_OBJ) src/user/ttysh.o
 
 MUSIC_SPK = Asm/boot/music.spk
 MUSIC_WAV = Asm/boot/music.wav
@@ -160,18 +163,15 @@ $(MUSIC_SPK): music.flac
 $(MUSIC_WAV): music.flac
 	ffmpeg -y -i music.flac -ar 44100 -ac 2 -sample_fmt s16 $(MUSIC_WAV)
 
-user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
+user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_NOTEPAD_OBJ) $(USER_COMP_OBJ) \
           $(USER_STORAGE_SERVER_OBJ) $(USER_INPUT_SERVER_OBJ) $(USER_TIME_SERVER_OBJ) \
-          $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_SYSINFO_OBJ) $(USER_ELFDEMO_OBJ) \
+          $(USER_INIT_OBJ) $(USER_VMAP_OBJ) $(USER_PROCMAN_OBJ) $(USER_ELFDEMO_OBJ) \
           $(USER_FETCH_OBJ) $(USER_IMGVIEW_OBJ) $(USER_CLOCK_OBJ) $(USER_FILEMGR_OBJ) \
-          $(USER_VKBD_OBJ)
+          $(USER_VKBD_OBJ) $(USER_PAINT_OBJ) $(USER_TERMINAL_OBJ) $(USER_TTYSH_OBJ)
 	mkdir -p Asm/boot
 	$(LD) -m elf_i386 -T src/user/linker.ld -o test.elf $(USER_TEST_OBJ)
 	cp test.elf Asm/boot/test.elf
 	$(OBJCOPY) -O binary test.elf test.bin
-	$(LD) -m elf_i386 -T src/user/linker.ld -o shell.elf $(USER_SHELL_OBJ)
-	cp shell.elf Asm/boot/shell.elf
-	$(OBJCOPY) -O binary shell.elf shell.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o notepad.elf $(USER_NOTEPAD_OBJ)
 	cp notepad.elf Asm/boot/notepad.elf
 	$(OBJCOPY) -O binary notepad.elf notepad.bin
@@ -181,9 +181,9 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 	$(LD) -m elf_i386 -T src/user/linker.ld -o vmap.elf $(USER_VMAP_OBJ)
 	cp vmap.elf Asm/boot/vmap.elf
 	$(OBJCOPY) -O binary vmap.elf vmap.bin
-	$(LD) -m elf_i386 -T src/user/linker.ld -o sysinfo.elf $(USER_SYSINFO_OBJ)
-	cp sysinfo.elf Asm/boot/sysinfo.elf
-	$(OBJCOPY) -O binary sysinfo.elf sysinfo.bin
+	$(LD) -m elf_i386 -T src/user/linker.ld -o procman.elf $(USER_PROCMAN_OBJ)
+	cp procman.elf Asm/boot/procman.elf
+	$(OBJCOPY) -O binary procman.elf procman.bin
 	$(LD) -m elf_i386 -T src/user/linker.ld -o storage_server.elf $(USER_STORAGE_SERVER_OBJ)
 	cp storage_server.elf Asm/boot/storage_server.elf
 	$(OBJCOPY) -O binary storage_server.elf storage_server.bin
@@ -199,7 +199,6 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 	$(LD) -m elf_i386 -T src/user/linker.ld -o elfdemo.elf $(USER_ELFDEMO_OBJ)
 	cp elfdemo.elf Asm/boot/elfdemo.elf
 	python3 tools/qex_builder.py test.bin Asm/boot/test.qex
-	python3 tools/qex_builder.py shell.bin Asm/boot/shell.qex
 	python3 tools/qex_builder.py notepad.bin Asm/boot/notepad.qex
 	python3 tools/qex_builder.py vmap.bin Asm/boot/vmap.qex
 	python3 tools/qex_builder.py comp.bin Asm/boot/comp.qex
@@ -207,7 +206,7 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 	python3 tools/qex_builder.py input_server.bin Asm/boot/input_server.qex
 	python3 tools/qex_builder.py init.bin Asm/boot/init.qex
 	python3 tools/qex_builder.py time_server.bin Asm/boot/time_server.qex
-	python3 tools/qex_builder.py sysinfo.bin Asm/boot/sysinfo.qex
+	python3 tools/qex_builder.py procman.bin Asm/boot/procman.qex
 	$(LD) -m elf_i386 -T src/user/linker.ld -o fetch.elf $(USER_FETCH_OBJ)
 	cp fetch.elf Asm/boot/fetch.elf
 	$(OBJCOPY) -O binary fetch.elf fetch.bin
@@ -224,6 +223,18 @@ user_bin: $(ICONS_BIN) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) $(
 	cp vkbd.elf Asm/boot/vkbd.elf
 	$(OBJCOPY) -O binary vkbd.elf vkbd.bin
 	python3 tools/qex_builder.py vkbd.bin Asm/boot/vkbd.qex
+	$(LD) -m elf_i386 -T src/user/linker.ld -o paint.elf $(USER_PAINT_OBJ)
+	cp paint.elf Asm/boot/paint.elf
+	$(OBJCOPY) -O binary paint.elf paint.bin
+	python3 tools/qex_builder.py paint.bin Asm/boot/paint.qex
+	$(LD) -m elf_i386 -T src/user/linker.ld -o terminal.elf $(USER_TERMINAL_OBJ)
+	cp terminal.elf Asm/boot/terminal.elf
+	$(OBJCOPY) -O binary terminal.elf terminal.bin
+	python3 tools/qex_builder.py terminal.bin Asm/boot/terminal.qex
+	$(LD) -m elf_i386 -T src/user/linker.ld -o ttysh.elf $(USER_TTYSH_OBJ)
+	cp ttysh.elf Asm/boot/ttysh.elf
+	$(OBJCOPY) -O binary ttysh.elf ttysh.bin
+	python3 tools/qex_builder.py ttysh.bin Asm/boot/ttysh.qex
 
 
 # ==================================================
@@ -248,9 +259,8 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boo
 	mmd -i disk.img ::USERS/DEFAULT/DOCS
 	mmd -i disk.img ::TEMP
 	$(MCOPY) -i disk.img Asm/boot/test.qex ::APPS/TEST.QEX
-	$(MCOPY) -i disk.img Asm/boot/shell.qex ::APPS/SHELL.QEX
 	$(MCOPY) -i disk.img Asm/boot/notepad.qex ::APPS/NOTEPAD.QEX
-	$(MCOPY) -i disk.img Asm/boot/sysinfo.qex ::APPS/SYSINFO.QEX
+	$(MCOPY) -i disk.img Asm/boot/procman.qex ::APPS/PROCMAN.QEX
 	$(MCOPY) -i disk.img Asm/boot/vmap.qex ::APPS/VMAP.QEX
 	$(MCOPY) -i disk.img Asm/boot/comp.qex ::APPS/COMP.QEX
 	$(MCOPY) -i disk.img Asm/boot/elfdemo.elf ::APPS/ELFDEMO.ELF
@@ -258,9 +268,13 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boo
 	$(MCOPY) -i disk.img Asm/boot/imgview.qex ::APPS/IMGVIEW.QEX
 	$(MCOPY) -i disk.img Asm/boot/filemgr.qex ::APPS/FILEMGR.QEX
 	$(MCOPY) -i disk.img Asm/boot/vkbd.qex ::APPS/VKBD.QEX
+	$(MCOPY) -i disk.img Asm/boot/paint.qex ::APPS/PAINT.QEX
+	$(MCOPY) -i disk.img Asm/boot/terminal.qex ::APPS/TERMINAL.QEX
+	$(MCOPY) -i disk.img Asm/boot/ttysh.qex ::APPS/TTYSH.QEX
 	$(if $(wildcard $(MUSIC_SPK)),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYSTEM/DATA/MUSIC.SPK,)
 	$(if $(MUSIC_SRC),$(MCOPY) -i disk.img $(MUSIC_WAV) ::USERS/DEFAULT/DESK/MUSIC.WAV,)
 	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYSTEM/DATA/ATL.BIN
+	$(MCOPY) -i disk.img tools/Inter-VariableFont_opsz,wght.ttf ::SYSTEM/DATA/FONT.TTF
 	$(MCOPY) -i disk.img $(ICONS_BIN) ::SYSTEM/DATA/GUI.BIN
 	$(MCOPY) -i disk.img Asm/boot/wallpaper.bin ::SYSTEM/DATA/BG.BIN
 	$(MCOPY) -i disk.img Asm/boot/logo.bmp ::SYSTEM/DATA/LOGO.BMP
@@ -279,8 +293,6 @@ image: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boo
 # ==================================================
 run: image
 	qemu-system-i386 \
-		-enable-kvm \
-		-cpu host \
 		-hda disk.img \
 		-cdrom kernel.iso \
 		-boot order=d \
@@ -295,7 +307,7 @@ run: image
 # Clean
 # ==================================================
 clean:
-	rm -f $(KERNEL_OBJ) $(USER_TEST_OBJ) $(USER_SHELL_OBJ) $(USER_NOTEPAD_OBJ) \
+	rm -f $(KERNEL_OBJ) $(USER_TEST_OBJ) $(USER_NOTEPAD_OBJ) \
 	      src/user/*.o src/kernel/*.o *.elf *.bin disk.img kernel kernel.iso \
 	      fstab.txt hostname.txt readme.txt manual.txt version.txt boot.log empty.tmp mdir*
 	find src -name "*.d" -delete

@@ -10,29 +10,29 @@
 #define WIN_W  840
 #define WIN_H  620
 #define TOOLBAR_H 40
-#define GUTTER_W  56
+#define GUTTER_W  38
 #define STATUS_H  22
 #define TEXT_PAD   8   
 #define BUF_SIZE 65536
-#define COL_BG          0xFF1E2127u
-#define COL_GUTTER_BG   0xFF181B21u
-#define COL_ACTIVE_LINE 0xFF21252Bu
-#define COL_TOOLBAR_BG  0xFF181B21u
-#define COL_STATUS_BG   0xFF13151Au
-#define COL_SEP         0xFF2C313Au
-#define COL_ACCENT      0xFF61AFEFu
-#define COL_TEXT        0xFFABB2BFu
-#define COL_DIM         0xFF4B5263u
-#define COL_COMMENT     0xFF5C6370u
-#define COL_STRING      0xFF98C379u
-#define COL_NUMBER      0xFFD19A66u
-#define COL_KEYWORD     0xFFC678DDu
-#define COL_BTN_SAVE_BG 0xFF253325u
-#define COL_BTN_NEW_BG  0xFF1C2B3Au
-#define COL_BTN_SAVE    0xFF98C379u
-#define COL_BTN_NEW     0xFF61AFEFu
-#define COL_CURSOR      0xFF528BFFu
-#define COL_MOD_IND     0xFFE06C75u
+#define COL_BG          0xFF1E1E1Eu
+#define COL_GUTTER_BG   0xFF1A1A1Au
+#define COL_ACTIVE_LINE 0xFF252525u
+#define COL_TOOLBAR_BG  0xFF242424u
+#define COL_STATUS_BG   0xFF1A1A1Au
+#define COL_SEP         0xFF333333u
+#define COL_ACCENT      0xFF9A9A9Au
+#define COL_TEXT        0xFFAAAAAAu
+#define COL_DIM         0xFF666666u
+#define COL_COMMENT     0xFF666666u
+#define COL_STRING      0xFF8A8A8Au
+#define COL_NUMBER      0xFF9A9A9Au
+#define COL_KEYWORD     0xFFCCCCCCu
+#define COL_BTN_SAVE_BG 0xFF2A2A2Au
+#define COL_BTN_NEW_BG  0xFF2A2A2Au
+#define COL_BTN_SAVE    0xFFAAAAAAu
+#define COL_BTN_NEW     0xFFAAAAAAu
+#define COL_CURSOR      0xFFAAAAAAu
+#define COL_MOD_IND     0xFF888888u
 static int comp_pid    = -1;
 static int storage_pid = -1;
 static char   tbuf[BUF_SIZE];
@@ -165,7 +165,7 @@ static void render(void)
         dstr(tx, tb_text_y, title, tmod ? COL_MOD_IND : COL_DIM);
     }
     fill(0, text_top, GUTTER_W, text_h, COL_GUTTER_BG);
-    fill(GUTTER_W, text_top, 1, text_h, COL_SEP);
+
     {
         int aly = text_top + (cline - scroll_ln) * fh;
         if (aly >= text_top && aly < text_bot)
@@ -195,7 +195,7 @@ static void render(void)
         uint32_t    tok_col = COL_TEXT;
         char *line_start = ptr;
         while (*ptr && *ptr != '\n') {
-            if (ptr == tbuf + tcursor)
+            if (ptr == tbuf + tcursor && px > GUTTER_W + TEXT_PAD + 1)
                 fill(px, ly+1, 2, fh-2, COL_CURSOR);
             char c = *ptr;
             uint32_t col;
@@ -251,15 +251,10 @@ static void render(void)
                 ptr++;
             }
         }
-        if (ptr == tbuf + tcursor)
+        if (ptr == tbuf + tcursor && px > GUTTER_W + TEXT_PAD + 1)
             fill(px, ly+1, 2, fh-2, COL_CURSOR);
         if (*ptr == '\n') { lnum++; ptr++; }
         else break;
-    }
-    if (ptr == tbuf + tcursor && !*ptr) {
-        int aly = text_top + (cline - scroll_ln) * fh;
-        if (aly >= text_top && aly < text_bot)
-            fill(GUTTER_W + TEXT_PAD + 1, aly+1, 2, fh-2, COL_CURSOR);
     }
     int sy = safe_bot - STATUS_H;
     fill(0, sy, gfx_w, STATUS_H, COL_STATUS_BG);

@@ -22,6 +22,7 @@ typedef struct {
 } AtlasFont;
 extern AtlasFont *main_font;
 void font_atlas_init(uint8_t *rawData);
+void *font_atlas_load_from_ttf(uint32_t *out_size);
 int utf8_decode(const uint8_t *s, uint32_t *cp);
 int draw_codepoint_vector(int x, int y, uint32_t cp, uint32_t color);
 int draw_char_vector(int x, int y, char c, uint32_t color);

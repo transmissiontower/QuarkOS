@@ -89,17 +89,18 @@ static void pci_write32(uint8_t dev, uint8_t func, uint8_t off, uint32_t val)
 static void bm_dma_init(void)
 {
     for (uint8_t d = 0; d < 32; d++) {
-        uint32_t id = pci_read32(d, 0, 0x00);
+        for (uint8_t f = 0; f < 8; f++) {
+        uint32_t id = pci_read32(d, f, 0x00);
         if ((id & 0xFFFF) == 0xFFFF)
             continue;
-        uint32_t cc = pci_read32(d, 0, 0x08);
+        uint32_t cc = pci_read32(d, f, 0x08);
         uint8_t cls = (cc >> 24) & 0xFF;
         uint8_t sub = (cc >> 16) & 0xFF;
         if (cls != 0x01 || sub != 0x01)
             continue;
-        uint32_t cmd = pci_read32(d, 0, 0x04);
-        pci_write32(d, 0, 0x04, cmd | 0x04);
-        uint32_t bar4 = pci_read32(d, 0, 0x20);
+        uint32_t cmd = pci_read32(d, f, 0x04);
+        pci_write32(d, f, 0x04, cmd | 0x04);
+        uint32_t bar4 = pci_read32(d, f, 0x20);
         bm_base = (uint16_t)(bar4 & ~0x3u);
         prdt_buf = (uint8_t *)malloc(8192);
         if (!prdt_buf) { bm_base = 0; return; }
@@ -111,8 +112,9 @@ static void bm_dma_init(void)
             free(prdt_buf); prdt_buf = 0; bm_base = 0; return;
         }
         prdt_phys = phys_out[0];
-        prdt_buf  = (uint8_t *)aligned_virt; 
+        prdt_buf  = (uint8_t *)aligned_virt;
         return;
+        } /* inner for f */
     }
 }
 static int ata_dma_read_sectors(uint32_t lba, uint32_t count, uint8_t *buffer)
@@ -744,8 +746,8 @@ void main()
         } else if (msg.type == MSG_REQ_DATA) {
             uint32_t off = msg.data1;
             uint32_t len = msg.data2;
-            if (len > 504)
-                len = 504;
+            if (len > 4088)
+                len = 4088;
             message_t r = {.type = MSG_FILE_DATA};
             if (current_file_data && off < current_file_size) {
                 if (off + len > current_file_size)
@@ -774,6 +776,8 @@ void main()
                     if (first_char == 0)
                         goto end_d;
                     if (first_char == 0xE5 || (e[di].attributes & 0x08))
+                        continue;
+                    if ((e[di].attributes & 0x0F) == 0x0F)
                         continue;
                     char name[16];
                     int j = 0;

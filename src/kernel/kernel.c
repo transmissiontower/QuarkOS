@@ -6,6 +6,8 @@
 #include "drivers/acpi.h"
 #include "drivers/sb16.h"
 #include "drivers/ata.h"
+#include "fs/fat.h"
+#include "gfx/font_atlas.h"
 #include "drivers/ps2/keyboard.h"
 #include "drivers/ps2/mouse.h"
 #include "drivers/rtc.h"
@@ -181,15 +183,24 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info)
     ready_queue->kernel_stack = (uint32_t)&stack_top;
     arch_tss_set_stack((uint32_t)&stack_top);
     boot_log_add("Scheduler initialized");
+    drv_stor_ata_init();
+    boot_log_add("Storage: ATA PIO ready");
+    fat_init();
+    boot_log_add("FAT16: filesystem ready");
     int launched = kernel_exec_internal(boot_info);
     boot_log_add_dec("User services launched: ", launched, "");
+    if (!k_font_virt_addr) {
+        k_font_virt_addr = font_atlas_load_from_ttf(&k_font_size);
+        if (k_font_virt_addr)
+            boot_log_add("Font: loaded from disk");
+        else
+            boot_log_add("Font: WARN failed to load from disk");
+    }
     drv_rtc_read_datetime((Time *)&sys_time);
     boot_log_add_rtc_line((const Time *)&sys_time);
     draw_boot_splash();
     drv_pit_init();
     boot_log_add("Timer source: PIT (8253) @ 100 Hz");
-    drv_stor_ata_init();
-    boot_log_add("Storage: ATA PIO userspace driver ready");
     drv_input_keyboard_init();
     boot_log_add("PS/2 keyboard driver ready");
     drv_input_mouse_init();

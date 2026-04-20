@@ -14,6 +14,7 @@ extern uint32_t total_alloc;
 extern uint32_t total_phys_pages;
 extern uint32_t k_font_phys_addr;
 extern uint32_t k_font_size;
+extern void    *k_font_virt_addr;
 extern uint32_t k_icons_phys_start;
 extern uint32_t k_icons_size;
 extern uint32_t k_wallpaper_phys_addr;
@@ -26,7 +27,7 @@ int sys_map_wallpaper(uint32_t *virt_addr_out)
     uint32_t pages = (k_wallpaper_size + 4095) / 4096;
     for (uint32_t i = 0; i < pages; i++) {
         mm_vmm_map_page(virt_start + i * 4096, k_wallpaper_phys_addr + i * 4096,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_USER);
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     }
     *virt_addr_out = virt_start;
     return 0;
@@ -79,14 +80,12 @@ void k_notify_server_proc_exit(int pid)
     process_t *comp = k_proc_find_by_id(compositor_server_pid);
     if (!comp)
         return;
-    message_t msg;
-    memset(&msg, 0, sizeof(msg));
-    msg.type = MSG_PROCESS_TERMINATED;
-    msg.data1 = pid;
-    msg.sender_pid = 0;
     if (comp->ipc_queue.count < IPC_QUEUE_SIZE) {
         message_t *slot = &comp->ipc_queue.messages[comp->ipc_queue.tail];
-        memcpy(slot, &msg, sizeof(message_t));
+        memset(slot, 0, sizeof(message_t));
+        slot->type = MSG_PROCESS_TERMINATED;
+        slot->data1 = (uint32_t)pid;
+        slot->sender_pid = 0;
         comp->ipc_queue.tail = (comp->ipc_queue.tail + 1) % IPC_QUEUE_SIZE;
         comp->ipc_queue.count++;
         if (comp->state == PROCESS_BLOCKED || comp->state == PROCESS_IPC_WAIT)
@@ -137,7 +136,7 @@ int sys_map_fb(fb_info_t *user_info)
     uint32_t size = (fb_size_bytes + offset + 0xFFF) & ~0xFFF;
     for (uint32_t i = 0; i < size; i += 4096)
         mm_vmm_map_page(virt_start + i, phys_base + i,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER);
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     user_info->width = fb_width;
     user_info->height = fb_height;
     user_info->pitch = fb_pitch;
@@ -243,15 +242,31 @@ int sys_map_font_atlas(uint32_t *virt_addr_out)
 {
     if (!is_ptr_safe(virt_addr_out, 4))
         return -1;
-    if (k_font_phys_addr == 0 || k_font_size == 0)
-        return -1;
     uint32_t virt_start = 0x90000000;
-    uint32_t font_pages = (k_font_size + 4095) / 4096;
-    for (uint32_t i = 0; i < font_pages; i++) {
-        mm_vmm_map_page(virt_start + i * 4096, k_font_phys_addr + i * 4096,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_USER);
+    if (k_font_phys_addr != 0 && k_font_size != 0) {
+        uint32_t font_pages = (k_font_size + 4095) / 4096;
+        for (uint32_t i = 0; i < font_pages; i++) {
+            mm_vmm_map_page(virt_start + i * 4096, k_font_phys_addr + i * 4096,
+                            PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
+        }
+        *virt_addr_out = virt_start;
+        return 0;
     }
-    *virt_addr_out = virt_start;
+    /* Font loaded from disk into kernel heap — walk page tables per page */
+    if (!k_font_virt_addr || k_font_size == 0)
+        return -1;
+    uint32_t offset     = (uint32_t)k_font_virt_addr & 0xFFFu;
+    uint32_t font_pages = (offset + k_font_size + 4095) / 4096;
+    uint32_t base = (uint32_t)k_font_virt_addr & ~0xFFFu;
+    for (uint32_t i = 0; i < font_pages; i++) {
+        uint32_t addr   = base + i * 4096;
+        uint32_t pd_idx = addr >> 22;
+        uint32_t pt_idx = (addr >> 12) & 0x3FF;
+        uint32_t *pt    = (uint32_t *)(0xFFC00000 + pd_idx * 4096);
+        uint32_t phys   = pt[pt_idx] & ~0xFFFu;
+        mm_vmm_map_page(virt_start + i * 4096, phys, PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
+    }
+    *virt_addr_out = virt_start + ((uint32_t)k_font_virt_addr & 0xFFFu);
     return 0;
 }
 int sys_port_io(int port, int val, int type)
@@ -285,7 +300,7 @@ int sys_map_icons_atlas(uint32_t *virt_addr_out)
     uint32_t pages = (k_icons_size + 4095) / 4096;
     for (uint32_t i = 0; i < pages; i++) {
         mm_vmm_map_page(virt_start + i * 4096, k_icons_phys_start + i * 4096,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_USER);
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     }
     *virt_addr_out = virt_start;
     return 0;
@@ -433,7 +448,7 @@ uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count)
         if (!phys)
             return 0;
         mm_vmm_map_page(virt_start + i * 4096, phys,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER);
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     }
     current_process->shared_virt_bump += count * 4096;
     return virt_start;
@@ -621,12 +636,10 @@ void sys_alarm_tick(uint64_t now_ms)
             k_alarms[i].pid = 0;
             if (!target) continue;
             if (target->ipc_queue.count >= IPC_QUEUE_SIZE) continue;
-            message_t amsg;
-            memset(&amsg, 0, sizeof(amsg));
-            amsg.type = MSG_ALARM;
-            amsg.sender_pid = 0;
             message_t *slot = &target->ipc_queue.messages[target->ipc_queue.tail];
-            memcpy(slot, &amsg, sizeof(message_t));
+            memset(slot, 0, sizeof(message_t));
+            slot->type = MSG_ALARM;
+            slot->sender_pid = 0;
             target->ipc_queue.tail = (target->ipc_queue.tail + 1) % IPC_QUEUE_SIZE;
             target->ipc_queue.count++;
             if (target->state == PROCESS_BLOCKED || target->state == PROCESS_IPC_WAIT)
@@ -706,13 +719,11 @@ int sys_signal_send(int pid, int signum)
     process_t *target = k_proc_find_by_id(pid);
     if (!target) return -1;
     if (target->ipc_queue.count >= IPC_QUEUE_SIZE) return -1;
-    message_t smsg;
-    memset(&smsg, 0, sizeof(smsg));
-    smsg.type = MSG_SIGNAL;
-    smsg.sender_pid = current_process->pid;
-    smsg.data1 = (uint32_t)signum;
     message_t *slot = &target->ipc_queue.messages[target->ipc_queue.tail];
-    memcpy(slot, &smsg, sizeof(message_t));
+    memset(slot, 0, sizeof(message_t));
+    slot->type = MSG_SIGNAL;
+    slot->sender_pid = current_process->pid;
+    slot->data1 = (uint32_t)signum;
     target->ipc_queue.tail = (target->ipc_queue.tail + 1) % IPC_QUEUE_SIZE;
     target->ipc_queue.count++;
     if (target->state == PROCESS_BLOCKED || target->state == PROCESS_IPC_WAIT)
@@ -923,7 +934,7 @@ void k_syscall_entry(struct InterruptRegisters *regs)
             if (!(pte & PAGE_FLAG_PRESENT)) { ok = 0; break; }
             uint32_t phys = pte & ~0xFFFu;
             mm_vmm_map_page(virt_start + i * 4096, phys,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER);
+                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
         }
         if (ok) {
             current_process->shared_virt_bump += page_count * 4096;

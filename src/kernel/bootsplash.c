@@ -648,8 +648,9 @@ void draw_boot_splash()
         rect_fill(bar_x, bar_y, bar_w, bar_h, 0x1A1A1A);
         rect_fill(bar_x, bar_y, (bar_w * i) / 100, bar_h, COLOR_WHITE);
         int current_line_limit = (i * (int)boot_log_count) / 100;
+        int line_h = k_boot_font.line_height - 2;
         for (int m = 0; m <= current_line_limit && m < (int)boot_log_count; m++) {
-            k_draw_boot_line(15, 20 + (m * (k_boot_font.line_height - 2)), boot_log_entries[m]);
+            k_draw_boot_line(12, 8 + m * line_h, boot_log_entries[m]);
         }
         drv_fb_swap_buffers();
         int delay_multiplier = 1;
@@ -659,7 +660,7 @@ void draw_boot_splash()
                 delay_multiplier = 15;
             last_line = current_line_limit;
         }
-        for (volatile int d = 0; d < 800000 * delay_multiplier; d++)
+        for (volatile int d = 0; d < 200000 * delay_multiplier; d++)
             __asm__("pause");
     }
 }

@@ -11,7 +11,8 @@
 #define PAGE_FLAG_PRESENT (1 << 0)
 #define PAGE_FLAG_WRITE (1 << 1)
 #define PAGE_FLAG_USER (1 << 2)
-#define PAGE_FLAG_OWNER (1 << 9)
+#define PAGE_FLAG_OWNER  (1 << 9)
+#define PAGE_FLAG_SHARED (1 << 10)
 #define MAX_PHYS_PAGES 1048576
 #define BITMAP_SIZE (MAX_PHYS_PAGES / 8)
 extern uint32_t initial_page_dir[1024];

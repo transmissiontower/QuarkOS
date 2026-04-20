@@ -5,7 +5,7 @@ typedef struct {
     int sender_pid;
     int type;
     uint32_t data1, data2, data3;
-    uint8_t payload[512];
+    uint8_t payload[4096];
 } message_t;
 #define MSG_OK 100
 #define MSG_ERROR 101
@@ -52,6 +52,7 @@ typedef struct {
 #define MSG_WAV_PLAY           400
 #define MSG_ALARM              500
 #define MSG_SIGNAL             501
+#define MSG_TERM_ATTACH        600  /* terminal→ttysh: data1=terminal_pid */
 #define IPC_QUEUE_SIZE 128
 typedef struct {
     message_t messages[IPC_QUEUE_SIZE];

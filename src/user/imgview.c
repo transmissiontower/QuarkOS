@@ -206,6 +206,12 @@ int main(void)
     qk_set_proc_name(-1, "imgview");
     static char file_path[128];
     strncpy(file_path, "/SYSTEM/DATA/LOGO.BMP", sizeof(file_path) - 1);
+    int retries = 0;
+    while ((comp_pid  = qk_get_server_pid(QK_SERVER_COMPOSITOR)) < 0 ||
+           (store_pid = qk_get_server_pid(QK_SERVER_STORAGE))    < 0) {
+        qk_sleep(50);
+        if (++retries > 40) return 1;
+    }
     {
         message_t probe;
         while (qk_ipc_recv_nb(&probe) == 0) {
@@ -215,12 +221,6 @@ int main(void)
                 break;
             }
         }
-    }
-    int retries = 0;
-    while ((comp_pid  = qk_get_server_pid(QK_SERVER_COMPOSITOR)) < 0 ||
-           (store_pid = qk_get_server_pid(QK_SERVER_STORAGE))    < 0) {
-        qk_sleep(50);
-        if (++retries > 40) return 1;
     }
     uint32_t t0 = qk_get_uptime();
     uint32_t file_size = 0;

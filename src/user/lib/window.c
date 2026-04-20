@@ -471,13 +471,13 @@ void draw_window_head(gfx_context_t *ctx, Window *win, bool active)
     gfx_rect_fill(ctx, x + r, y, w - 2 * r, r, head_bg);
     draw_corner_mask(ctx, x, y, r, head_bg, corner_mask, 0);
     draw_corner_mask(ctx, x + w - r, y, r, head_bg, corner_mask, 1);
-    gfx_rect_fill(ctx, x, y + TITLE_BAR_HEIGHT - 1, w, 1, COLOR_WIN_SEP);
-    draw_string_vector(ctx, x + 12, y + 7, win->title, title_color);
+    int text_y = y + (TITLE_BAR_HEIGHT - 16) / 2;
+    int icon_y = y + (TITLE_BAR_HEIGHT - 18) / 2;
+    draw_string_vector(ctx, x + 12, text_y, win->title, title_color);
     int bx = win->x + win->w - 24;
-    int by = win->y + 10;
-    draw_icon_sized(ctx, gui_icons, bx, by - 3, ICON_CLOSE, COLOR_WHITE, 18);
-    draw_icon_sized(ctx, gui_icons, bx - 20, by - 3, ICON_UP, COLOR_WHITE, 18);
-    draw_icon_sized(ctx, gui_icons, bx - 40, by - 3, ICON_DOWN, COLOR_WHITE, 18);
+    draw_icon_sized(ctx, gui_icons, bx, icon_y, ICON_CLOSE, COLOR_WHITE, 18);
+    draw_icon_sized(ctx, gui_icons, bx - 20, icon_y, ICON_UP, COLOR_WHITE, 18);
+    draw_icon_sized(ctx, gui_icons, bx - 40, icon_y, ICON_DOWN, COLOR_WHITE, 18);
 }
 void draw_windows(gfx_context_t *ctx)
 {

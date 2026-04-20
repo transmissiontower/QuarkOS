@@ -38,26 +38,25 @@ void render_ui()
     uint32_t used_mem, total_mem, cpu_load;
     qk_get_stats(&used_mem, &total_mem, &cpu_load);
     uint32_t uptime = qk_get_uptime() / 1000;
-    draw_rect_rpc(0, 0, WIN_W, 50, 0xFF21252B);
-    draw_icon_rpc(15, 15, ICON_MONITOR, 0xFF61AFEF);
+    draw_rect_rpc(0, 0, WIN_W, 50, 0xFF242424);
+    draw_icon_rpc(15, 15, ICON_MONITOR, 0xFF9A9A9A);
     qk_print_at(42, 17, 0xFFFFFFFF, "System Activity");
     char up_s[32], t_s[16];
     int_to_str(uptime, t_s, 10);
     strncpy(up_s, "UP: ", 5);
     strcat(up_s, t_s);
     strcat(up_s, "s");
-    qk_print_at(WIN_W - 100, 17, 0xFF5C6370, up_s);
+    qk_print_at(WIN_W - 100, 17, 0xFF666666, up_s);
     int sx = 10, sy = 60, sw = WIN_W - 20;
-    draw_rect_rpc(sx, sy, sw, STATS_H, 0xFF181A1F);
     char cpu_s[32], cpu_v[16];
     int_to_str(cpu_load, cpu_v, 10);
     strncpy(cpu_s, "CPU Load: ", 12);
     strcat(cpu_s, cpu_v);
     strcat(cpu_s, "%");
-    qk_print_at(sx + 15, sy + 12, 0xFFE06C75, cpu_s);
-    draw_rect_rpc(sx + 15, sy + 32, sw - 30, 8, 0xFF282C34);
+    qk_print_at(sx + 15, sy + 12, 0xFFAAAAAA, cpu_s);
+    draw_rect_rpc(sx + 15, sy + 32, sw - 30, 8, 0xFF333333);
     int cpu_w = ((sw - 30) * cpu_load) / 100;
-    draw_rect_rpc(sx + 15, sy + 32, cpu_w, 8, 0xFFE06C75);
+    draw_rect_rpc(sx + 15, sy + 32, cpu_w, 8, 0xFF888888);
     uint32_t mem_perc = (total_mem > 0) ? (used_mem * 100 / total_mem) : 0;
     char mem_s[48], mem_v[16];
     int_to_str(used_mem / 1024 / 1024, mem_v, 10);
@@ -67,44 +66,44 @@ void render_ui()
     int_to_str(total_mem / 1024 / 1024, mem_v, 10);
     strcat(mem_s, mem_v);
     strcat(mem_s, "MB");
-    qk_print_at(sx + 15, sy + 50, 0xFF98C379, mem_s);
-    draw_rect_rpc(sx + 15, sy + 68, sw - 30, 8, 0xFF282C34);
+    qk_print_at(sx + 15, sy + 50, 0xFFAAAAAA, mem_s);
+    draw_rect_rpc(sx + 15, sy + 68, sw - 30, 8, 0xFF333333);
     int mem_w = ((sw - 30) * (int)mem_perc) / 100;
-    draw_rect_rpc(sx + 15, sy + 68, mem_w, 8, 0xFF98C379);
+    draw_rect_rpc(sx + 15, sy + 68, mem_w, 8, 0xFF888888);
     int ty = 155;
-    draw_rect_rpc(10, ty, WIN_W - 20, 26, 0xFF282C34);
-    draw_rect_rpc(10, ty + 25, WIN_W - 20, 1, 0xFF61AFEF);
-    qk_print_at(20, ty + 6, 0xFF61AFEF, "PID");
-    qk_print_at(75, ty + 6, 0xFF61AFEF, "NAME");
-    qk_print_at(275, ty + 6, 0xFF61AFEF, "STATE");
+    draw_rect_rpc(10, ty, WIN_W - 20, 26, 0xFF2A2A2A);
+    draw_rect_rpc(10, ty + 25, WIN_W - 20, 1, 0xFF3A3A3A);
+    qk_print_at(20, ty + 6, 0xFF9A9A9A, "PID");
+    qk_print_at(75, ty + 6, 0xFF9A9A9A, "NAME");
+    qk_print_at(275, ty + 6, 0xFF9A9A9A, "STATE");
     last_count = qk_get_procs(last_procs, 14);
     process_info_t *procs = last_procs;
     int count = last_count;
     for (int i = 0; i < count; i++) {
         int ry = 190 + (i * 24);
         bool is_sel = (procs[i].pid == selected_pid);
-        uint32_t bg = is_sel ? 0xFF3E4451 : ((i % 2 == 0) ? 0xFF21252B : 0xFF1E2227);
+        uint32_t bg = is_sel ? 0xFF353535 : ((i % 2 == 0) ? 0xFF222222 : 0xFF1E1E1E);
         draw_rect_rpc(10, ry, WIN_W - 20, 22, bg);
         char p_s[12];
         int_to_str(procs[i].pid, p_s, 10);
-        uint32_t n_clr = (procs[i].pid == 0) ? 0xFFE06C75 : 0xFFABB2BF;
+        uint32_t n_clr = 0xFFAAAAAA;
         const char *st_s = "WAIT";
-        uint32_t st_clr = 0xFFD19A66;
+        uint32_t st_clr = 0xFF666666;
         switch (procs[i].state) {
         case 0:
             st_s = "READY";
-            st_clr = 0xFF98C379;
+            st_clr = 0xFFCCCCCC;
             break;
         case 1:
             st_s = "RUN";
-            st_clr = 0xFF56B6C2;
+            st_clr = 0xFFFFFFFF;
             break;
         case 4:
             st_s = "IRQ";
-            st_clr = 0xFFC678DD;
+            st_clr = 0xFF888888;
             break;
         }
-        qk_print_at(20, ry + 5, 0xFF61AFEF, p_s);
+        qk_print_at(20, ry + 5, 0xFF9A9A9A, p_s);
         qk_print_at(75, ry + 5, n_clr, (procs[i].name[0] ? procs[i].name : "sys_task"));
         qk_print_at(275, ry + 5, st_clr, st_s);
         if (is_sel && procs[i].pid != 0) {
@@ -112,8 +111,8 @@ void render_ui()
             draw_icon_rpc(WIN_W - 40, ry + 3, ICON_CLOSE, 0xFFFFFFFF);
         }
     }
-    draw_rect_rpc(0, WIN_H - 30, WIN_W, 30, 0xFF21252B);
-    qk_print_at(10, WIN_H - 20, 0xFF5C6370, "Click a row to select. Press [X] to Kill.");
+    draw_rect_rpc(0, WIN_H - 30, WIN_W, 30, 0xFF242424);
+    qk_print_at(10, WIN_H - 20, 0xFF666666, "Click a row to select. Press [X] to Kill.");
 }
 int main()
 {

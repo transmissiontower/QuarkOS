@@ -41,4 +41,5 @@ typedef struct {
 void fat_init();
 void fat_list_root();
 uint8_t *fat_read_file(const char *filename, uint32_t *out_size);
+uint8_t *fat_read_file_path(const char *path, uint32_t *out_size);
 #endif

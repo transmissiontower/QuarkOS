@@ -585,6 +585,7 @@
 #define ICON_UNIEB45 0xEB45
 #define ICON_UNIEB46 0xEB46
 
+/* Semantic aliases */
 #define ICON_CLOSE        ICON_UNIEB15
 #define ICON_UP           ICON_UNIE95A
 #define ICON_DOWN         ICON_UNIE955

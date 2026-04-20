@@ -97,7 +97,7 @@ void k_scheduler_yield()
     process_t *next_proc = old_proc->next;
     while (next_proc->state != PROCESS_READY) {
         next_proc = next_proc->next;
-        if (next_proc == old_proc)
+        if (!next_proc || next_proc == old_proc)
             return;
     }
     if (next_proc == old_proc)
@@ -285,7 +285,7 @@ void k_proc_terminate(int pid)
         return;
     process_t *prev = ready_queue;
     process_t *curr = ready_queue->next;
-    while (curr != ready_queue) {
+    while (curr && curr != ready_queue) {
         if (curr->pid == pid) {
             void k_notify_server_proc_exit(int pid);
             k_notify_server_proc_exit(pid);
@@ -298,7 +298,7 @@ void k_proc_terminate(int pid)
                         scanner->state = PROCESS_READY;
                     }
                     scanner = scanner->next;
-                } while (scanner != ready_queue);
+                } while (scanner && scanner != ready_queue);
             }
             prev->next = curr->next;
             if (current_process == curr) {
