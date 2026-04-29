@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="screenshot/desktop.jpg" alt="QuarkOS desktop">
+  <img src="screenshots/desktop.jpg" alt="QuarkOS desktop">
 </p>
 
 <h1 align="center">QuarkOS</h1>
