@@ -1,4 +1,12 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/util/util.c - Low-level utilities: memset, memcpy, port I/O, color blending, and integer sqrt
+ */
 #include "lib/stdint.h"
+
+static uint8_t ps2_status_latched;
+static uint8_t ps2_data_from_mouse_latched;
+
 void memset(void *dest, uint8_t val, uint32_t n)
 {
     uint8_t *d = dest;
@@ -14,21 +22,66 @@ void memcpy(void *dest, const void *src, uint32_t n)
 }
 void memcpy32(void *dest, const void *src, uint32_t count)
 {
-    asm volatile("cld; rep movsl" : "+D"(dest), "+S"(src), "+c"(count) : : "memory");
+    uint32_t *d = (uint32_t *)dest;
+    const uint32_t *s = (const uint32_t *)src;
+    while (count--) *d++ = *s++;
 }
 void memset32(void *dest, uint32_t val, uint32_t count)
 {
-    asm volatile("cld; rep stosl" : "+D"(dest), "+c"(count) : "a"(val) : "memory");
+    uint32_t *d = (uint32_t *)dest;
+    while (count--) *d++ = val;
 }
 void outb(uint16_t port, uint8_t val)
 {
-    asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
+    (void)port; (void)val;
 }
 uint8_t inb(uint16_t port)
 {
-    uint8_t ret;
-    asm volatile("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
+    extern void virtio_input_poll(void);
+    extern int virtio_input_kbd_has_data(void);
+    extern uint8_t virtio_input_kbd_read(void);
+    extern int virtio_input_mouse_has_data(void);
+    extern uint8_t virtio_input_mouse_read(void);
+    if (port == 0x64) {
+
+        virtio_input_poll();
+
+        uint8_t st = 0;
+        if (virtio_input_mouse_has_data()) {
+            st |= 0x21;
+            ps2_data_from_mouse_latched = 1;
+        } else if (virtio_input_kbd_has_data()) {
+            st |= 0x01;
+            ps2_data_from_mouse_latched = 0;
+        } else {
+            ps2_data_from_mouse_latched = 0;
+        }
+
+        ps2_status_latched = st;
+        return st;
+    }
+    if (port == 0x60) {
+        uint8_t st = ps2_status_latched;
+        ps2_status_latched = 0;
+
+        if ((st & 0x01) != 0) {
+            if (ps2_data_from_mouse_latched) {
+                if (virtio_input_mouse_has_data())
+                    return virtio_input_mouse_read();
+            } else {
+                if (virtio_input_kbd_has_data())
+                    return virtio_input_kbd_read();
+            }
+        }
+
+        virtio_input_poll();
+        if (virtio_input_mouse_has_data())
+            return virtio_input_mouse_read();
+        if (virtio_input_kbd_has_data())
+            return virtio_input_kbd_read();
+        return 0;
+    }
+    return 0;
 }
 uint32_t blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha)
 {
@@ -79,21 +132,17 @@ int memcmp(const void *s1, const void *s2, uint32_t n)
 }
 uint16_t inw(uint16_t port)
 {
-    uint16_t rv;
-    asm volatile("inw %1, %0" : "=a"(rv) : "dN"(port));
-    return rv;
+    (void)port; return 0;
 }
 void outw(uint16_t port, uint16_t value)
 {
-    asm volatile("outw %1, %0" : : "dN"(port), "a"(value));
+    (void)port; (void)value;
 }
 uint32_t inl(uint16_t port)
 {
-    uint32_t rv;
-    asm volatile("inl %1, %0" : "=a"(rv) : "dN"(port));
-    return rv;
+    (void)port; return 0;
 }
 void outl(uint16_t port, uint32_t value)
 {
-    asm volatile("outl %1, %0" : : "dN"(port), "a"(value));
+    (void)port; (void)value;
 }

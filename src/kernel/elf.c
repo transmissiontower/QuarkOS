@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/kernel/elf.c - ELF32 executable validator and loader
+ */
 #include "kernel/elf.h"
 #include "mm/memory.h"
 #include "util/util.h"

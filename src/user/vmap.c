@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/vmap.c - Kernel virtual memory map visualizer
+ */
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"

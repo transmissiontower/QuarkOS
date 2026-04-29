@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/arch/x86/gdt.h - GDT entry, pointer, and TSS structure definitions
+ */
 #ifndef GDT_H
 #define GDT_H
 #include "lib/stdint.h"

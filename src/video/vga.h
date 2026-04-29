@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/vga.h - VGA text-mode constants and output function declarations
+ */
 #ifndef VGA_H
 #define VGA_H
 #include "lib/stdint.h"

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/lib/gfx.c - Software 2D graphics primitives (rects, blending, sprites, shadows)
+ */
 #include "user/lib/gfx.h"
 #include "lib/math.h"
 #include "lib/stdlib.h"
@@ -146,7 +150,7 @@ void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, ui
 }
 void gfx_draw_shadow(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint8_t opacity)
 {
-    int s_size = 12;
+    int s_size = 6;
     for (int j = -s_size; j < h + s_size; j++) {
         for (int i = -s_size; i < w + s_size; i++) {
             int dx = (i < r) ? r - i : (i >= w - r ? i - (w - r - 1) : 0);

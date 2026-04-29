@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/kernel/ipc.h - Inter-process communication message types and queue structures
+ */
 #ifndef IPC_H
 #define IPC_H
 #include "lib/stdint.h"
@@ -5,7 +9,7 @@ typedef struct {
     int sender_pid;
     int type;
     uint32_t data1, data2, data3;
-    uint8_t payload[512];
+    uint8_t payload[4096];
 } message_t;
 #define MSG_OK 100
 #define MSG_ERROR 101
@@ -28,7 +32,7 @@ typedef struct {
 #define MSG_FILE_SAVE_END 310
 #define MSG_FILE_READ 311
 #define MSG_FILE_PEEK 312
-#define MSG_FILE_GET_PAGES 313  
+#define MSG_FILE_GET_PAGES 313
 #define MSG_WIN_SET_PIXEL 55
 #define MSG_WIN_DRAW_LINE 56
 #define MSG_WIN_DRAW_RECT 57
@@ -37,13 +41,13 @@ typedef struct {
 #define MSG_WIN_COLOR 60
 #define MSG_PROCESS_TERMINATED 61
 #define MSG_WIN_BLIT_PIXELS 62
-#define MSG_WIN_MAP_BUFFER  63  
-#define MSG_WIN_BUFFER_INFO 64  
+#define MSG_WIN_MAP_BUFFER  63
+#define MSG_WIN_BUFFER_INFO 64
 #define MSG_WIN_DIRTY       65
-#define MSG_WIN_RESIZED     66  
+#define MSG_WIN_RESIZED     66
 #define MSG_COMPOSITOR_SUSPEND 70
 #define MSG_COMPOSITOR_RESUME  71
-#define MSG_INPUT_REDIRECT     72  
+#define MSG_INPUT_REDIRECT     72
 #define MSG_INPUT_RESTORE      73
 #define MSG_VKBD_TOGGLE        410
 #define MSG_VKBD_KEY           411
@@ -52,6 +56,19 @@ typedef struct {
 #define MSG_WAV_PLAY           400
 #define MSG_ALARM              500
 #define MSG_SIGNAL             501
+#define MSG_TERM_ATTACH        600
+#define MSG_PICKER_OPEN        700
+#define MSG_PICKER_RESULT      701
+#define MSG_CLIP_SET           710
+#define MSG_CLIP_GET           711
+#define MSG_CLIP_DATA          712
+#define MSG_DISK_LIST          320
+#define MSG_DISK_LIST_REPLY    321
+#define MSG_DISK_EJECT         322
+#define MSG_DISK_MOUNT         323
+#define MSG_DISK_STATUS        324
+#define MSG_DISK_CHANGED       325
+#define MSG_DISK_SUBSCRIBE     326
 #define IPC_QUEUE_SIZE 128
 typedef struct {
     message_t messages[IPC_QUEUE_SIZE];

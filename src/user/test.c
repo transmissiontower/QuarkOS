@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/test.c - Plasma effect demo window using sine-wave color animation
+ */
 #include "kernel/ipc.h"
 #include "lib/math.h"
 #include "lib/stdlib.h"

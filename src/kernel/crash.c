@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/kernel/crash.c - Kernel crash handler with keyboard-triggered reboot
+ */
 #include "kernel/crash.h"
 #include "drivers/acpi.h"
 #include "util/util.h"

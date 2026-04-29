@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/mm/kmalloc.c - Kernel heap allocator with block splitting, coalescing, and auto-expansion
+ */
 #include "mm/kmalloc.h"
 #include "lib/stdint.h"
 #include "mm/memory.h"
@@ -45,7 +49,12 @@ void *mm_heap_alloc(uint32_t size)
 {
     if (size == 0)
         return 0;
+#if defined(__aarch64__)
+
+    uint32_t aligned_size = size = (size + 7) & ~7;
+#else
     uint32_t aligned_size = size = (size + 3) & ~3;
+#endif
     Header *current = head;
     while (current != 0) {
         if (current->is_free && current->size >= aligned_size) {

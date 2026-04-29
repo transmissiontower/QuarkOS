@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/lib/stdio.c - Standard I/O (printf, file operations, formatted output)
+ */
 #include "user/lib/stdio.h"
 #include "user/lib/libapi.h"
 #include "kernel/ipc.h"
@@ -147,7 +151,7 @@ int fputs(const char *s, FILE *stream) { (void)stream; qk_print_at(0,0,0xFFFFFFF
 int fputc(int c, FILE *stream) { (void)stream; (void)c; return c; }
 int puts(const char *s) { qk_print_at(0,0,0xFFFFFFFF,s); return 0; }
 int putchar(int c) { (void)c; return c; }
-#define CHUNK 120   
+#define CHUNK 120
 static FILE  _open_file;
 static int   _file_in_use = 0;
 FILE *fopen(const char *path, const char *mode)
@@ -203,7 +207,7 @@ uint32_t fread(void *buf, uint32_t elem_size, uint32_t count, FILE *fp)
 }
 uint32_t fwrite(const void *buf, uint32_t size, uint32_t count, FILE *fp)
 {
-    (void)buf; (void)size; (void)fp; return count; 
+    (void)buf; (void)size; (void)fp; return count;
 }
 int fseek(FILE *fp, long offset, int whence)
 {

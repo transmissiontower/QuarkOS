@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/ps2/mouse.h - PS/2 mouse driver interface and state globals
+ */
 #ifndef MOUSE_H
 #define MOUSE_H
 #include "lib/stdint.h"

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/fetch.c - System information display with logo (neofetch-style)
+ */
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
@@ -38,8 +42,8 @@ typedef struct __attribute__((packed)) {
 } bmp_ihdr_t;
 static void *fetch_read_file(const char *path, uint32_t *out_size)
 {
-    uint16_t dir_cluster;
-    char name[16];
+    uint32_t dir_cluster;
+    char name[64];
     if (qk_path_resolve(path, &dir_cluster, name) != 0)
         return 0;
     message_t req, resp;
@@ -104,10 +108,10 @@ static void blit_logo(void *bmp_data, uint32_t bmp_size)
     int row_buf_x = 0;
     int row_buf_cnt = 0;
     for (int dy = 0; dy < dst_h; dy++) {
-        int sy_fwd = (dy * src_h) / dst_h;           
+        int sy_fwd = (dy * src_h) / dst_h;
         int sy_bmp = (ih->height > 0)
-                       ? (src_h - 1 - sy_fwd)        
-                       : sy_fwd;                      
+                       ? (src_h - 1 - sy_fwd)
+                       : sy_fwd;
         uint8_t *src_row = px + sy_bmp * stride;
         row_buf_cnt = 0;
         row_buf_x   = ox;
@@ -117,7 +121,7 @@ static void blit_logo(void *bmp_data, uint32_t bmp_size)
             uint8_t b = p[0], g = p[1], r = p[2];
             uint8_t a = (bpp == 32) ? p[3] : 255;
             uint32_t col = (0xFF000000u) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
-            if (a < 128) col = C_BG;   
+            if (a < 128) col = C_BG;
             row_buf[row_buf_cnt++] = col;
             if (row_buf_cnt == 30 || dx == dst_w - 1) {
                 qk_blit_pixels(comp_pid, row_buf_x, oy + dy, row_buf, row_buf_cnt);
@@ -179,7 +183,7 @@ int main(void)
     draw_rect(LOGO_OFF_X + LOGO_DST_W + 12, 8,
               1, WIN_H - 16, C_DIM);
     uint32_t bmp_size = 0;
-    void *bmp = fetch_read_file("/SYSTEM/DATA/LOGO.BMP", &bmp_size);
+    void *bmp = fetch_read_file("/SYS/DAT/LOGO.BMP", &bmp_size);
     if (bmp) {
         blit_logo(bmp, bmp_size);
         free(bmp);
@@ -218,7 +222,7 @@ int main(void)
     info_y += 8;
     info_line("OS",     "QuarkOS32 Keystone",  C_VAL);
     info_line("Kernel", "QK32-1.1",            C_VAL);
-    info_line("Arch",   "x86 (i686)",          C_VAL);
+    info_line("Arch",   "AArch64 (Cortex-A57)", C_VAL);
     info_line("Uptime", uptime_s,              C_ACCENT);
     info_line("Memory", mem_s,                 C_RED);
     info_line("CPU",    cpu_s,                 C_RED);

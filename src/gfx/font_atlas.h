@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/gfx/font_atlas.h - Font atlas data structures and text rendering interface
+ */
 #ifndef FONT_ATLAS_H
 #define FONT_ATLAS_H
 #include "lib/stdint.h"
@@ -22,6 +26,7 @@ typedef struct {
 } AtlasFont;
 extern AtlasFont *main_font;
 void font_atlas_init(uint8_t *rawData);
+void *font_atlas_load_from_ttf(uint32_t *out_size);
 int utf8_decode(const uint8_t *s, uint32_t *cp);
 int draw_codepoint_vector(int x, int y, uint32_t cp, uint32_t color);
 int draw_char_vector(int x, int y, char c, uint32_t color);

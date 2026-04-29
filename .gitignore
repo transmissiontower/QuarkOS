@@ -3,20 +3,52 @@
 *.elf
 *.bin
 *.iso
+*.img
+*.tmp
 
 kernel
-disk.img
+build_aarch64_user/
+Asm/boot/*.qex
+Asm/boot/*.bin
+Asm/boot/*.elf
+Asm/boot/kernel
 
-*.tmp
 hello.txt
 hostname.txt
 version.txt
 fstab.txt
 readme.txt
 manual.txt
-empty.tmp
+boot.log
 
-src/user/lib/font_atlas.bin
-
+src/user/lib/icons_def.h
 src/**/*.o
 src/**/*.d
+
+# x86 (not used on this branch)
+src/arch/x86/
+src/boot/
+linker.ld
+src/kernel/process.s
+src/kernel/crash.c
+src/kernel/crash.h
+src/mm/memory.c
+src/mm/memory.h
+src/drivers/ata.c
+src/drivers/ata.h
+src/drivers/acpi.c
+src/drivers/acpi.h
+src/drivers/rtc.c
+src/drivers/rtc.h
+src/drivers/pcspk.c
+src/drivers/pcspk.h
+src/drivers/sb16.c
+src/drivers/sb16.h
+src/drivers/ps2/
+src/user/lib/crt0.s
+src/user/shell.c
+src/user/sysinfo.c
+src/user/spkplay.c
+src/user/storage.c
+src/user/wav.c
+src/user/elfdemo.c

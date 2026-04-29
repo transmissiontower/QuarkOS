@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/rtc.h - RTC time structure and datetime read interface
+ */
 #ifndef RTC_H
 #define RTC_H
 #include "lib/stdint.h"

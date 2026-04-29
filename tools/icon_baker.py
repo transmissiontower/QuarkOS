@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+#
+# tools/icon_baker.py - Rasterizes icon font glyphs into a binary atlas and generates C header definitions
+
 import struct
 import os
 from PIL import Image, ImageFont, ImageDraw
@@ -7,11 +11,11 @@ FONT_PATH = "tools/lucide.ttf"
 OUTPUT_BIN = "Asm/boot/icons.bin"
 OUTPUT_H = "src/user/lib/icons_def.h"
 FONT_SIZE = 48
-IMG_WIDTH = 1024  
+IMG_WIDTH = 1024
 
 def load_icons():
     tt = ttLib.TTFont(FONT_PATH)
-    cmap = tt.getBestCmap()  
+    cmap = tt.getBestCmap()
     icons = {}
     for cp, name in sorted(cmap.items()):
         key = "ICON_" + name.upper().replace("-", "_").replace(".", "_")
@@ -35,7 +39,7 @@ def bake_icons():
     current_x, current_y = 2, 2
     max_h_row = 0
     metrics = []
-    baked_names = [] 
+    baked_names = []
 
     header_content = "#ifndef ICONS_DEF_H\n#define ICONS_DEF_H\n\n"
 
@@ -80,35 +84,34 @@ def bake_icons():
     for name, m in zip(baked_names, metrics):
         header_content += f"#define {name} 0x{m['cp']:X}\n"
 
-    header_content += """
-/* Semantic aliases */
-#define ICON_CLOSE        ICON_UNIEB15
-#define ICON_UP           ICON_UNIE95A
-#define ICON_DOWN         ICON_UNIE955
-#define ICON_NOTIFICATION ICON_UNIE933
-#define ICON_SAFETY       ICON_UNIEAA5
-#define ICON_MONITOR      ICON_UNIEA46
-#define ICON_CPU          ICON_UNIE999
-#define ICON_FOCUS        ICON_UNIEAD5
-#define ICON_KEYBOARD     ICON_UNIEB39
-#define ICON_FULLSCREEN   ICON_UNIEA94
-#define ICON_SHUTDOWN     ICON_UNIEA7C
-#define ICON_SEARCH       ICON_UNIEA98
-#define ICON_TERMINAL     ICON_UNIEAD8
-#define ICON_SUN          ICON_UNIEACC
-#define ICON_FOLDER       ICON_UNIE9D9
-#define ICON_FOLDER_OPEN  ICON_UNIE9D7
-#define ICON_FILE_TEXT    ICON_UNIE9C7
-#define ICON_ARROW_LEFT   ICON_UNIE91C
-#define ICON_ARROW_RIGHT  ICON_UNIE91E
-#define ICON_HOME         ICON_UNIEA02
-#define ICON_HARD_DRIVE   ICON_UNIE9F8
-#define ICON_USERS        ICON_UNIEAFE
-#define ICON_CLOCK        ICON_UNIE970
-#define ICON_BINARY       ICON_UNIE9BF
-#define ICON_REFRESH      ICON_UNIEA8D
-"""
-    header_content += "\n#endif"
+    header_content += "\n"
+    header_content += "#define ICON_CLOSE        ICON_UNIEB15\n"
+    header_content += "#define ICON_UP           ICON_UNIE95A\n"
+    header_content += "#define ICON_DOWN         ICON_UNIE955\n"
+    header_content += "#define ICON_NOTIFICATION ICON_UNIE933\n"
+    header_content += "#define ICON_SAFETY       ICON_UNIEAA5\n"
+    header_content += "#define ICON_MONITOR      ICON_UNIEA46\n"
+    header_content += "#define ICON_CPU          ICON_UNIE999\n"
+    header_content += "#define ICON_FOCUS        ICON_UNIEAD5\n"
+    header_content += "#define ICON_KEYBOARD     ICON_UNIEB39\n"
+    header_content += "#define ICON_FULLSCREEN   ICON_UNIEA94\n"
+    header_content += "#define ICON_SHUTDOWN     ICON_UNIEA7C\n"
+    header_content += "#define ICON_SEARCH       ICON_UNIEA98\n"
+    header_content += "#define ICON_TERMINAL     ICON_UNIEAD8\n"
+    header_content += "#define ICON_SUN          ICON_UNIEACC\n"
+    header_content += "#define ICON_FOLDER       ICON_UNIE9D9\n"
+    header_content += "#define ICON_FOLDER_OPEN  ICON_UNIE9D7\n"
+    header_content += "#define ICON_FILE_TEXT    ICON_UNIE9C7\n"
+    header_content += "#define ICON_ARROW_LEFT   ICON_UNIE91C\n"
+    header_content += "#define ICON_ARROW_RIGHT  ICON_UNIE91E\n"
+    header_content += "#define ICON_HOME         ICON_UNIEA02\n"
+    header_content += "#define ICON_HARD_DRIVE   ICON_UNIE9F8\n"
+    header_content += "#define ICON_USERS        ICON_UNIEAFE\n"
+    header_content += "#define ICON_CLOCK        ICON_UNIE970\n"
+    header_content += "#define ICON_BINARY       ICON_UNIE9BF\n"
+    header_content += "#define ICON_REFRESH      ICON_UNIEA8D\n"
+
+    header_content += "\n#endif\n"
 
     final_h = current_y + max_h_row + 2
     img = img.crop((0, 0, IMG_WIDTH, final_h))

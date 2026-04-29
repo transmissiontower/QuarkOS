@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/sb16.h - Sound Blaster 16 driver interface for audio playback
+ */
 #ifndef SB16_H
 #define SB16_H
 #include "lib/stdint.h"

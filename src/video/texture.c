@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/texture.c - Texture creation, alpha-blended drawing, shadow generation, and SDF shapes
+ */
 #include "video/texture.h"
 #include "drivers/GUI/framebuffer.h"
 #include "lib/math.h"

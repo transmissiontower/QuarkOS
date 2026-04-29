@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/lib/libapi.h - Kernel syscall interface, IPC types, and system structures
+ */
 #ifndef LIBAPI_H
 #define LIBAPI_H
 #include "gfx/events.h"
@@ -20,7 +24,27 @@ typedef struct {
     int state;
     char name[16];
 } process_info_t;
-typedef enum { QK_SERVER_STORAGE = 0, QK_SERVER_COMPOSITOR = 1, QK_SERVER_INPUT = 2 } qk_server_type_t;
+typedef enum { QK_SERVER_STORAGE = 0, QK_SERVER_COMPOSITOR = 1, QK_SERVER_INPUT = 2, QK_SERVER_TTYSH = 3 } qk_server_type_t;
+
+typedef enum {
+    DISK_TYPE_UNKNOWN = 0,
+    DISK_TYPE_HDD     = 1,
+    DISK_TYPE_CDROM   = 2,
+    DISK_TYPE_FLOPPY  = 3,
+    DISK_TYPE_USB     = 4,
+} disk_type_t;
+typedef struct {
+    uint32_t type;
+    uint32_t capacity_lo;
+    uint32_t capacity_hi;
+    uint32_t read_only;
+    uint32_t sector_size;
+} disk_info_t;
+typedef struct {
+    uint32_t sector;
+    uint32_t count;
+    void    *buf;
+} blk_io_req_t;
 void qk_sys_exit(int code);
 void qk_sleep(uint32_t ms);
 void qk_yield(void);
@@ -28,7 +52,10 @@ void qk_wait_irq(int irq);
 uint32_t qk_get_uptime();
 int qk_spawn(void *buffer, uint32_t size);
 int qk_get_server_pid(qk_server_type_t type);
+int qk_register_as_server(qk_server_type_t type);
 int qk_map_framebuffer(fb_info_t *info);
+void qk_gpu_flush(void);
+void qk_gpu_flush_rect(int x, int y, int w, int h);
 int qk_sys_ipc_send(int dest_pid, message_t *msg);
 int qk_ipc_recv(message_t *msg);
 int qk_ipc_recv_nb(message_t *msg);
@@ -60,6 +87,14 @@ int  qk_sb16_play(const void *buf, uint32_t len, uint32_t rate,
                   uint8_t channels, uint8_t bits);
 int  qk_sb16_ready(void);
 int qk_ata_read_sectors(uint32_t lba, uint32_t count, void *buf);
+int qk_blk_read(uint32_t sector, uint32_t count, void *buf);
+int qk_blk_write(uint32_t sector, uint32_t count, const void *buf);
+
+int qk_disk_count(void);
+int qk_disk_info(int disk_idx, disk_info_t *out);
+int qk_disk_read(int disk_idx, uint32_t sector, uint32_t count, void *buf);
+int qk_disk_write(int disk_idx, uint32_t sector, uint32_t count, const void *buf);
+void qk_disk_select(int disk_idx);
 int      qk_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out);
 uint32_t qk_map_phys_list(uint32_t *phys_pages, uint32_t count);
 void    *qk_map_foreign_mem(int src_pid, uint32_t src_virt, uint32_t size);

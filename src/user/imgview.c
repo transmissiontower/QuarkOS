@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/imgview.c - Image viewer with BMP and STB-based format support
+ */
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
@@ -48,12 +52,14 @@ typedef struct __attribute__((packed)) {
 } bmp_ihdr_t;
 static int comp_pid  = -1;
 static int store_pid = -1;
+static int file_disk = 0;
 static void *read_file_fast(const char *path, uint32_t *out_size, int *shared_out)
 {
     message_t req, resp;
     memset(&req, 0, sizeof(req));
     req.type  = MSG_FILE_OPEN;
     req.data1 = 0xFFFF;
+    req.data3 = (uint32_t)file_disk;
     strncpy((char *)req.payload, path, sizeof(req.payload) - 1);
     qk_ipc_send_recv(store_pid, &req, &resp);
     if (resp.type != MSG_FILE_SIZE || resp.data1 == 0)
@@ -205,22 +211,23 @@ int main(void)
 {
     qk_set_proc_name(-1, "imgview");
     static char file_path[128];
-    strncpy(file_path, "/SYSTEM/DATA/LOGO.BMP", sizeof(file_path) - 1);
+    strncpy(file_path, "/SYS/DAT/LOGO.BMP", sizeof(file_path) - 1);
+    int retries = 0;
+    while ((comp_pid  = qk_get_server_pid(QK_SERVER_COMPOSITOR)) < 0 ||
+           (store_pid = qk_get_server_pid(QK_SERVER_STORAGE))    < 0) {
+        qk_sleep(50);
+        if (++retries > 40) return 1;
+    }
     {
         message_t probe;
         while (qk_ipc_recv_nb(&probe) == 0) {
             if (probe.type == MSG_FILE_OPEN && probe.payload[0] != '\0') {
                 strncpy(file_path, (char *)probe.payload, sizeof(file_path) - 1);
                 file_path[sizeof(file_path) - 1] = '\0';
+                file_disk = (int)probe.data3;
                 break;
             }
         }
-    }
-    int retries = 0;
-    while ((comp_pid  = qk_get_server_pid(QK_SERVER_COMPOSITOR)) < 0 ||
-           (store_pid = qk_get_server_pid(QK_SERVER_STORAGE))    < 0) {
-        qk_sleep(50);
-        if (++retries > 40) return 1;
     }
     uint32_t t0 = qk_get_uptime();
     uint32_t file_size = 0;
@@ -230,7 +237,7 @@ int main(void)
     img_fmt_t fmt   = detect_format(file_path);
     int       img_w = 0;
     int       img_h = 0;
-    uint8_t  *rgba  = 0;   
+    uint8_t  *rgba  = 0;
     if (file_data && file_size > 0) {
         if (fmt == FMT_BMP) {
             if (file_size >= sizeof(bmp_fhdr_t) + sizeof(bmp_ihdr_t)) {
@@ -294,7 +301,7 @@ int main(void)
             if (v == 0) { tbuf[i++] = '0'; } else {
                 char tmp[10]; int ti = 0;
                 while (v) { tmp[ti++] = '0' + (v % 10); v /= 10; }
-                while (ti--) tbuf[i++] = tmp[ti+1]; 
+                while (ti--) tbuf[i++] = tmp[ti+1];
             }
             tbuf[i++] = 'm'; tbuf[i++] = 's'; tbuf[i++] = ' ';
             tbuf[i++] = 'D'; tbuf[i++] = ':';

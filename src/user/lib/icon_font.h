@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/lib/icon_font.h - Scalable icon font rendering from TrueType data
+ */
 #ifndef ICON_FONT_H
 #define ICON_FONT_H
 #include "lib/stdint.h"

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/compositor.h - Desktop compositor interface for screen painting and invalidation
+ */
 #ifndef COMPOSITOR_H
 #define COMPOSITOR_H
 #include "video/texture.h"

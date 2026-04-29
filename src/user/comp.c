@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/comp.c - Window compositor and desktop shell
+ */
 #include "gfx/bitmaps.h"
 #include "gfx/events.h"
 #include "lib/stdlib.h"
@@ -15,6 +19,10 @@ uint32_t fps_counter = 0, last_fps_update = 0, *wallpaper_data = 0;
 int current_fps = 0;
 static int debug_overlay_visible = 0;
 static uint32_t total_ipc_messages = 0;
+
+#define CLIP_MAX 4095
+static char  g_clipboard[CLIP_MAX + 1];
+static int   g_clip_len = 0;
 typedef struct {
     int x, y, w, h;
 } ui_rect_t;
@@ -76,6 +84,26 @@ static uint32_t *vkbd_mapped_buf = 0;
 static int vkbd_buf_w = 0, vkbd_buf_h = 0;
 static int vkbd_pos_x = 0, vkbd_pos_y = 0;
 #define DESKTOP_NOTIFICATION_MS 3200
+
+#ifndef ICON_IMAGE
+#define ICON_IMAGE 0xEA06
+#endif
+#define DESK_MAX_ICONS 32
+#define DESK_ICON_W    90
+#define DESK_ICON_H    90
+#define DESK_ICON_PAD  12
+#define DESK_START_X   24
+#define DESK_START_Y   60
+typedef struct {
+    char name[64];
+    int  is_dir;
+    uint32_t cluster;
+} desk_entry_t;
+static desk_entry_t desk_entries[DESK_MAX_ICONS];
+static int desk_entry_count = 0;
+static int desk_loaded = 0;
+static int desk_selected = -1;
+
 static void process_message(message_t *msg);
 static inline int clamp_int(int v, int min, int max)
 {
@@ -123,7 +151,7 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size)
         *out_size = 0;
     if (!filename || ensure_storage_pid() != 0)
         return 0;
-    uint16_t dir_cluster = 0;
+    uint32_t dir_cluster = 0;
     char resolved_name[16];
     const char *target_name = filename;
     if (strstr(filename, "/")) {
@@ -153,7 +181,7 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size)
     while (offset < size) {
         req.type = MSG_REQ_DATA;
         req.data1 = offset;
-        req.data2 = 100;
+        req.data2 = 4088;
         if (qk_sys_ipc_send(storage_server_pid, &req) != 0)
             break;
         if (wait_for_storage_reply(&resp) != 0)
@@ -176,12 +204,182 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size)
     }
     return buffer;
 }
+
+static void desk_load(void)
+{
+    if (desk_loaded) return;
+    desk_loaded = 1;
+    desk_entry_count = 0;
+    if (ensure_storage_pid() != 0) return;
+
+    uint32_t desk_cluster = 0;
+    char dummy[64];
+    if (qk_path_resolve_ext(0, "/USR/DEFAULT/DESK", &desk_cluster, dummy) != 0)
+        return;
+
+    message_t req, resp;
+    memset(&req, 0, sizeof(req));
+    req.type = MSG_DIR_REQ;
+    req.data1 = desk_cluster;
+    qk_ipc_send_recv(storage_server_pid, &req, &resp);
+    uint16_t desk_cl = 0;
+
+    while (1) {
+        if (resp.type != MSG_DIR_REPLY) break;
+        char *ptr = (char *)resp.payload;
+        while (*ptr) {
+            int is_d = (*ptr == '1') ? 1 : 0;
+            while (*ptr && *ptr != '|') ptr++;
+            if (*ptr == '|') ptr++;
+            int cl = 0;
+            while (*ptr >= '0' && *ptr <= '9') cl = cl*10 + (*ptr++ - '0');
+            if (*ptr == '|') ptr++;
+            char nm[64]; int ni = 0;
+            while (*ptr && *ptr != '\n' && ni < 63) nm[ni++] = *ptr++;
+            nm[ni] = 0;
+            if (*ptr == '\n') ptr++;
+            if (is_d && ni >= 4) {
+                char up[5]; for (int i = 0; i < 4 && i < ni; i++) {
+                    up[i] = nm[i]; if (up[i] >= 'a' && up[i] <= 'z') up[i] -= 32;
+                } up[4] = 0;
+                if (up[0]=='D'&&up[1]=='E'&&up[2]=='S'&&up[3]=='K')
+                    desk_cl = (uint32_t)cl;
+            }
+        }
+        if (resp.data1 == 0) break;
+        qk_ipc_recv(&resp);
+    }
+    if (desk_cl == 0) return;
+
+    memset(&req, 0, sizeof(req));
+    req.type = MSG_DIR_REQ;
+    req.data1 = desk_cl;
+    qk_ipc_send_recv(storage_server_pid, &req, &resp);
+    while (1) {
+        if (resp.type != MSG_DIR_REPLY) break;
+        char *ptr = (char *)resp.payload;
+        while (*ptr && desk_entry_count < DESK_MAX_ICONS) {
+            desk_entry_t *de = &desk_entries[desk_entry_count];
+            de->is_dir = (*ptr == '1') ? 1 : 0;
+            while (*ptr && *ptr != '|') ptr++;
+            if (*ptr == '|') ptr++;
+            int cl = 0;
+            while (*ptr >= '0' && *ptr <= '9') cl = cl*10 + (*ptr++ - '0');
+            de->cluster = (uint32_t)cl;
+            if (*ptr == '|') ptr++;
+            int ni = 0;
+            while (*ptr && *ptr != '\n' && ni < 63) de->name[ni++] = *ptr++;
+            de->name[ni] = 0;
+            if (*ptr == '\n') ptr++;
+            if (ni > 0 && de->name[0] != '.')
+                desk_entry_count++;
+        }
+        if (resp.data1 == 0) break;
+        qk_ipc_recv(&resp);
+    }
+}
+
+static int desk_icon_id(const char *name)
+{
+    int len = strlen(name);
+    if (len >= 4) {
+        char ext[4];
+        for (int i = 0; i < 3; i++) {
+            ext[i] = name[len-3+i];
+            if (ext[i] >= 'a' && ext[i] <= 'z') ext[i] -= 32;
+        }
+        ext[3] = 0;
+        if (ext[0]=='B'&&ext[1]=='M'&&ext[2]=='P') return ICON_IMAGE;
+        if (ext[0]=='P'&&ext[1]=='N'&&ext[2]=='G') return ICON_IMAGE;
+        if (ext[0]=='J'&&ext[1]=='P'&&ext[2]=='G') return ICON_IMAGE;
+        if (ext[0]=='T'&&ext[1]=='X'&&ext[2]=='T') return ICON_FILE_TEXT;
+        if (ext[0]=='Q'&&ext[1]=='E'&&ext[2]=='X') return ICON_BINARY;
+    }
+    return ICON_FILE_TEXT;
+}
+
+static void render_desktop_icons(void)
+{
+    if (!desk_loaded) { desk_load(); return; }
+    if (desk_entry_count == 0) return;
+    int cols = ((int)ctx.width - DESK_START_X * 2) / (DESK_ICON_W + DESK_ICON_PAD);
+    if (cols < 1) cols = 1;
+
+    for (int i = 0; i < desk_entry_count; i++) {
+        int col = i / ((int)(ctx.height - DESK_START_Y - 60) / (DESK_ICON_H + DESK_ICON_PAD));
+        int row = i % ((int)(ctx.height - DESK_START_Y - 60) / (DESK_ICON_H + DESK_ICON_PAD));
+        int x = DESK_START_X + col * (DESK_ICON_W + DESK_ICON_PAD);
+        int y = DESK_START_Y + row * (DESK_ICON_H + DESK_ICON_PAD);
+
+        if (i == desk_selected)
+            gfx_rect_rounded_fill(&ctx, x, y, DESK_ICON_W, DESK_ICON_H, 8, 0x30FFFFFF);
+
+        int icon = desk_entries[i].is_dir ? ICON_FOLDER : desk_icon_id(desk_entries[i].name);
+        if (gui_icons)
+            draw_icon_sized(&ctx, gui_icons, x + (DESK_ICON_W - 40) / 2,
+                            y + 6, icon, 0xFFFFFFFF, 40);
+
+        const char *name = desk_entries[i].name;
+        int tw = 0;
+        for (const char *p = name; *p; p++) tw += get_char_width(*p);
+        int tx = x + (DESK_ICON_W - tw) / 2;
+        if (tx < x + 2) tx = x + 2;
+        draw_string_vector(&ctx, tx, y + 52, name, 0xFFDDDDDD);
+    }
+}
+
+static void desk_handle_click(int mx2, int my2)
+{
+    int cols_h = ((int)ctx.height - DESK_START_Y - 60) / (DESK_ICON_H + DESK_ICON_PAD);
+    if (cols_h < 1) cols_h = 1;
+    int old_sel = desk_selected;
+    desk_selected = -1;
+    for (int i = 0; i < desk_entry_count; i++) {
+        int col = i / cols_h;
+        int row = i % cols_h;
+        int x = DESK_START_X + col * (DESK_ICON_W + DESK_ICON_PAD);
+        int y = DESK_START_Y + row * (DESK_ICON_H + DESK_ICON_PAD);
+        if (mx2 >= x && mx2 < x + DESK_ICON_W && my2 >= y && my2 < y + DESK_ICON_H) {
+            if (old_sel == i) {
+
+                char path[128] = "/USR/DEFAULT/DESK/";
+                int plen = strlen(path);
+                strncpy(path + plen, desk_entries[i].name, 127 - plen);
+                path[127] = 0;
+
+                int icon = desk_icon_id(desk_entries[i].name);
+                const char *app = 0;
+                if (icon == ICON_IMAGE) app = "/PRG/IMGVIEW.QEX";
+                else if (icon == ICON_FILE_TEXT) app = "/PRG/NOTEPAD.QEX";
+                if (app) {
+                    uint32_t sz = 0;
+                    void *buf = load_file_from_storage(app, &sz);
+                    if (buf && sz > 0) {
+                        int pid = qk_spawn(buf, sz);
+                        free(buf);
+                        if (pid >= 0) {
+                            message_t m;
+                            memset(&m, 0, sizeof(m));
+                            m.type = MSG_FILE_OPEN;
+                            strncpy((char *)m.payload, path, sizeof(m.payload) - 1);
+                            qk_sys_ipc_send(pid, &m);
+                        }
+                    }
+                }
+            } else {
+                desk_selected = i;
+            }
+            return;
+        }
+    }
+}
+
 static void cache_terminal_binary(void)
 {
     if (terminal_binary)
         return;
     uint32_t size = 0;
-    void *buf = load_file_from_storage("/APPS/SHELL.QEX", &size);
+    void *buf = load_file_from_storage("/PRG/TERMINAL.QEX", &size);
     if (!buf || size == 0) {
         if (buf)
             free(buf);
@@ -195,7 +393,7 @@ static void cache_vkbd_binary(void)
     if (vkbd_binary)
         return;
     uint32_t size = 0;
-    void *buf = load_file_from_storage("/APPS/VKBD.QEX", &size);
+    void *buf = load_file_from_storage("/PRG/VKBD.QEX", &size);
     if (!buf || size == 0) {
         if (buf)
             free(buf);
@@ -370,6 +568,7 @@ static void trigger_power_action(power_action_type_t type)
 }
 static void launch_terminal_process(void)
 {
+    cache_terminal_binary();
     if (!terminal_binary || terminal_binary_size == 0) {
         desktop_show_notification("Terminal unavailable");
         return;
@@ -408,6 +607,7 @@ static void apply_vkbd_geom(message_t *rep)
 }
 static void launch_vkbd_process(void)
 {
+    cache_vkbd_binary();
     if (!vkbd_binary || vkbd_binary_size == 0) {
         desktop_show_notification("Keyboard unavailable");
         return;
@@ -488,7 +688,8 @@ static int handle_mouse_for_ui(Event *e)
 }
 void draw_pill(int x, int y, int w, int h)
 {
-    gfx_rect_rounded_fill(&ctx, x, y, w, h, 7, UI_SURFACE_COLOR);
+    gfx_draw_shadow(&ctx, x, y, w, h, 7, 12);
+    gfx_rect_rounded_fill(&ctx, x, y, w, h, 7, COLOR_WIN_HEADER);
 }
 void render_top_bar()
 {
@@ -504,7 +705,7 @@ void render_top_bar()
                     ICON_SEARCH, fg, 18);
     int clock_x = 1920 / 2 - 75;
     int clock_w = 150;
-    int clock_y = y + 9;
+    int clock_y = y + 22;
     draw_pill(clock_x, y, clock_w, h);
     qk_time_t t;
     qk_get_time(&t);
@@ -527,7 +728,7 @@ void render_top_bar()
     int_to_str(t.day, tmp, 10);
     strcat(date_str, tmp);
     draw_string_vector(&ctx, clock_x + 20, clock_y, date_str, fg);
-    draw_string_vector(&ctx, clock_x + 100, clock_y, time_str, fg);
+    draw_string_vector(&ctx, clock_x + clock_w - 20 - get_string_width(time_str), clock_y, time_str, fg);
     int buttons_x = 1920 - 135;
     int buttons_w = 125;
     int buttons_y = 19;
@@ -554,11 +755,11 @@ void render_top_bar()
     power_button_rect.h = 28;
     int fps_x = buttons_x - 110;
     int fps_w = 100;
-    int fps_y = y + 9;
+    int fps_y = y + 22;
     draw_pill(fps_x, y, fps_w, h);
     char fps_buf[16];
     int_to_str(current_fps, fps_buf, 10);
-    draw_string_vector(&ctx, fps_x + 20, fps_y, "FPS", fg);
+    draw_string_vector(&ctx, fps_x + 20, fps_y, "CPU", fg);
     draw_string_vector(&ctx, fps_x + 60, fps_y, fps_buf, fg);
 }
 void render_power_overlay(void)
@@ -694,17 +895,20 @@ static void process_message(message_t *msg)
             Window *top = window_stack[window_count - 1];
             if (e->type == EVENT_KEY_PRESS || e->type == EVENT_KEY_RELEASE) {
                 qk_sys_ipc_send(top->owner_pid, msg);
-            } else if (e->type == EVENT_MOUSE_DOWN || e->type == EVENT_MOUSE_UP ||
-                       e->type == EVENT_MOUSE_MOVE) {
-                message_t m_mouse = *msg;
-                Event *em = (Event *)m_mouse.payload;
-                em->x -= top->x;
-                em->y -= top->y;
-                m_mouse.data2 = em->x;
-                m_mouse.data3 = em->y;
-                qk_sys_ipc_send(top->owner_pid, &m_mouse);
-            } else if (e->type == EVENT_MOUSE_SCROLL) {
-                qk_sys_ipc_send(top->owner_pid, msg);
+            } else if (!consumed) {
+
+                if (e->type == EVENT_MOUSE_DOWN || e->type == EVENT_MOUSE_UP ||
+                    e->type == EVENT_MOUSE_MOVE) {
+                    message_t m_mouse = *msg;
+                    Event *em = (Event *)m_mouse.payload;
+                    em->x -= top->x;
+                    em->y -= top->y;
+                    m_mouse.data2 = em->x;
+                    m_mouse.data3 = em->y;
+                    qk_sys_ipc_send(top->owner_pid, &m_mouse);
+                } else if (e->type == EVENT_MOUSE_SCROLL) {
+                    qk_sys_ipc_send(top->owner_pid, msg);
+                }
             }
         }
     } else if (msg->type == MSG_WIN_CREATE) {
@@ -791,16 +995,31 @@ static void process_message(message_t *msg)
             if (content_h < 1) content_h = 1;
             uint32_t buf_size = (uint32_t)win->w * (uint32_t)content_h * 4;
             reply.type  = MSG_WIN_BUFFER_INFO;
-            reply.data1 = buf_size;                            
+            reply.data1 = buf_size;
             reply.data2 = (uint32_t)win->w;
             reply.data3 = (uint32_t)content_h;
-            ((uint32_t *)reply.payload)[0] = (uint32_t)win->gfx_buffer; 
+            ((uint32_t *)reply.payload)[0] = (uint32_t)win->gfx_buffer;
         } else {
             reply.type = MSG_ERROR;
         }
         qk_sys_ipc_send(msg->sender_pid, &reply);
     } else if (msg->type == MSG_WIN_DIRTY) {
-        (void)msg; 
+        (void)msg;
+    } else if (msg->type == MSG_CLIP_SET) {
+        int len = (int)msg->data1;
+        if (len > CLIP_MAX) len = CLIP_MAX;
+        if (len < 0) len = 0;
+        memcpy(g_clipboard, msg->payload, len);
+        g_clipboard[len] = 0;
+        g_clip_len = len;
+    } else if (msg->type == MSG_CLIP_GET) {
+        message_t reply;
+        memset(&reply, 0, sizeof(reply));
+        reply.type = MSG_CLIP_DATA;
+        reply.data1 = (uint32_t)g_clip_len;
+        if (g_clip_len > 0)
+            memcpy(reply.payload, g_clipboard, g_clip_len);
+        qk_sys_ipc_send(msg->sender_pid, &reply);
     } else if (msg->type == MSG_PROCESS_TERMINATED) {
         int target_pid = msg->data1;
         for (int i = 0; i < window_count; i++) {
@@ -825,8 +1044,8 @@ static void process_message(message_t *msg)
             message_t km;
             memset(&km, 0, sizeof(km));
             km.type  = MSG_KEY_EVENT;
-            km.data1 = msg->data1;  
-            km.data2 = msg->data2;  
+            km.data1 = msg->data1;
+            km.data2 = msg->data2;
             Event *e = (Event *)km.payload;
             e->type  = release ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
             e->key   = sc;
@@ -954,10 +1173,15 @@ static void present_frame(void)
 }
 void render()
 {
-    if (wallpaper_data)
-        memcpy32(ctx.buffer, wallpaper_data, (fb.width * fb.height * 4));
-    else
+    if (wallpaper_data) {
+
+        uint32_t wp_w = 1920;
+        uint32_t copy_w = (fb.width < wp_w) ? fb.width : wp_w;
+        for (uint32_t y = 0; y < fb.height; y++)
+            memcpy(ctx.buffer + y * fb.width, wallpaper_data + y * wp_w, copy_w * 4);
+    } else {
         memset32(ctx.buffer, UI_SURFACE_COLOR, (fb.width * fb.height));
+    }
     draw_windows(&ctx);
     render_top_bar();
     if (power_overlay_visible || sleep_mode_active) {
@@ -1008,6 +1232,7 @@ void render()
     render_desktop_notification();
     render_debug_overlay();
     present_frame();
+    qk_gpu_flush();
     fps_counter++;
 }
 int main()
@@ -1027,17 +1252,14 @@ int main()
     if (qk_map_font_atlas(&font_addr) == 0)
         font_atlas_init((uint8_t *)font_addr);
     window_manager_init();
-    cache_terminal_binary();
-    cache_vkbd_binary();
     last_fps_update = qk_get_uptime();
     uint32_t last_render_ms = qk_get_uptime();
     message_t msg;
     while (1) {
-        int got_msg = 0;
-        while (qk_ipc_recv_nb(&msg) == 0) {
+
+        while (qk_ipc_recv_nb(&msg) == 0)
             process_message(&msg);
-            got_msg = 1;
-        }
+
         uint32_t now = qk_get_uptime();
         current_time_ms = now;
         if (now - last_fps_update >= 1000) {
@@ -1045,7 +1267,8 @@ int main()
             fps_counter = 0;
             last_fps_update = now;
         }
-        if (got_msg || (now - last_render_ms) >= 30) {
+
+        if ((now - last_render_ms) >= 30) {
             render();
             last_render_ms = now;
         }

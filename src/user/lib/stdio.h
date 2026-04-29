@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/lib/stdio.h - Standard I/O types and function declarations
+ */
 #ifndef USER_STDIO_H
 #define USER_STDIO_H
 #include "lib/stdint.h"
@@ -11,7 +15,7 @@ typedef struct {
     uint32_t pos;
     int      storage_pid;
     int      is_open;
-    int      is_stub;   
+    int      is_stub;
 } FILE;
 extern FILE *stderr;
 extern FILE *stdout;
@@ -36,4 +40,4 @@ void     rewind(FILE *fp);
 int      feof(FILE *fp);
 int      fgetc(FILE *fp);
 char    *fgets(char *buf, int n, FILE *fp);
-#endif 
+#endif

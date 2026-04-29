@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/kernel/syscalls.h - System call numbers and handler prototypes
+ */
 #ifndef SYSCALLS_H
 #define SYSCALLS_H
 #include "kernel/ipc.h"

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/rtc.c - CMOS real-time clock driver for reading date and time
+ */
 #include "drivers/rtc.h"
 #include "util/util.h"
 #define TIMEZONE_OFFSET 2

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/lib/gfx.h - Framebuffer context, texture, and drawing function declarations
+ */
 #ifndef UGFX_H
 #define UGFX_H
 #include "lib/stdint.h"

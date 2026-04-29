@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/vkbd.c - On-screen virtual keyboard with drag-to-move and modifier key support
+ */
 #include "lib/stdlib.h"
 #include "user/lib/font_atlas.h"
 #include "user/lib/gfx.h"
@@ -55,12 +59,12 @@ static int screen_h = 768;
 #define VKBD_MOD_CTRL  0x02
 #define VKBD_MOD_ALT   0x04
 #define VKBD_MOD_CAPS  0x08
-#define COLOR_PANEL    0xEE1C2128
-#define COLOR_KEY      0xFF2A2F38
-#define COLOR_KEY_LIT  0xFF4A6FAA
-#define COLOR_KEY_ON   0xFF3A5A8A
+#define COLOR_PANEL    0xFF1E1E1E
+#define COLOR_KEY      0xFF2E2E2E
+#define COLOR_KEY_LIT  0xFF505050
+#define COLOR_KEY_ON   0xFF404040
 #define COLOR_TEXT     0xFFFFFFFF
-#define COLOR_DRAG     0xFF252A33
+#define COLOR_DRAG     0xFF242424
 static uint32_t      *vkbd_buf = 0;
 static gfx_context_t  vkbd_ctx;
 static int vkbd_panel_w(void)
@@ -115,7 +119,7 @@ static void render_vkbd(void)
             int lw = 0;
             for (int ci = 0; lbl[ci]; ci++) lw += get_char_width(lbl[ci]);
             int fh = get_font_height();
-            draw_string_vector(&vkbd_ctx, kx + (kw - lw) / 2, ky + (VKBD_KEY_H - fh) / 2,
+            draw_string_vector(&vkbd_ctx, kx + (kw - lw) / 2, ky + (VKBD_KEY_H - fh) / 2 + 15,
                                lbl, COLOR_TEXT);
             kx += kw + VKBD_GAP;
         }
@@ -163,10 +167,11 @@ static void handle_mouse(Event *e, int comp_pid)
             if (vkbd_y < 0) vkbd_y = 0;
             if (vkbd_x + pw > screen_w) vkbd_x = screen_w - pw;
             if (vkbd_y + ph > screen_h) vkbd_y = screen_h - ph;
+            push_geom_to_comp(comp_pid);
         }
         if (e->type == EVENT_MOUSE_UP) {
             vkbd_dragging = 0;
-            push_geom_to_comp(comp_pid);  
+            push_geom_to_comp(comp_pid);
         }
         return;
     }

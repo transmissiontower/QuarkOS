@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/rick_roll.h - Note data for "Never Gonna Give You Up" PC speaker melody
+ */
 #ifndef RICK_ROLL_H
 #define RICK_ROLL_H
 #include "lib/stdint.h"
@@ -5,14 +9,14 @@
 #define NOTE_T_DEFINED
 typedef struct { uint32_t freq; uint32_t ms; } note_t;
 #endif
-#define RK_W   2100  
-#define RK_H   1050  
-#define RK_Q    530  
-#define RK_E    260  
-#define RK_S    130  
-#define RK_DQ   790  
-#define RK_DE   390  
-#define RK_DH  1580  
+#define RK_W   2100
+#define RK_H   1050
+#define RK_Q    530
+#define RK_E    260
+#define RK_S    130
+#define RK_DQ   790
+#define RK_DE   390
+#define RK_DH  1580
 #define RK_A4   440
 #define RK_B4   494
 #define RK_CS5  554
@@ -95,4 +99,4 @@ static const note_t rick_roll[] = {
 #undef RK_FS5
 #undef RK_G5
 #undef RK_A5
-#endif 
+#endif

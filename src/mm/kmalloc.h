@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/mm/kmalloc.h - Kernel heap allocator interface and block header definition
+ */
 #ifndef KMALLOC_H
 #define KMALLOC_H
 #include "lib/stdbool.h"

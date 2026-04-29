@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/gfx/bmp.h - BMP file format structures and drawing interface
+ */
 #ifndef BMP_H
 #define BMP_H
 #include "lib/stdint.h"

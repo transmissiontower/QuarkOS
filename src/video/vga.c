@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/vga.c - VGA text-mode driver with scrolling, tab handling, and character output
+ */
 #include "video/vga.h"
 #include "lib/stdint.h"
 uint16_t column = 0;

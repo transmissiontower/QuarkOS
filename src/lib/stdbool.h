@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/stdbool.h - Boolean type and true/false constants
+ */
 #ifndef _STDBOOL_H
 #define _STDBOOL_H
 #define bool _Bool

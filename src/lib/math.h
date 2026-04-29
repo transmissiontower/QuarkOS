@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/math.h - Declarations for floating-point and fixed-point math routines
+ */
 #ifndef MATH_H
 #define MATH_H
 #include "lib/stdint.h"

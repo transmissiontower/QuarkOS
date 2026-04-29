@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/arch/x86/idt.h - IDT entry structures and ISR/IRQ handler declarations
+ */
 #ifndef IDT_H
 #define IDT_H
 #include "lib/stdint.h"

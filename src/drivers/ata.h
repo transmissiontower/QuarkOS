@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/ata.h - ATA disk driver interface for LBA read/write operations
+ */
 #ifndef ATA_H
 #define ATA_H
 #include "lib/stdint.h"

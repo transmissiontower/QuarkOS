@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/gfx/bmp.c - BMP image decoder and framebuffer renderer
+ */
 #include "gfx/bmp.h"
 #include "drivers/GUI/framebuffer.h"
 void draw_bmp(void *bmp_data, int x, int y)

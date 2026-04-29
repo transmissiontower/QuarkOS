@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/arch/x86/gdt.c - Global Descriptor Table and Task State Segment initialization
+ */
 #include "arch/x86/gdt.h"
 #include "util/util.h"
 extern void arch_gdt_flush(uint32_t);

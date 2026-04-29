@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/input_server.c - PS/2 keyboard and mouse input driver server
+ */
 #include "gfx/events.h"
 #include "kernel/ipc.h"
 #include "lib/stdbool.h"
@@ -133,18 +137,18 @@ static void handle_keyboard(int comp_pid, uint8_t scancode)
     bool extended = e0_pending;
     e0_pending = false;
     if (!extended) {
-        if (code == 0x2A || code == 0x36) { 
+        if (code == 0x2A || code == 0x36) {
             shift_held = !release;
-        } else if (code == 0x1D) {           
+        } else if (code == 0x1D) {
             ctrl_held = !release;
-        } else if (code == 0x38) {           
+        } else if (code == 0x38) {
             alt_held = !release;
-        } else if (code == 0x3A && !release) { 
+        } else if (code == 0x3A && !release) {
             caps_lock = !caps_lock;
         }
     } else {
-        if (code == 0x1D) ctrl_held = !release; 
-        if (code == 0x38) alt_held  = !release; 
+        if (code == 0x1D) ctrl_held = !release;
+        if (code == 0x38) alt_held  = !release;
     }
     uint32_t mods = 0;
     if (shift_held) mods |= KEY_MOD_SHIFT;
@@ -244,14 +248,26 @@ void main()
         qk_hw_inb(PS2_DATA);
     int comp_pid = resolve_compositor_pid();
     int comp_check_counter = 0;
+    int idle_polls = 0;
     while (1) {
         uint8_t status = qk_hw_inb(PS2_STATUS);
         if (status & ST_OUTPUT_FULL) {
-            uint8_t data = qk_hw_inb(PS2_DATA);
-            if (status & ST_FROM_MOUSE)
-                handle_mouse_byte(data);
-            else
-                handle_keyboard(comp_pid, data);
+            idle_polls = 0;
+            int bytes_this_batch = 0;
+            do {
+                uint8_t data = qk_hw_inb(PS2_DATA);
+                if (status & ST_FROM_MOUSE)
+                    handle_mouse_byte(data);
+                else
+                    handle_keyboard(comp_pid, data);
+
+                if (++bytes_this_batch >= 64) {
+                    flush_mouse_events(comp_pid);
+                    qk_yield();
+                    break;
+                }
+                status = qk_hw_inb(PS2_STATUS);
+            } while (status & ST_OUTPUT_FULL);
         } else {
             flush_mouse_events(comp_pid);
             if (++comp_check_counter >= 256) {
@@ -262,7 +278,11 @@ void main()
                 else if (new_pid <= 0)
                     comp_pid = resolve_compositor_pid();
             }
-            qk_wait_irq(IRQ_MOUSE);
+
+            if (++idle_polls >= 32) {
+                idle_polls = 0;
+                qk_yield();
+            }
         }
         flush_mouse_events(comp_pid);
     }

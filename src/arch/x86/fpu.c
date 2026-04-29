@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/arch/x86/fpu.c - Enable x87 FPU and SSE via CR0/CR4 control register setup
+ */
 #include "lib/stdint.h"
 void arch_fpu_enable()
 {
