@@ -1266,6 +1266,16 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         break;
     }
 #endif
+    case 90: {
+        /* Serial debug print from userspace */
+        extern void arm_uart_puts(const char *);
+        const char *msg = (const char *)(uintptr_t)regs->ebx;
+        if (msg && is_ptr_safe(msg, 1)) {
+            arm_uart_puts(msg);
+        }
+        regs->eax = 0;
+        break;
+    }
     default:
         regs->eax = -1;
         break;
