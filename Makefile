@@ -111,6 +111,7 @@ $(AARCH64_USER_DIR)/init.o: src/kernel/init.c
 
 AARCH64_USER_LIBGCC = $(shell aarch64-elf-gcc -mcpu=cortex-a57 -print-libgcc-file-name)
 
+
 user_bin: $(ICONS_BIN) $(AARCH64_USER_LIB_OBJ) \
 		$(AARCH64_USER_DIR)/storage_server.o $(AARCH64_USER_DIR)/input_server.o \
 		$(AARCH64_USER_DIR)/time_server.o $(AARCH64_USER_DIR)/comp.o \
@@ -243,6 +244,8 @@ disk: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boot
 	$(MCOPY) -i disk.img Asm/boot/filemgr.qex ::PRG/FILEMGR.QEX
 	$(MCOPY) -i disk.img Asm/boot/vkbd.qex ::PRG/VKBD.QEX
 	$(MCOPY) -i disk.img Asm/boot/paint.qex ::PRG/PAINT.QEX
+	
+	
 	$(MCOPY) -i disk.img Asm/boot/terminal.qex ::PRG/TERMINAL.QEX
 	$(MCOPY) -i disk.img Asm/boot/ttysh.qex ::PRG/TTYSH.QEX
 	$(if $(wildcard $(MUSIC_SPK)),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYS/DAT/MUSIC.SPK,)
