@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/acpi.h - ACPI table structures (RSDP, RSDT, FADT, MADT) and interface
+ */
 #ifndef ACPI_H
 #define ACPI_H
 #include "lib/stdbool.h"

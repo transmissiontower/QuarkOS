@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/sysinfo.c - System activity monitor with CPU/memory bars and process table
+ */
 #include "kernel/ipc.h"
 #include "lib/stdbool.h"
 #include "lib/stdlib.h"

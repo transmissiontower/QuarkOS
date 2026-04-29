@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/gfx/events.h - Input event types and queue interface for keyboard and mouse
+ */
 #ifndef EVENTS_H
 #define EVENTS_H
 #include "lib/stdint.h"

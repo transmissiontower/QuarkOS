@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/stdarg.h - Variadic argument macros wrapping compiler builtins
+ */
 #ifndef _STDARG_H
 #define _STDARG_H
 typedef __builtin_va_list va_list;

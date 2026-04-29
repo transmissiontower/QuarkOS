@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/mm/memory.c - Physical frame allocator, virtual memory mapper, and kernel panic handler
+ */
 #include "mm/memory.h"
 #include "arch/x86/multiboot.h"
 #include "drivers/GUI/framebuffer.h"
@@ -145,7 +149,8 @@ void mm_vmm_cleanup_current_dir()
             uint32_t *pt = Rec_PAGEDIR(i);
             for (int j = 0; j < 1024; j++) {
                 if (pt[j] & PAGE_FLAG_PRESENT) {
-                    mm_pmm_free_frame(pt[j] & 0xFFFFF000);
+                    if (!(pt[j] & PAGE_FLAG_SHARED))
+                        mm_pmm_free_frame(pt[j] & 0xFFFFF000);
                     pt[j] = 0;
                 }
             }

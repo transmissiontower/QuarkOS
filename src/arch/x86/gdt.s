@@ -1,3 +1,7 @@
+; SPDX-License-Identifier: MIT
+;
+; src/arch/x86/gdt.s - Flush the GDT and reload segment registers, load the TSS
+
 global arch_gdt_flush
 
 arch_gdt_flush:

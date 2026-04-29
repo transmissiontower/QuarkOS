@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+#
+# tools/font_baker.py - Rasterizes a TTF font into a binary glyph atlas for the OS compositor
+
 from PIL import Image, ImageDraw, ImageFont
 import struct
 import sys
@@ -10,23 +14,23 @@ IMG_WIDTH = 512
 
 def _build_chars():
     ranges = [
-        (0x0020, 0x007F),  # Basic ASCII
-        (0x00A0, 0x0100),  # Latin-1 Supplement
-        (0x0100, 0x0180),  # Latin Extended-A
-        (0x0180, 0x0250),  # Latin Extended-B
-        (0x0370, 0x0400),  # Greek and Coptic
-        (0x0400, 0x0500),  # Cyrillic
-        (0x2000, 0x2070),  # General Punctuation
-        (0x20A0, 0x20D0),  # Currency Symbols
-        (0x2100, 0x2150),  # Letterlike Symbols
-        (0x2190, 0x2200),  # Arrows
-        (0x2200, 0x2300),  # Mathematical Operators
-        (0x2300, 0x2400),  # Miscellaneous Technical
-        (0x2500, 0x2580),  # Box Drawing
-        (0x2580, 0x25A0),  # Block Elements
-        (0x25A0, 0x2600),  # Geometric Shapes
-        (0x2600, 0x2700),  # Miscellaneous Symbols
-        (0x2700, 0x27C0),  # Dingbats
+        (0x0020, 0x007F),
+        (0x00A0, 0x0100),
+        (0x0100, 0x0180),
+        (0x0180, 0x0250),
+        (0x0370, 0x0400),
+        (0x0400, 0x0500),
+        (0x2000, 0x2070),
+        (0x20A0, 0x20D0),
+        (0x2100, 0x2150),
+        (0x2190, 0x2200),
+        (0x2200, 0x2300),
+        (0x2300, 0x2400),
+        (0x2500, 0x2580),
+        (0x2580, 0x25A0),
+        (0x25A0, 0x2600),
+        (0x2600, 0x2700),
+        (0x2700, 0x27C0),
     ]
     chars = []
     seen = set()

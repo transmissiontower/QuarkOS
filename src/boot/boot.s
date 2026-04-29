@@ -1,3 +1,7 @@
+; SPDX-License-Identifier: MIT
+;
+; src/boot/boot.s - x86 Multiboot entry point, initial paging setup, and jump to higher-half kernel
+
 MBOOT_PAGE_ALIGN EQU 1 << 0
 MBOOT_MEM_INFO   EQU 1 << 1
 MBOOT_VIDEO_MODE EQU 1 << 2

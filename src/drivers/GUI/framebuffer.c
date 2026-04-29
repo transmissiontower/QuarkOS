@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/GUI/framebuffer.c - Double-buffered framebuffer driver with 2D drawing primitives
+ */
 #include "drivers/GUI/framebuffer.h"
 #include "arch/x86/multiboot.h"
 #include "lib/math.h"
@@ -7,6 +11,7 @@
 #include "mm/memory.h"
 #include "util/util.h"
 #include "video/font.h"
+#include "arch/aarch64/platform.h"
 #define FP_SHIFT 16
 uint32_t *fb_ptr = 0;
 uint8_t *back_buffer = 0;
@@ -36,15 +41,13 @@ void drv_fb_init(struct multiboot_info *mb_info)
     uint32_t virt_addr_start = 0xF0000000;
     uint32_t total_bytes = fb_size_bytes + fb_offset;
     uint32_t map_bytes = (total_bytes + 0xFFF) & ~0xFFF;
+    uint32_t fb_map_flags = PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_UNCACHED;
     for (uint32_t offset = 0; offset < map_bytes; offset += 4096) {
-        mm_vmm_map_page(virt_addr_start + offset, fb_phys_base + offset,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
+        mm_vmm_map_page(virt_addr_start + offset, fb_phys_base + offset, fb_map_flags);
     }
     fb_ptr = (uint32_t *)(virt_addr_start + fb_offset);
     if (back_buffer == 0) {
-        back_buffer = (uint8_t *)mm_heap_alloc(fb_size_bytes);
-    }
-    if (back_buffer != 0) {
+        back_buffer = (uint8_t *)fb_ptr;
         memset(back_buffer, 0, fb_size_bytes);
     }
 }
@@ -296,6 +299,7 @@ void drv_fb_swap_buffers()
         uint8_t *src = (uint8_t *)back_buffer + (y * fb_pitch);
         memcpy(dest, src, fb_width * 4);
     }
+    virtio_gpu_flush();
 }
 void char_draw(int x, int y, char c, uint32_t color, uint32_t bgcolor)
 {

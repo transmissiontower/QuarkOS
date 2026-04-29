@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/kernel/bootsplash.h - Boot log and splash screen interface
+ */
 #ifndef KERNEL_BOOTSPLASH_H
 #define KERNEL_BOOTSPLASH_H
 #include "arch/x86/multiboot.h"

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/util/util.h - Memory, port I/O, and color utility declarations
+ */
 #ifndef UTIL_H
 #define UTIL_H
 #include "lib/stdint.h"

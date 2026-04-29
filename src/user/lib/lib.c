@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/lib/lib.c - Userspace C runtime (malloc, memcpy, string functions)
+ */
 #include "lib/stdint.h"
 #include "user/lib/libapi.h"
 static void    *_last_alloc_ptr  = 0;
@@ -46,12 +50,15 @@ void *realloc(void *ptr, uint32_t new_size)
 }
 void memcpy32(void *dest, const void *src, uint32_t count_bytes)
 {
-    uint32_t num_dwords = count_bytes / 4;
-    asm volatile("cld; rep movsl" : "+D"(dest), "+S"(src), "+c"(num_dwords) : : "memory");
+    uint32_t *d = (uint32_t *)dest;
+    const uint32_t *s = (const uint32_t *)src;
+    uint32_t n = count_bytes / 4;
+    while (n--) *d++ = *s++;
 }
 void memset32(void *dest, uint32_t val, uint32_t count_dwords)
 {
-    asm volatile("cld; rep stosl" : "+D"(dest), "+c"(count_dwords) : "a"(val) : "memory");
+    uint32_t *d = (uint32_t *)dest;
+    while (count_dwords--) *d++ = val;
 }
 int memcmp(const void *s1, const void *s2, uint32_t n)
 {

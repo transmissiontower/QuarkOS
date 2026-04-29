@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/texture.h - Texture type definition and rendering/shadow interface declarations
+ */
 #ifndef TEXTURE_H
 #define TEXTURE_H
 #include "lib/stdint.h"

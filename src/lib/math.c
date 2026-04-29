@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/math.c - Floating-point and fixed-point math functions (sin, cos, sqrt, fmod)
+ */
 #include "lib/math.h"
 #include "lib/stdint.h"
 static const int32_t sin_table[] = {

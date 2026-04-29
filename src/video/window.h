@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/window.h - Window struct, manager API, and event handling declarations
+ */
 #ifndef WINDOW_H
 #define WINDOW_H
 #include "gfx/events.h"

@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/timer.c - PIT-based system tick, sleep, and software timer management
+ */
 #include "drivers/timer.h"
 #include "drivers/pcspk.h"
-#include "arch/x86/idt.h"
+void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r));
 #include "lib/stdint.h"
 #include "util/util.h"
 #include "video/vga.h"
@@ -13,6 +17,8 @@ extern void k_tick_handler();
 void on_irq_0(struct InterruptRegisters *regs)
 {
     (void)regs;
+    extern void arm_timer_clear_irq(void);
+    arm_timer_clear_irq();
     if (drv_pcspk_pwm_active()) {
         drv_pcspk_pwm_tick();
         drv_pcspk_pwm_subtick++;
@@ -41,10 +47,6 @@ void drv_pit_init()
     for (int i = 0; i < MAX_TIMERS; i++)
         software_timers[i].id = 0;
     irq_install_handler(0, &on_irq_0);
-    uint32_t divisor = 1193180 / freq;
-    outb(0x43, 0x36);
-    outb(0x40, (uint8_t)(divisor & 0xFF));
-    outb(0x40, (uint8_t)(divisor >> 8) & 0xFF);
 }
 uint64_t get_uptime_ms()
 {
@@ -54,8 +56,8 @@ void sleep(uint32_t ms)
 {
     uint64_t end_time = ticks + (ms / (1000 / freq));
     while (ticks < end_time) {
-        asm volatile("sti");
-        asm volatile("hlt");
+        asm volatile("msr daifclr, #2" ::: "memory");
+        asm volatile("wfi");
     }
 }
 int add_timer(uint32_t ms, TimerCallback callback, int is_interval)

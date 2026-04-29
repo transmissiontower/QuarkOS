@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/kernel/bootsplash.c - Boot log collection, CPU detection, and animated splash screen
+ */
 #include "kernel/bootsplash.h"
 #include "drivers/GUI/framebuffer.h"
 #include "gfx/bmp.h"
@@ -55,9 +59,20 @@ static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t 
                          uint32_t *d);
 static inline uint64_t boot_read_tsc(void)
 {
+#if defined(__aarch64__)
+
+    uint64_t val;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(val));
+    return val;
+#elif defined(__arm__)
+    uint32_t val;
+    asm volatile("mrc p15, 0, %0, c14, c0, 0" : "=r"(val));
+    return (uint64_t)val;
+#else
     uint32_t lo, hi;
     asm volatile("rdtsc" : "=a"(lo), "=d"(hi));
     return ((uint64_t)hi << 32) | lo;
+#endif
 }
 static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uint64_t multiplier)
 {
@@ -131,9 +146,96 @@ static void boot_cpuid_cache(void)
 {
     if (boot_cpuid_cached)
         return;
+#if defined(__aarch64__)
+
+    {
+        uint64_t midr;
+        asm volatile("mrs %0, midr_el1" : "=r"(midr));
+        uint32_t implementer = ((uint32_t)midr >> 24) & 0xFF;
+        uint32_t partnum = ((uint32_t)midr >> 4) & 0xFFF;
+        uint32_t variant = ((uint32_t)midr >> 20) & 0xF;
+        uint32_t revision = (uint32_t)midr & 0xF;
+
+        const char *impl_name = "Unknown";
+        switch (implementer) {
+        case 0x41: impl_name = "ARM Limited"; break;
+        case 0x42: impl_name = "Broadcom"; break;
+        case 0x43: impl_name = "Cavium"; break;
+        case 0x44: impl_name = "DEC"; break;
+        case 0x46: impl_name = "Fujitsu"; break;
+        case 0x48: impl_name = "HiSilicon"; break;
+        case 0x4E: impl_name = "NVIDIA"; break;
+        case 0x50: impl_name = "APM"; break;
+        case 0x51: impl_name = "Qualcomm"; break;
+        case 0x53: impl_name = "Samsung"; break;
+        case 0x56: impl_name = "Marvell"; break;
+        case 0x61: impl_name = "Apple"; break;
+        case 0x69: impl_name = "Intel"; break;
+        case 0xC0: impl_name = "Ampere"; break;
+        }
+        int vi = 0;
+        while (impl_name[vi] && vi < 12) { boot_cpu_vendor[vi] = impl_name[vi]; vi++; }
+        boot_cpu_vendor[vi] = 0;
+
+        const char *part_name = "Unknown";
+        if (implementer == 0x41) {
+            switch (partnum) {
+            case 0xD03: part_name = "Cortex-A53"; break;
+            case 0xD07: part_name = "Cortex-A57"; break;
+            case 0xD08: part_name = "Cortex-A72"; break;
+            case 0xD09: part_name = "Cortex-A73"; break;
+            case 0xD0A: part_name = "Cortex-A75"; break;
+            case 0xD0B: part_name = "Cortex-A76"; break;
+            case 0xD0D: part_name = "Cortex-A77"; break;
+            case 0xD40: part_name = "Neoverse-V1"; break;
+            case 0xD41: part_name = "Cortex-A78"; break;
+            case 0xD44: part_name = "Cortex-X1"; break;
+            case 0xD46: part_name = "Cortex-A510"; break;
+            case 0xD47: part_name = "Cortex-A710"; break;
+            case 0xD4D: part_name = "Cortex-A715"; break;
+            default:    part_name = "ARM Core"; break;
+            }
+        } else if (implementer == 0x61) {
+            switch (partnum) {
+            case 0x022: part_name = "Apple M1 Icestorm"; break;
+            case 0x023: part_name = "Apple M1 Firestorm"; break;
+            case 0x024: part_name = "Apple M1 Pro"; break;
+            case 0x025: part_name = "Apple M1 Pro"; break;
+            case 0x028: part_name = "Apple M1 Max"; break;
+            case 0x029: part_name = "Apple M1 Max"; break;
+            case 0x030: part_name = "Apple M2 Blizzard"; break;
+            case 0x031: part_name = "Apple M2 Avalanche"; break;
+            case 0x032: part_name = "Apple M2 Pro"; break;
+            case 0x033: part_name = "Apple M2 Pro"; break;
+            case 0x034: part_name = "Apple M2 Max"; break;
+            case 0x035: part_name = "Apple M2 Max"; break;
+            case 0x038: part_name = "Apple M3 Blizzard"; break;
+            case 0x039: part_name = "Apple M3 Avalanche"; break;
+            case 0x049: part_name = "Apple M4 Sawtooth"; break;
+            case 0x048: part_name = "Apple M4 Everest"; break;
+            default:    part_name = "Apple Silicon"; break;
+            }
+        }
+
+        int bi = 0;
+        const char *pn = part_name;
+        while (*pn && bi < 40) boot_cpu_brand[bi++] = *pn++;
+        boot_cpu_brand[bi++] = ' ';
+        boot_cpu_brand[bi++] = 'r';
+        boot_cpu_brand[bi++] = '0' + (variant & 0xF);
+        boot_cpu_brand[bi++] = 'p';
+        boot_cpu_brand[bi++] = '0' + (revision & 0xF);
+        boot_cpu_brand[bi] = 0;
+        boot_cpu_brand_valid = true;
+
+        boot_cpuid_max_basic = 0;
+        boot_cpuid_max_ext = 0;
+    }
+#else
     cpuid_get_vendor(boot_cpu_vendor, &boot_cpuid_max_basic, &boot_cpuid_max_ext);
     boot_cpu_brand_valid =
         boot_detect_cpu_brand(boot_cpu_brand, sizeof(boot_cpu_brand), boot_cpuid_max_ext);
+#endif
     boot_cpuid_cached = true;
 }
 static void boot_time_ensure_initialized(void)
@@ -142,6 +244,20 @@ static void boot_time_ensure_initialized(void)
         return;
     boot_cpuid_cache();
     uint64_t freq_hz = 0;
+#if defined(__aarch64__)
+
+    {
+        uint64_t cntfrq;
+        asm volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));
+        freq_hz = cntfrq;
+    }
+#elif defined(__arm__)
+    {
+        uint32_t cntfrq;
+        asm volatile("mrc p15, 0, %0, c14, c0, 0" : "=r"(cntfrq));
+        freq_hz = (uint64_t)cntfrq;
+    }
+#else
     if (boot_cpuid_max_basic >= 0x15) {
         uint32_t eax, ebx, ecx, edx;
         cpuid(0x15u, 0, &eax, &ebx, &ecx, &edx);
@@ -160,6 +276,7 @@ static void boot_time_ensure_initialized(void)
     if (freq_hz == 0 && boot_cpu_brand_valid) {
         freq_hz = boot_brand_freq_from_string(boot_cpu_brand);
     }
+#endif
     if (freq_hz == 0)
         freq_hz = 1000000000ULL;
     boot_time_ticks_per_us = freq_hz / 1000000ULL;
@@ -278,6 +395,20 @@ static void boot_log_line_append(char *dest, const char *text)
         i++;
     }
     dest[dest_len + i] = '\0';
+}
+static void int_to_hex_str(uint32_t val, char *out)
+{
+    int i = 0;
+    char tmp[9];
+    if (val == 0) { out[0] = '0'; out[1] = 0; return; }
+    while (val > 0 && i < 8) {
+        int n = val & 0xF;
+        tmp[i++] = (n < 10) ? '0' + n : 'A' + n - 10;
+        val >>= 4;
+    }
+    int j = 0;
+    while (--i >= 0) out[j++] = tmp[i];
+    out[j] = 0;
 }
 static void boot_log_add_pair(const char *label, const char *value)
 {
@@ -526,7 +657,13 @@ void boot_log_record_boot_info(struct multiboot_info *boot_info)
 {
     boot_log_reset();
     boot_cpuid_cache();
+#if defined(__aarch64__)
+    boot_log_add("QuarkOS 2.0 (aarch64) booting...");
+#elif defined(__arm__)
+    boot_log_add("QuarkOS 2.0 (arm32) booting...");
+#else
     boot_log_add("Blanket core 0.3.1 (x86_32) booting...");
+#endif
     boot_log_add_pair("CPU Vendor: ", boot_cpu_vendor);
     if (boot_cpu_brand_valid) {
         boot_log_add_pair("Detected CPU: ", boot_cpu_brand);
@@ -538,8 +675,50 @@ void boot_log_record_boot_info(struct multiboot_info *boot_info)
         boot_log_line_append(fallback, " (brand string unavailable)");
         boot_log_add(fallback);
     }
+#if defined(__aarch64__)
+
+    {
+        uint64_t midr;
+        asm volatile("mrs %0, midr_el1" : "=r"(midr));
+        char line[BOOT_LOG_LINE_LEN];
+        char number[16];
+        line[0] = '\0';
+        boot_log_line_append(line, "MIDR_EL1: implementer 0x");
+        int_to_hex_str(((uint32_t)midr >> 24) & 0xFF, number);
+        boot_log_line_append(line, number);
+        boot_log_line_append(line, ", part 0x");
+        int_to_hex_str(((uint32_t)midr >> 4) & 0xFFF, number);
+        boot_log_line_append(line, number);
+        boot_log_add(line);
+
+        uint64_t isar0;
+        asm volatile("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
+        line[0] = '\0';
+        boot_log_line_append(line, "CPU features:");
+        if ((isar0 >> 4) & 0xF)  boot_log_line_append(line, " AES");
+        if ((isar0 >> 8) & 0xF)  boot_log_line_append(line, " SHA1");
+        if ((isar0 >> 12) & 0xF) boot_log_line_append(line, " SHA256");
+        if ((isar0 >> 16) & 0xF) boot_log_line_append(line, " CRC32");
+        if ((isar0 >> 20) & 0xF) boot_log_line_append(line, " ATOMICS");
+        if ((isar0 >> 28) & 0xF) boot_log_line_append(line, " SHA512");
+        if ((isar0 >> 32) & 0xF) boot_log_line_append(line, " SHA3");
+        if ((isar0 >> 44) & 0xF) boot_log_line_append(line, " FHM");
+        if ((isar0 >> 52) & 0xF) boot_log_line_append(line, " RNG");
+        boot_log_add(line);
+
+        uint64_t cntfrq;
+        asm volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));
+        line[0] = '\0';
+        boot_log_line_append(line, "Timer frequency: ");
+        int_to_str((int)(cntfrq / 1000000), number, 0);
+        boot_log_line_append(line, number);
+        boot_log_line_append(line, " MHz");
+        boot_log_add(line);
+    }
+#else
     boot_log_add_cpu_signature();
     boot_log_add_cpu_features(boot_cpuid_max_basic, boot_cpuid_max_ext);
+#endif
     boot_log_add_memory_info(boot_info);
     if (boot_info) {
         boot_log_add_dec("Boot modules: ", boot_info->mods_count, " loaded");
@@ -648,8 +827,9 @@ void draw_boot_splash()
         rect_fill(bar_x, bar_y, bar_w, bar_h, 0x1A1A1A);
         rect_fill(bar_x, bar_y, (bar_w * i) / 100, bar_h, COLOR_WHITE);
         int current_line_limit = (i * (int)boot_log_count) / 100;
+        int line_h = k_boot_font.line_height - 2;
         for (int m = 0; m <= current_line_limit && m < (int)boot_log_count; m++) {
-            k_draw_boot_line(15, 20 + (m * (k_boot_font.line_height - 2)), boot_log_entries[m]);
+            k_draw_boot_line(12, 8 + m * line_h, boot_log_entries[m]);
         }
         drv_fb_swap_buffers();
         int delay_multiplier = 1;
@@ -659,14 +839,25 @@ void draw_boot_splash()
                 delay_multiplier = 15;
             last_line = current_line_limit;
         }
-        for (volatile int d = 0; d < 800000 * delay_multiplier; d++)
-            __asm__("pause");
+        for (volatile int d = 0; d < 200000 * delay_multiplier; d++)
+            __asm__(
+#if defined(__arm__) || defined(__aarch64__)
+            "" ::: "memory"
+#else
+            "pause"
+#endif
+        );
     }
 }
 static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t *b, uint32_t *c,
                          uint32_t *d)
 {
+#if defined(__arm__) || defined(__aarch64__)
+    (void)leaf; (void)subleaf;
+    *a = *b = *c = *d = 0;
+#else
     asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(subleaf));
+#endif
 }
 static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t *max_ext)
 {

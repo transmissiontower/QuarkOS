@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/wav.c - WAV audio file player using storage server streaming
+ */
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
@@ -7,7 +11,7 @@
 static int storage_pid = -1;
 static uint32_t storage_open(const char *path)
 {
-    uint16_t dir_cluster = 0;
+    uint32_t dir_cluster = 0;
     char short_name[13];
     if (qk_path_resolve(path, &dir_cluster, short_name) != 0)
         return 0;
@@ -82,7 +86,7 @@ static int parse_wav(wav_info_t *info, uint32_t file_size)
             if (chunk_size < 16 || storage_read(fmt, pos + 8, 16) < 16)
                 return -1;
             uint16_t audio_fmt = (uint16_t)(fmt[0] | ((uint16_t)fmt[1] << 8));
-            if (audio_fmt != 1)   
+            if (audio_fmt != 1)
                 return -1;
             info->channels        = (uint16_t)(fmt[2] | ((uint16_t)fmt[3] << 8));
             info->sample_rate     = (uint32_t)(fmt[4] | ((uint32_t)fmt[5]<<8)
@@ -96,7 +100,7 @@ static int parse_wav(wav_info_t *info, uint32_t file_size)
             got_data = 1;
         }
         pos += 8 + chunk_size;
-        if (chunk_size & 1) pos++;   
+        if (chunk_size & 1) pos++;
     }
     if (!got_fmt || !got_data)
         return -1;

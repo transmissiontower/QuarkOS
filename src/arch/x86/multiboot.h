@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/arch/x86/multiboot.h - Multiboot information structures and memory map definitions
+ */
 #ifndef MULTIBOOT_H
 #define MULTIBOOT_H
 #include "lib/stdint.h"

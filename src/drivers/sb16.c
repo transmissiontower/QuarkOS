@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/sb16.c - Sound Blaster 16 driver with DMA-based 8-bit and 16-bit playback
+ */
 #include "drivers/sb16.h"
 #include "arch/x86/idt.h"
 #include "util/util.h"
@@ -8,21 +12,21 @@
 #define SB16_RESET      (SB16_BASE + 0x06)
 #define SB16_READ       (SB16_BASE + 0x0A)
 #define SB16_WRITE      (SB16_BASE + 0x0C)
-#define SB16_READ_STAT  (SB16_BASE + 0x0E)  
-#define SB16_INT16_ACK  (SB16_BASE + 0x0F)  
+#define SB16_READ_STAT  (SB16_BASE + 0x0E)
+#define SB16_INT16_ACK  (SB16_BASE + 0x0F)
 #define SB16_IRQ        5
-#define DMA2_MASK       0xD4   
+#define DMA2_MASK       0xD4
 #define DMA2_MODE       0xD6
 #define DMA2_FLIPFLOP   0xD8
-#define DMA2_CH5_ADDR   0xC4   
-#define DMA2_CH5_COUNT  0xC6   
-#define DMA2_CH5_PAGE   0x8B   
+#define DMA2_CH5_ADDR   0xC4
+#define DMA2_CH5_COUNT  0xC6
+#define DMA2_CH5_PAGE   0x8B
 #define DMA_BUF_SIZE    (32 * 1024)
 static uint8_t __attribute__((aligned(32768))) sb16_dma_buf[DMA_BUF_SIZE];
 #define VIRT_TO_PHYS(v) ((uint32_t)(v) - 0xC0000000u)
-static volatile int sb16_done   = 1;   
-static volatile int sb16_active = 0;   
-static uint8_t      sb16_irq_reg = 0;  
+static volatile int sb16_done   = 1;
+static volatile int sb16_active = 0;
+static uint8_t      sb16_irq_reg = 0;
 static void dsp_write(uint8_t val)
 {
     for (int i = 0; i < 100000; i++)
@@ -59,8 +63,8 @@ static void dma_program_ch5(uint32_t phys, uint32_t bytes)
 {
     uint32_t words      = bytes / 2;
     uint32_t word_addr  = (phys >> 1) & 0xFFFF;
-    uint8_t  page       = (uint8_t)((phys >> 17) & 0xFF);  
-    outb(DMA2_MASK, 0x05);          
+    uint8_t  page       = (uint8_t)((phys >> 17) & 0xFF);
+    outb(DMA2_MASK, 0x05);
     outb(DMA2_FLIPFLOP, 0x00);
     outb(DMA2_CH5_ADDR, (uint8_t)(word_addr & 0xFF));
     outb(DMA2_CH5_ADDR, (uint8_t)((word_addr >> 8) & 0xFF));
@@ -69,8 +73,8 @@ static void dma_program_ch5(uint32_t phys, uint32_t bytes)
     uint16_t count = (uint16_t)(words - 1);
     outb(DMA2_CH5_COUNT, (uint8_t)(count & 0xFF));
     outb(DMA2_CH5_COUNT, (uint8_t)((count >> 8) & 0xFF));
-    outb(DMA2_MODE, 0x49);          
-    outb(DMA2_MASK, 0x01);          
+    outb(DMA2_MODE, 0x49);
+    outb(DMA2_MASK, 0x01);
 }
 int drv_sb16_init(void)
 {
@@ -84,8 +88,8 @@ int drv_sb16_init(void)
     (void)minor;
     outb(SB16_MIXER_ADDR, 0x80);
     sb16_irq_reg = inb(SB16_MIXER_DATA);
-    outb(SB16_MIXER_ADDR, 0x22); outb(SB16_MIXER_DATA, 0xFF); 
-    outb(SB16_MIXER_ADDR, 0x04); outb(SB16_MIXER_DATA, 0xFF); 
+    outb(SB16_MIXER_ADDR, 0x22); outb(SB16_MIXER_DATA, 0xFF);
+    outb(SB16_MIXER_ADDR, 0x04); outb(SB16_MIXER_DATA, 0xFF);
     dsp_write(0xD1);
     irq_install_handler(SB16_IRQ, sb16_irq_handler);
     sb16_done   = 1;
@@ -112,25 +116,25 @@ int drv_sb16_play(const void *virt_buf, uint32_t bytes,
     dsp_write((uint8_t)(rate & 0xFF));
     if (bits == 16) {
         dma_program_ch5(phys, bytes);
-        uint8_t mode = 0x10;                    
-        if (channels == 2) mode |= 0x20;        
+        uint8_t mode = 0x10;
+        if (channels == 2) mode |= 0x20;
         uint16_t samples = (uint16_t)((bytes / (bits / 8)) - 1);
         dsp_write(0xB6);
         dsp_write(mode);
         dsp_write((uint8_t)(samples & 0xFF));
         dsp_write((uint8_t)((samples >> 8) & 0xFF));
     } else {
-        outb(0x0A, 0x05);           
-        outb(0x0C, 0x00);           
+        outb(0x0A, 0x05);
+        outb(0x0C, 0x00);
         outb(0x02, (uint8_t)(phys & 0xFF));
         outb(0x02, (uint8_t)((phys >> 8) & 0xFF));
-        outb(0x83, (uint8_t)((phys >> 16) & 0xFF));  
+        outb(0x83, (uint8_t)((phys >> 16) & 0xFF));
         outb(0x0C, 0x00);
         uint16_t count = (uint16_t)(bytes - 1);
         outb(0x03, (uint8_t)(count & 0xFF));
         outb(0x03, (uint8_t)((count >> 8) & 0xFF));
-        outb(0x0B, 0x49);           
-        outb(0x0A, 0x01);           
+        outb(0x0B, 0x49);
+        outb(0x0A, 0x01);
         uint8_t mode = 0x00;
         if (channels == 2) mode |= 0x20;
         uint16_t samples = (uint16_t)(bytes - 1);

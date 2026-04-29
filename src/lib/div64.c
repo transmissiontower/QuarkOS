@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/div64.c - Software 64-bit unsigned division and modulo for targets without native support
+ */
 #include "lib/stdint.h"
 uint64_t __udivmoddi4(uint64_t num, uint64_t den, uint64_t *rem)
 {

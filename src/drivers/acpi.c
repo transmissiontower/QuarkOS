@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/acpi.c - ACPI table parsing, power management, shutdown and reboot
+ */
 #include "drivers/acpi.h"
 #include "mm/memory.h"
 #include "util/util.h"

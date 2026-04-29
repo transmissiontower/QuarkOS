@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/timer.h - System timer interface for sleep, uptime, and scheduled callbacks
+ */
 #ifndef TIMER_H
 #define TIMER_H
 #include "lib/stdint.h"

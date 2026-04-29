@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/compositor.c - Desktop compositor with dirty-rect tracking, wallpaper, clock, and FPS overlay
+ */
 #include "video/compositor.h"
 #include "drivers/GUI/framebuffer.h"
 #include "drivers/ps2/mouse.h"

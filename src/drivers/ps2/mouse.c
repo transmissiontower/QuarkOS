@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/drivers/ps2/mouse.c - PS/2 mouse initialization with scroll wheel detection and IRQ handling
+ */
 #include "drivers/ps2/mouse.h"
 #include "arch/x86/idt.h"
 #include "util/util.h"
@@ -54,8 +58,8 @@ void drv_input_mouse_init()
     mouse_write(0xF3); mouse_read(); mouse_write(200); mouse_read();
     mouse_write(0xF3); mouse_read(); mouse_write(100); mouse_read();
     mouse_write(0xF3); mouse_read(); mouse_write(80);  mouse_read();
-    mouse_write(0xF2); mouse_read(); 
-    mouse_read(); 
+    mouse_write(0xF2); mouse_read();
+    mouse_read();
     mouse_write(0xF4);
     mouse_read();
     irq_install_handler(12, mouse_handler);

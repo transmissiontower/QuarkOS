@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/arch/x86/io.h - Inline x86 port I/O helpers (byte, word, and dword)
+ */
 #ifndef IO_H
 #define IO_H
 #include "lib/stdint.h"

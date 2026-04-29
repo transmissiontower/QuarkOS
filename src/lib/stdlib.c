@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/stdlib.c - Standard string and conversion utilities (strlen, strncpy, itoa, etc.)
+ */
 #include "lib/stdlib.h"
 #include "lib/stdint.h"
 void reverse(char *str, int len)

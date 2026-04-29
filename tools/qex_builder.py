@@ -1,10 +1,13 @@
+# SPDX-License-Identifier: MIT
+#
+# tools/qex_builder.py - Packages flat binaries into QEX executables with ELF metadata extraction
+
 import os
 import struct
 import sys
 
 SHT_NOBITS = 8
 SHF_ALLOC = 0x2
-
 
 def find_matching_elf(binary_path):
     base, ext = os.path.splitext(binary_path)
@@ -17,7 +20,6 @@ def find_matching_elf(binary_path):
         if os.path.isfile(candidate):
             return candidate
     return None
-
 
 def read_elf_metadata(elf_path):
     if not elf_path or not os.path.isfile(elf_path):
@@ -49,7 +51,6 @@ def read_elf_metadata(elf_path):
                 max_vma = p_vaddr + p_memsz
 
     return (e_entry, max_vma)
-
 
 def build_qex(binary_path, output_path):
     try:
@@ -83,7 +84,6 @@ def build_qex(binary_path, output_path):
         f.write(code_data)
 
     print(f"Built {output_path}: Size={code_size} bytes, BSS={bss_size} bytes")
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:

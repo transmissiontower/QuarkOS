@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/fs/fat.h - FAT boot sector, directory entry, and LFN structures
+ */
 #ifndef FAT_H
 #define FAT_H
 #include "lib/stdint.h"
@@ -16,13 +20,18 @@ typedef struct {
     uint16_t heads;
     uint32_t hidden_sectors;
     uint32_t total_sectors_large;
+
     uint8_t drive_number;
     uint8_t reserved;
     uint8_t signature;
     uint32_t vol_id;
     char vol_label[11];
     char fs_type[8];
+
 } __attribute__((packed)) fat_boot_sector_t;
+
+#define FAT32_SECTORS_PER_FAT(buf)  (*(uint32_t *)((uint8_t *)(buf) + 0x24))
+#define FAT32_ROOT_CLUSTER(buf)     (*(uint32_t *)((uint8_t *)(buf) + 0x2C))
 typedef struct {
     char filename[8];
     char ext[3];
@@ -38,7 +47,20 @@ typedef struct {
     uint16_t first_cluster_low;
     uint32_t file_size;
 } __attribute__((packed)) fat_dir_entry_t;
+
+typedef struct {
+    uint8_t  sequence;
+    uint8_t  name1[10];
+    uint8_t  attributes;
+    uint8_t  type;
+    uint8_t  checksum;
+    uint8_t  name2[12];
+    uint16_t first_cluster;
+    uint8_t  name3[4];
+} __attribute__((packed)) fat_lfn_entry_t;
+
 void fat_init();
 void fat_list_root();
 uint8_t *fat_read_file(const char *filename, uint32_t *out_size);
+uint8_t *fat_read_file_path(const char *path, uint32_t *out_size);
 #endif

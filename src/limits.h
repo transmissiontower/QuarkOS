@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/limits.h - Implementation-defined integer type limits
+ */
 #ifndef _STUB_LIMITS_H
 #define _STUB_LIMITS_H
 #define CHAR_BIT   8
@@ -15,4 +19,4 @@
 #define LONG_MIN   INT_MIN
 #define LONG_MAX   INT_MAX
 #define ULONG_MAX  UINT_MAX
-#endif 
+#endif

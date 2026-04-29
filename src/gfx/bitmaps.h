@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/gfx/bitmaps.h - Static bitmap data for the mouse cursor sprite
+ */
 #ifndef BITMAPS_H
 #define BITMAPS_H
 #include "lib/stdint.h"

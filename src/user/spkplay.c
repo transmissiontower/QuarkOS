@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/spkplay.c - PC speaker music file (.spk) player
+ */
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
@@ -38,7 +42,7 @@ static uint32_t file_read(uint8_t *buf, uint32_t offset, uint32_t len)
     }
     return got;
 }
-static uint32_t file_open(const char *name, uint16_t dir_cluster)
+static uint32_t file_open(const char *name, uint32_t dir_cluster)
 {
     message_t req;
     memset(&req, 0, sizeof(req));

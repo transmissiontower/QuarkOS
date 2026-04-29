@@ -1,3 +1,7 @@
+; SPDX-License-Identifier: MIT
+;
+; src/kernel/process.s - Low-level context switch and task state segment helpers
+
 global switch_context
 global enter_user_mode
 global irq_ret_stub
@@ -5,7 +9,6 @@ global irq_ret_stub
 switch_context:
     mov eax, [esp + 4]
     mov edx, [esp + 8]
-
 
     push ebp
     push ebx

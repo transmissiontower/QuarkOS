@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/arch/x86/idt.c - Interrupt Descriptor Table setup, PIC remapping, ISR/IRQ dispatch
+ */
 #include "arch/x86/idt.h"
 #include "drivers/GUI/framebuffer.h"
 #include "kernel/crash.h"

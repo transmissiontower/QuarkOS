@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/gfx/events.c - Input event queue for keyboard and mouse events
+ */
 #include "gfx/events.h"
 #define MAX_EVENTS 256
 static Event event_queue[MAX_EVENTS];
@@ -13,13 +17,13 @@ volatile int dbg_kbd_ignored_count = 0;
 static inline uint32_t save_flags_and_cli(void)
 {
     uint32_t flags;
-    asm volatile("pushf; pop %0" : "=r"(flags) : : "memory");
-    asm volatile("cli" : : : "memory");
+    asm volatile("mrs %0, daif" : "=r"(flags) :: "memory");
+    asm volatile("msr daifset, #2" ::: "memory");
     return flags;
 }
 static inline void restore_flags(uint32_t flags)
 {
-    asm volatile("push %0; popf" : : "r"(flags) : "memory");
+    asm volatile("msr daif, %0" :: "r"(flags) : "memory");
 }
 void events_init()
 {

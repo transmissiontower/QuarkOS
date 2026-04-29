@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/elfdemo.c - ELF binary header viewer and inspector
+ */
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"

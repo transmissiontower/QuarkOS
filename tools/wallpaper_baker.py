@@ -1,17 +1,33 @@
+# SPDX-License-Identifier: MIT
+#
+# tools/wallpaper_baker.py - Converts an image to a raw ARGB framebuffer at 1920x1080 with cover cropping
+
 import struct
 import sys
 from PIL import Image
 
+TARGET_W = 1920
+TARGET_H = 1080
+
 def bake(input_path, output_path):
     img = Image.open(input_path).convert("RGBA")
-    img = img.resize((1920, 1080), Image.Resampling.LANCZOS)
+    src_w, src_h = img.size
+
+    scale = max(TARGET_W / src_w, TARGET_H / src_h)
+    scaled_w = int(src_w * scale + 0.5)
+    scaled_h = int(src_h * scale + 0.5)
+    img = img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+
+    left = (scaled_w - TARGET_W) // 2
+    top  = (scaled_h - TARGET_H) // 2
+    img = img.crop((left, top, left + TARGET_W, top + TARGET_H))
 
     with open(output_path, "wb") as f:
         pixels = list(img.getdata())
         for r, g, b, a in pixels:
             val = (a << 24) | (r << 16) | (g << 8) | b
             f.write(struct.pack('<I', val))
-    print(f"Baked wallpaper: {output_path} (1920x1080)")
+    print(f"Baked wallpaper: {output_path} ({TARGET_W}x{TARGET_H}, cover crop from {src_w}x{src_h})")
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:

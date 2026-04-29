@@ -1,12 +1,16 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/user/still_alive.h - Note data for Portal's "Still Alive" PC speaker melody
+ */
 #ifndef STILL_ALIVE_H
 #define STILL_ALIVE_H
 #include "lib/stdint.h"
-#define SA_E   250   
-#define SA_Q   500   
-#define SA_DQ  750   
-#define SA_H  1000   
-#define SA_DH 1500   
-#define SA_W  2000   
+#define SA_E   250
+#define SA_Q   500
+#define SA_DQ  750
+#define SA_H  1000
+#define SA_DH 1500
+#define SA_W  2000
 #define SA_A4   440
 #define SA_Bb4  466
 #define SA_B4   494
@@ -104,4 +108,4 @@ static const note_t still_alive[] = {
 #undef SA_A5
 #undef SA_Bb5
 #undef SA_B5
-#endif 
+#endif

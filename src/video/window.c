@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/video/window.c - Window manager with creation, dragging, drawing, text output, and event dispatch
+ */
 #include "video/window.h"
 #include "drivers/GUI/framebuffer.h"
 #include "drivers/ps2/mouse.h"

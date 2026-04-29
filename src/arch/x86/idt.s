@@ -1,3 +1,7 @@
+; SPDX-License-Identifier: MIT
+;
+; src/arch/x86/idt.s - ISR/IRQ stub entry points and common interrupt dispatch trampolines
+
 global arch_idt_load
 arch_idt_load:
     MOV eax, [esp+4]
@@ -83,8 +87,6 @@ IRQ 13, 45
 IRQ 14, 46
 IRQ 15, 47
 
-
-
 extern arch_isr_dispatcher
 isr_common_stub:
     pusha
@@ -140,4 +142,3 @@ irq_common_stub:
     POPA
     ADD esp, 8
     IRET
-

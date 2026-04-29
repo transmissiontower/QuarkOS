@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/stdlib.h - Declarations for string and conversion utility functions
+ */
 #ifndef STDLIB_H
 #define STDLIB_H
 #include "lib/stdint.h"

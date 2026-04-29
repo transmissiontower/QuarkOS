@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/lib/stdint.h - Fixed-width integer types and their limits
+ */
 #ifndef _STDINT_H
 #define _STDINT_H
 typedef signed char int8_t;
@@ -8,8 +12,13 @@ typedef int int32_t;
 typedef unsigned int uint32_t;
 typedef long long int64_t;
 typedef unsigned long long uint64_t;
+#if defined(__aarch64__)
+typedef int64_t intptr_t;
+typedef uint64_t uintptr_t;
+#else
 typedef int32_t intptr_t;
 typedef unsigned int uintptr_t;
+#endif
 typedef int64_t intmax_t;
 typedef uint64_t uintmax_t;
 #define INT8_MAX 127

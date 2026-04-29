@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * src/kernel/elf.h - ELF executable image info and loader interface
+ */
 #ifndef KERNEL_ELF_H
 #define KERNEL_ELF_H
 #include "lib/stdint.h"
