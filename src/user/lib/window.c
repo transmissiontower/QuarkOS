@@ -275,6 +275,29 @@ static inline bool window_contains_point(Window *win, int px, int py) {
     int visible_h = window_visible_height(win);
     return (px >= win->x && px <= win->x + win->w && py >= win->y && py <= win->y + visible_h);
 }
+Window *window_at_point(int x, int y) {
+    for (int i = window_count - 1; i >= 0; i--) {
+        Window *win = window_stack[i];
+        if (window_contains_point(win, x, y))
+            return win;
+    }
+    return 0;
+}
+void drag_start(uint32_t data_type, const void *data, uint32_t len) {
+    static int comp_pid_cache = -1;
+    if (comp_pid_cache < 0)
+        comp_pid_cache = qk_get_server_pid(QK_SERVER_COMPOSITOR);
+    if (comp_pid_cache < 0)
+        return;
+    message_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = MSG_DRAG_START;
+    msg.data1 = data_type;
+    msg.data2 = len < 4096 ? len : 4096;
+    if (len > 0)
+        memcpy(msg.payload, data, msg.data2);
+    qk_sys_ipc_send(comp_pid_cache, &msg);
+}
 static void window_start_resize(Window *win, int mouse_x, int mouse_y) {
     if (!win)
         return;

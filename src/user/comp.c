@@ -83,6 +83,15 @@ static int vkbd_is_visible = 0;
 static uint32_t *vkbd_mapped_buf = 0;
 static int vkbd_buf_w = 0, vkbd_buf_h = 0;
 static int vkbd_pos_x = 0, vkbd_pos_y = 0;
+typedef struct {
+    int active;
+    int source_pid;
+    int target_pid;
+    uint32_t data_type;
+    uint32_t data_len;
+    uint8_t data[4096];
+} drag_session_t;
+static drag_session_t g_drag;
 #define DESKTOP_NOTIFICATION_MS 3200
 
 #ifndef ICON_IMAGE
@@ -891,6 +900,86 @@ static void process_message(message_t *msg) {
         }
         if (!consumed)
             window_event_handle(*e);
+        if (g_drag.active && e->type == EVENT_MOUSE_MOVE) {
+
+            Window *src_win = 0;
+            for (int _i = 0; _i < window_count; _i++) {
+                if (window_stack[_i]->owner_pid == g_drag.source_pid) {
+                    src_win = window_stack[_i];
+                    break;
+                }
+            }
+            if (src_win) {
+                message_t m_ghost = *msg;
+                Event *eg = (Event *)m_ghost.payload;
+                eg->x = mx - src_win->x;
+                eg->y = my - src_win->y;
+                m_ghost.data2 = eg->x;
+                m_ghost.data3 = eg->y;
+                qk_sys_ipc_send(g_drag.source_pid, &m_ghost);
+            }
+        }
+        if (g_drag.active && (e->type == EVENT_MOUSE_MOVE || e->type == EVENT_MOUSE_UP)) {
+            Window *hit = window_at_point(mx, my);
+            int new_target_pid = (hit && hit->owner_pid != g_drag.source_pid)
+                                     ? hit->owner_pid
+                                     : -1;
+            if (new_target_pid != g_drag.target_pid) {
+                if (g_drag.target_pid >= 0) {
+                    message_t left;
+                    memset(&left, 0, sizeof(left));
+                    left.type = MSG_DRAG_LEFT;
+                    qk_sys_ipc_send(g_drag.target_pid, &left);
+                }
+                g_drag.target_pid = new_target_pid;
+                if (g_drag.target_pid >= 0) {
+                    message_t over;
+                    memset(&over, 0, sizeof(over));
+                    over.type = MSG_DRAG_OVER;
+                    over.data1 = g_drag.data_type;
+                    over.data2 = (uint32_t)(hit ? mx - hit->x : mx);
+                    over.data3 = (uint32_t)(hit ? my - hit->y : my);
+                    over.sender_pid = g_drag.source_pid;
+                    memcpy(over.payload, g_drag.data, g_drag.data_len);
+                    qk_sys_ipc_send(g_drag.target_pid, &over);
+                }
+            } else if (e->type == EVENT_MOUSE_MOVE && g_drag.target_pid >= 0) {
+                message_t over;
+                memset(&over, 0, sizeof(over));
+                over.type = MSG_DRAG_OVER;
+                over.data1 = g_drag.data_type;
+                over.data2 = (uint32_t)(hit ? mx - hit->x : mx);
+                over.data3 = (uint32_t)(hit ? my - hit->y : my);
+                over.sender_pid = g_drag.source_pid;
+                memcpy(over.payload, g_drag.data, g_drag.data_len);
+                qk_sys_ipc_send(g_drag.target_pid, &over);
+            }
+            if (e->type == EVENT_MOUSE_UP) {
+                if (g_drag.target_pid >= 0) {
+                    message_t drop;
+                    memset(&drop, 0, sizeof(drop));
+                    drop.type = MSG_DROP;
+                    drop.data1 = g_drag.data_type;
+                    drop.data2 = (uint32_t)(hit ? mx - hit->x : mx);
+                    drop.data3 = (uint32_t)g_drag.source_pid;
+                    drop.sender_pid = g_drag.source_pid;
+                    memcpy(drop.payload, g_drag.data, g_drag.data_len);
+                    qk_sys_ipc_send(g_drag.target_pid, &drop);
+
+                    message_t cancel;
+                    memset(&cancel, 0, sizeof(cancel));
+                    cancel.type = MSG_DRAG_CANCEL;
+                    cancel.data1 = 0;
+                    qk_sys_ipc_send(g_drag.source_pid, &cancel);
+                } else {
+                    message_t cancel;
+                    memset(&cancel, 0, sizeof(cancel));
+                    cancel.type = MSG_DRAG_CANCEL;
+                    qk_sys_ipc_send(g_drag.source_pid, &cancel);
+                }
+                memset(&g_drag, 0, sizeof(g_drag));
+            }
+        }
         if (window_count > 0) {
             Window *top = window_stack[window_count - 1];
             if (e->type == EVENT_KEY_PRESS || e->type == EVENT_KEY_RELEASE) {
@@ -1022,6 +1111,15 @@ static void process_message(message_t *msg) {
         if (g_clip_len > 0)
             memcpy(reply.payload, g_clipboard, g_clip_len);
         qk_sys_ipc_send(msg->sender_pid, &reply);
+    } else if (msg->type == MSG_DRAG_START) {
+        if (!g_drag.active) {
+            g_drag.active = 1;
+            g_drag.source_pid = msg->sender_pid;
+            g_drag.target_pid = -1;
+            g_drag.data_type = msg->data1;
+            g_drag.data_len = msg->data2 < 4096 ? msg->data2 : 4096;
+            memcpy(g_drag.data, msg->payload, g_drag.data_len);
+        }
     } else if (msg->type == MSG_PROCESS_TERMINATED) {
         int target_pid = msg->data1;
         for (int i = 0; i < window_count; i++) {
@@ -1227,6 +1325,33 @@ void render() {
         apply_brightness_overlay();
     render_desktop_notification();
     render_debug_overlay();
+
+    if (g_drag.active && g_drag.data_type == 1 && g_drag.data_len >= 9) {
+        const char *drag_fn = (const char *)(g_drag.data + 8);
+        int icon_id = desk_icon_id(drag_fn);
+        uint32_t ic = (icon_id == ICON_IMAGE) ? 0xFF88AADDu
+                      : (icon_id == ICON_BINARY) ? 0xFF80CC80u
+                                                 : 0xFF9A9A9Au;
+        int gs = 80;
+        int gsz = 40;
+        int gx = mx - gs / 2;
+        int gy = my - gs / 2;
+        if (gx < 0) gx = 0;
+        if (gy < 0) gy = 0;
+        if (gx + gs > (int)ctx.width) gx = (int)ctx.width - gs;
+        if (gy + gs > (int)ctx.height) gy = (int)ctx.height - gs;
+        gfx_rect_rounded_fill(&ctx, gx, gy, gs, gs, 8, 0xCC2E2E2Eu);
+        if (gui_icons)
+            draw_icon_sized(&ctx, gui_icons, gx + (gs - gsz) / 2, gy + 8, icon_id, ic, gsz);
+
+        char label[16];
+        int li = 0;
+        while (drag_fn[li] && li < 15) { label[li] = drag_fn[li]; li++; }
+        label[li] = 0;
+        while (li > 0 && get_string_width(label) > gs - 8) { label[--li] = 0; }
+        int tw = get_string_width(label);
+        draw_string_vector(&ctx, gx + (gs - tw) / 2, gy + gs - 11, label, 0xFF9A9A9Au);
+    }
     present_frame();
     qk_gpu_flush();
     fps_counter++;
