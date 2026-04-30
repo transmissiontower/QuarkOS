@@ -88,8 +88,10 @@ void gfx_rect_rounded_fill(gfx_context_t *ctx, int x, int y, int w, int h, int r
                          {x + w - r - 1, y + h - r - 1}};
     for (int j = 0; j <= r; j++) {
         for (int i = 0; i <= r; i++) {
-            uint32_t dist = local_isqrt64(((uint64_t)i * i + (uint64_t)j * j) << 16);
-            int alpha = r_fp - (int)dist + 127;
+            int di = 2 * i - 1;
+            int dj = 2 * j - 1;
+            uint32_t dist = local_isqrt64(((uint64_t)di * di + (uint64_t)dj * dj) << 14);
+            int alpha = r_fp - (int)dist + 128;
             if (alpha <= 0)
                 continue;
             if (alpha > 255)
@@ -190,9 +192,10 @@ uint8_t *corner_mask_texture(int r) {
     int r_fp = r << 8;
     for (int j = 0; j < r; j++) {
         for (int i = 0; i < r; i++) {
-            uint32_t dist = local_isqrt64(
-                ((uint64_t)(r - 1 - i) * (r - 1 - i) + (uint64_t)(r - 1 - j) * (r - 1 - j)) << 16);
-            int alpha = r_fp - (int)dist + 127;
+            int di = 2 * (r - i) - 1;
+            int dj = 2 * (r - j) - 1;
+            uint32_t dist = local_isqrt64(((uint64_t)di * di + (uint64_t)dj * dj) << 14);
+            int alpha = r_fp - (int)dist + 128;
             if (alpha < 0)
                 alpha = 0;
             if (alpha > 255)
