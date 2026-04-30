@@ -165,7 +165,6 @@ void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text) {
     draw_corner_mask(x + w - r, y, r, color, corner_mask, 1);
     draw_corner_mask(x, y + h - r, r, color, corner_mask, 2);
     draw_corner_mask(x + w - r, y + h - r, r, color, corner_mask, 3);
-    draw_corner_mask(x + w - r, y + h - r, r, color, corner_mask, 3);
 }
 void draw_window_content(Window *win) {
     if (win->gfx_buffer) {
@@ -232,7 +231,6 @@ void draw_window_head(int x, int y, int w, int h, uint32_t color) {
 }
 void draw_window(Window *win, int isActive) {
     uint32_t color = isActive ? 0xFF7FB7BE : 0xFFD6DBD2;
-    shadow_draw(win->x, win->y, win->w, win->h);
     shadow_draw(win->x, win->y, win->w, win->h);
     draw_window_body(win->x, win->y, win->w, win->h, win->bg_color, win->text_buffer);
     draw_window_content(win);

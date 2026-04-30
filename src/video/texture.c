@@ -133,11 +133,10 @@ uint8_t *corner_mask_texture(int r) {
     int r_fp = r << 8;
     for (int y = 0; y < r; y++) {
         for (int x = 0; x < r; x++) {
-            int dist_x = (r - 1) - x;
-            int dist_y = (r - 1) - y;
-            uint32_t dist = isqrt64(((uint64_t)dist_x * dist_x + (uint64_t)dist_y * dist_y) << 16);
-            int delta = r_fp - (int)dist;
-            int alpha = 127 + delta;
+            int dist_x = 2 * (r - x) - 1;
+            int dist_y = 2 * (r - y) - 1;
+            uint32_t dist = isqrt64(((uint64_t)dist_x * dist_x + (uint64_t)dist_y * dist_y) << 14);
+            int alpha = 128 + r_fp - (int)dist;
             if (alpha < 0)
                 alpha = 0;
             if (alpha > 255)
