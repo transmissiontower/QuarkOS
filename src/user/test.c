@@ -9,16 +9,14 @@
 #define WIN_W 160
 #define WIN_H 100
 static int comp_pid = -1;
-static int ensure_comp_pid(void)
-{
+static int ensure_comp_pid(void) {
     if (comp_pid < 0)
         comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
     return (comp_pid < 0) ? -1 : 0;
 }
 uint32_t palette[256];
 int sine_table[512];
-void init_plasma_logic()
-{
+void init_plasma_logic() {
     for (int i = 0; i < 256; i++) {
         uint8_t r = (uint8_t)((sin(i * PI / 32.0) + 1.0) * 127.5);
         uint8_t g = (uint8_t)((sin(i * PI / 64.0 + PI / 4.0) + 1.0) * 127.5);
@@ -29,8 +27,7 @@ void init_plasma_logic()
         sine_table[i] = (int)(sin(i * PI / 64.0) * 32.0);
     }
 }
-int main()
-{
+int main() {
     if (ensure_comp_pid() != 0)
         return 1;
     message_t msg;

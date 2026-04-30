@@ -61,7 +61,7 @@ typedef struct {
     process_state_t state;
     char name[16];
 } process_info_t;
-extern process_t * volatile current_process;
+extern process_t *volatile current_process;
 void k_scheduler_init(void);
 void k_scheduler_update_sleeps(void);
 process_t *k_proc_spawn(uint8_t *code, uint32_t size);

@@ -5,8 +5,7 @@
 #include "user/lib/storage_client.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
-static int wait_for_storage_reply(int storage_pid, message_t *out)
-{
+static int wait_for_storage_reply(int storage_pid, message_t *out) {
     message_t resp;
     while (1) {
         qk_ipc_recv(&resp);
@@ -18,8 +17,7 @@ static int wait_for_storage_reply(int storage_pid, message_t *out)
     }
 }
 int storage_send_file(int storage_pid, uint32_t dir_cluster, const char *filename,
-                      const uint8_t *data, uint32_t size, int disk_idx)
-{
+                      const uint8_t *data, uint32_t size, int disk_idx) {
     if (storage_pid < 0 || !filename)
         return -1;
     if (size > 0 && !data)

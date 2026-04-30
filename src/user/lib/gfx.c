@@ -6,8 +6,7 @@
 #include "lib/math.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
-static uint32_t local_isqrt64(uint64_t n)
-{
+static uint32_t local_isqrt64(uint64_t n) {
     uint64_t res = 0;
     uint64_t bit = 1ULL << 62;
     while (bit > n)
@@ -22,12 +21,10 @@ static uint32_t local_isqrt64(uint64_t n)
     }
     return (uint32_t)res;
 }
-static inline int local_abs(int n)
-{
+static inline int local_abs(int n) {
     return (n < 0) ? -n : n;
 }
-Texture *create_texture(int w, int h)
-{
+Texture *create_texture(int w, int h) {
     Texture *t = (Texture *)malloc(sizeof(Texture));
     if (!t)
         return 0;
@@ -39,8 +36,7 @@ Texture *create_texture(int w, int h)
     }
     return t;
 }
-uint32_t gfx_blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha)
-{
+uint32_t gfx_blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha) {
     if (alpha == 255)
         return fg;
     if (alpha == 0)
@@ -53,21 +49,18 @@ uint32_t gfx_blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha)
     uint32_t b = (b1 * alpha + b2 * inv) >> 8;
     return 0xFF000000 | (r << 16) | (g << 8) | b;
 }
-void gfx_put_pixel_aa(gfx_context_t *ctx, int x, int y, uint32_t color, uint8_t alpha)
-{
+void gfx_put_pixel_aa(gfx_context_t *ctx, int x, int y, uint32_t color, uint8_t alpha) {
     if (x < 0 || x >= (int)ctx->width || y < 0 || y >= (int)ctx->height)
         return;
     uint32_t bg = ctx->buffer[y * ctx->width + x];
     ctx->buffer[y * ctx->width + x] = gfx_blend_colors(color, bg, alpha);
 }
-void gfx_put_pixel(gfx_context_t *ctx, int x, int y, uint32_t color)
-{
+void gfx_put_pixel(gfx_context_t *ctx, int x, int y, uint32_t color) {
     if (x < 0 || x >= (int)ctx->width || y < 0 || y >= (int)ctx->height)
         return;
     ctx->buffer[y * ctx->width + x] = color;
 }
-void gfx_rect_fill(gfx_context_t *ctx, int x, int y, int w, int h, uint32_t color)
-{
+void gfx_rect_fill(gfx_context_t *ctx, int x, int y, int w, int h, uint32_t color) {
     for (int i = 0; i < h; i++) {
         int py = y + i;
         if (py < 0 || py >= (int)ctx->height)
@@ -80,8 +73,7 @@ void gfx_rect_fill(gfx_context_t *ctx, int x, int y, int w, int h, uint32_t colo
         }
     }
 }
-void gfx_rect_rounded_fill(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint32_t color)
-{
+void gfx_rect_rounded_fill(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint32_t color) {
     if (r <= 0) {
         gfx_rect_fill(ctx, x, y, w, h, color);
         return;
@@ -110,8 +102,7 @@ void gfx_rect_rounded_fill(gfx_context_t *ctx, int x, int y, int w, int h, int r
     }
 }
 void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint32_t color,
-                       uint8_t *mask)
-{
+                       uint8_t *mask) {
     if (!mask) {
         gfx_rect_rounded_fill(ctx, x, y, w, h, r, color);
         return;
@@ -148,8 +139,7 @@ void draw_rounded_rect(gfx_context_t *ctx, int x, int y, int w, int h, int r, ui
         }
     }
 }
-void gfx_draw_shadow(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint8_t opacity)
-{
+void gfx_draw_shadow(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint8_t opacity) {
     int s_size = 6;
     for (int j = -s_size; j < h + s_size; j++) {
         for (int i = -s_size; i < w + s_size; i++) {
@@ -172,8 +162,7 @@ void gfx_draw_shadow(gfx_context_t *ctx, int x, int y, int w, int h, int r, uint
     }
 }
 void gfx_draw_sprite(gfx_context_t *ctx, int x, int y, int w, int h, const uint8_t *data,
-                     const uint32_t *palette)
-{
+                     const uint32_t *palette) {
     for (int i = 0; i < h; i++) {
         for (int j = 0; j < w; j++) {
             int px = x + j, py = y + i;
@@ -185,8 +174,7 @@ void gfx_draw_sprite(gfx_context_t *ctx, int x, int y, int w, int h, const uint8
         }
     }
 }
-void draw_texture(gfx_context_t *ctx, Texture *t, int x, int y)
-{
+void draw_texture(gfx_context_t *ctx, Texture *t, int x, int y) {
     if (!t || !t->data)
         return;
     for (int i = 0; i < t->h; i++) {
@@ -197,8 +185,7 @@ void draw_texture(gfx_context_t *ctx, Texture *t, int x, int y)
         }
     }
 }
-uint8_t *corner_mask_texture(int r)
-{
+uint8_t *corner_mask_texture(int r) {
     uint8_t *mask = malloc(r * r);
     int r_fp = r << 8;
     for (int j = 0; j < r; j++) {
@@ -215,8 +202,7 @@ uint8_t *corner_mask_texture(int r)
     }
     return mask;
 }
-Texture *rhombus_rounded(int w, int h, int r, uint32_t color)
-{
+Texture *rhombus_rounded(int w, int h, int r, uint32_t color) {
     int size = (int)sqrt(w * w + h * h) + 4;
     Texture *tex = create_texture(size, size);
     double cx = size / 2.0;

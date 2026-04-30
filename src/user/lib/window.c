@@ -23,12 +23,10 @@ typedef struct wm_gfx_block {
     uint32_t size;
 } wm_gfx_block_t;
 static wm_gfx_block_t *wm_gfx_free_list = 0;
-static uint32_t wm_align16(uint32_t value)
-{
+static uint32_t wm_align16(uint32_t value) {
     return (value + 15) & ~((uint32_t)15);
 }
-static uint32_t *wm_gfx_alloc(uint32_t size_bytes)
-{
+static uint32_t *wm_gfx_alloc(uint32_t size_bytes) {
     if (size_bytes == 0)
         size_bytes = 16;
     size_bytes = wm_align16(size_bytes);
@@ -50,8 +48,7 @@ static uint32_t *wm_gfx_alloc(uint32_t size_bytes)
     fresh->next = 0;
     return (uint32_t *)(fresh + 1);
 }
-static void wm_gfx_free(uint32_t *ptr)
-{
+static void wm_gfx_free(uint32_t *ptr) {
     if (!ptr)
         return;
     wm_gfx_block_t *hdr = ((wm_gfx_block_t *)ptr) - 1;
@@ -61,8 +58,7 @@ static void wm_gfx_free(uint32_t *ptr)
 static Texture *tex_close;
 static Texture *tex_max;
 static Texture *tex_min;
-void window_manager_init(void)
-{
+void window_manager_init(void) {
     corner_mask = corner_mask_texture(WIN_RADIUS);
     tex_close = rhombus_rounded(13, 13, 4, COLOR_WHITE);
     tex_max = rhombus_rounded(13, 13, 4, COLOR_WHITE);
@@ -75,8 +71,7 @@ void window_manager_init(void)
         window_stack[i] = 0;
     }
 }
-void to_front(Window *win)
-{
+void to_front(Window *win) {
     int idx = -1;
     for (int i = 0; i < window_count; i++) {
         if (window_stack[i] == win) {
@@ -90,8 +85,7 @@ void to_front(Window *win)
         window_stack[i] = window_stack[i + 1];
     window_stack[window_count - 1] = win;
 }
-Window *window_create(int owner_pid, int x, int y, int w, int h, const char *title)
-{
+Window *window_create(int owner_pid, int x, int y, int w, int h, const char *title) {
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (windows[i].id)
             continue;
@@ -133,8 +127,7 @@ Window *window_create(int owner_pid, int x, int y, int w, int h, const char *tit
     }
     return 0;
 }
-void close_window(Window *win)
-{
+void close_window(Window *win) {
     if (!win || !win->id)
         return;
     for (int i = 0; i < window_count; i++) {
@@ -157,8 +150,7 @@ void close_window(Window *win)
         resizing_window = 0;
 }
 static void draw_corner_mask(gfx_context_t *ctx, int x, int y, int r, uint32_t color, uint8_t *mask,
-                             int corner_type)
-{
+                             int corner_type) {
     for (int j = 0; j < r; j++) {
         for (int i = 0; i < r; i++) {
             uint8_t a = 0;
@@ -175,12 +167,10 @@ static void draw_corner_mask(gfx_context_t *ctx, int x, int y, int r, uint32_t c
         }
     }
 }
-static inline int window_visible_height(Window *win)
-{
+static inline int window_visible_height(Window *win) {
     return win->is_collapsed ? WINDOW_COLLAPSED_HEIGHT : win->h;
 }
-static void window_ensure_in_bounds(Window *win)
-{
+static void window_ensure_in_bounds(Window *win) {
     if (!win)
         return;
     int visible_h = window_visible_height(win);
@@ -197,8 +187,7 @@ static void window_ensure_in_bounds(Window *win)
     if (win->y < 0)
         win->y = 0;
 }
-static int window_resize_to(Window *win, int new_w, int new_h)
-{
+static int window_resize_to(Window *win, int new_w, int new_h) {
     if (!win)
         return 0;
     if (new_w < WINDOW_MIN_WIDTH)
@@ -232,21 +221,19 @@ static int window_resize_to(Window *win, int new_w, int new_h)
     if (win->owner_pid > 0) {
         message_t note;
         memset(&note, 0, sizeof(note));
-        note.type  = MSG_WIN_RESIZED;
+        note.type = MSG_WIN_RESIZED;
         note.data1 = (uint32_t)new_w;
         note.data2 = (uint32_t)(new_h - TITLE_BAR_HEIGHT);
         qk_sys_ipc_send(win->owner_pid, &note);
     }
     return 1;
 }
-static void window_toggle_collapse(Window *win)
-{
+static void window_toggle_collapse(Window *win) {
     if (!win)
         return;
     win->is_collapsed = !win->is_collapsed;
 }
-static void window_toggle_maximize(Window *win)
-{
+static void window_toggle_maximize(Window *win) {
     if (!win)
         return;
     if (win->is_maximized) {
@@ -282,15 +269,13 @@ static void window_toggle_maximize(Window *win)
     win->y = new_y;
     win->is_maximized = true;
 }
-static inline bool window_contains_point(Window *win, int px, int py)
-{
+static inline bool window_contains_point(Window *win, int px, int py) {
     if (!win)
         return false;
     int visible_h = window_visible_height(win);
     return (px >= win->x && px <= win->x + win->w && py >= win->y && py <= win->y + visible_h);
 }
-static void window_start_resize(Window *win, int mouse_x, int mouse_y)
-{
+static void window_start_resize(Window *win, int mouse_x, int mouse_y) {
     if (!win)
         return;
     win->is_collapsed = false;
@@ -302,8 +287,7 @@ static void window_start_resize(Window *win, int mouse_x, int mouse_y)
     win->resize_start_h = win->h;
     resizing_window = win;
 }
-static void window_handle_resize_motion(int mouse_x, int mouse_y)
-{
+static void window_handle_resize_motion(int mouse_x, int mouse_y) {
     if (!resizing_window)
         return;
     Window *win = resizing_window;
@@ -324,8 +308,7 @@ static void window_handle_resize_motion(int mouse_x, int mouse_y)
         resizing_window = 0;
     }
 }
-static void draw_window_body(gfx_context_t *ctx, Window *win)
-{
+static void draw_window_body(gfx_context_t *ctx, Window *win) {
     int x = win->x;
     int y = win->y;
     int w = win->w;
@@ -340,8 +323,7 @@ static void draw_window_body(gfx_context_t *ctx, Window *win)
     draw_corner_mask(ctx, x, y + h - r, r, color, corner_mask, 2);
     draw_corner_mask(ctx, x + w - r, y + h - r, r, color, corner_mask, 3);
 }
-static void draw_window_content(gfx_context_t *ctx, Window *win)
-{
+static void draw_window_content(gfx_context_t *ctx, Window *win) {
     if (win->is_collapsed)
         return;
     if (win->gfx_buffer) {
@@ -462,8 +444,7 @@ static void draw_window_content(gfx_context_t *ctx, Window *win)
         }
     }
 }
-void draw_window_head(gfx_context_t *ctx, Window *win, bool active)
-{
+void draw_window_head(gfx_context_t *ctx, Window *win, bool active) {
     (void)active;
     int x = win->x;
     int y = win->y;
@@ -483,8 +464,7 @@ void draw_window_head(gfx_context_t *ctx, Window *win, bool active)
     draw_icon_sized(ctx, gui_icons, bx - 20, icon_y, ICON_UP, COLOR_WHITE, 18);
     draw_icon_sized(ctx, gui_icons, bx - 40, icon_y, ICON_DOWN, COLOR_WHITE, 18);
 }
-void draw_windows(gfx_context_t *ctx)
-{
+void draw_windows(gfx_context_t *ctx) {
     wm_screen_w = ctx->width;
     wm_screen_h = ctx->height;
     for (int i = 0; i < window_count; i++) {
@@ -497,8 +477,7 @@ void draw_windows(gfx_context_t *ctx)
         draw_window_head(ctx, win, active);
     }
 }
-void window_event_handle(Event e)
-{
+void window_event_handle(Event e) {
     if (e.type == EVENT_MOUSE_MOVE) {
         if (resizing_window && resizing_window->is_resizing) {
             window_handle_resize_motion(e.x, e.y);
@@ -610,8 +589,7 @@ void window_event_handle(Event e)
         }
     }
 }
-void window_print(Window *win, const char *str)
-{
+void window_print(Window *win, const char *str) {
     while (*str) {
         if (*str == '\b') {
             if (win->text_cursor > 0) {
@@ -627,8 +605,7 @@ void window_print(Window *win, const char *str)
     }
     win->text_buffer[win->text_cursor] = 0;
 }
-void window_clear(Window *win)
-{
+void window_clear(Window *win) {
     win->text_cursor = 0;
     win->text_buffer[0] = 0;
     if (win->gfx_buffer) {
@@ -640,8 +617,7 @@ void window_clear(Window *win)
             memset32(win->gfx_buffer, win->bg_color, total);
     }
 }
-void window_set_color(Window *win, uint32_t color)
-{
+void window_set_color(Window *win, uint32_t color) {
     if (win)
         win->text_color = color;
 }

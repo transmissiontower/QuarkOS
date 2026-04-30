@@ -3,7 +3,7 @@
  * src/drivers/GUI/framebuffer.c - Double-buffered framebuffer driver with 2D drawing primitives
  */
 #include "drivers/GUI/framebuffer.h"
-#include "arch/x86/multiboot.h"
+#include "kernel/multiboot.h"
 #include "lib/math.h"
 #include "lib/stdint.h"
 #include "lib/stdlib.h"
@@ -25,8 +25,7 @@ uint8_t *shadow_corner = 0;
 uint8_t *shadow_edge = 0;
 int shadow_radius = 0;
 int shadow_size = 0;
-void drv_fb_init(struct multiboot_info *mb_info)
-{
+void drv_fb_init(struct multiboot_info *mb_info) {
     fb_width = mb_info->framebuffer_width;
     fb_height = mb_info->framebuffer_height;
     fb_pitch = mb_info->framebuffer_pitch;
@@ -51,37 +50,31 @@ void drv_fb_init(struct multiboot_info *mb_info)
         memset(back_buffer, 0, fb_size_bytes);
     }
 }
-void wait_vblank()
-{
+void wait_vblank() {
 }
-uint32_t fast_dist_fp(int x, int y)
-{
+uint32_t fast_dist_fp(int x, int y) {
     uint64_t dist_sq = (uint64_t)x * x + (uint64_t)y * y;
     return isqrt64(dist_sq << 16);
 }
-void put_pixel(int x, int y, uint32_t color)
-{
+void put_pixel(int x, int y, uint32_t color) {
     if (x >= 0 && x < (int)fb_width && y >= 0 && y < (int)fb_height) {
         *(uint32_t *)(back_buffer + (y * fb_pitch) + (x * 4)) = color;
     }
 }
-void put_pixel_AA(int x, int y, uint32_t color, uint8_t alpha)
-{
+void put_pixel_AA(int x, int y, uint32_t color, uint8_t alpha) {
     if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height)
         return;
     uint32_t bg = get_pixel(x, y);
     uint32_t final_color = blend_colors(color, bg, alpha);
     put_pixel(x, y, final_color);
 }
-uint32_t get_pixel(int x, int y)
-{
+uint32_t get_pixel(int x, int y) {
     if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height)
         return 0;
     uint32_t offset = (y * fb_pitch) + (x * 4);
     return *(uint32_t *)(back_buffer + offset);
 }
-void plot_pixel(int x, int y, uint8_t alpha)
-{
+void plot_pixel(int x, int y, uint8_t alpha) {
     if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height)
         return;
     uint32_t offset = (y * fb_pitch) + (x * 4);
@@ -92,8 +85,7 @@ void plot_pixel(int x, int y, uint8_t alpha)
     uint32_t b = (bg & 0xFF) * inv_a >> 8;
     *(uint32_t *)(back_buffer + offset) = 0xFF000000 | (r << 16) | (g << 8) | b;
 }
-void rect_fill(int x, int y, int w, int h, uint32_t color)
-{
+void rect_fill(int x, int y, int w, int h, uint32_t color) {
     if (x < 0) {
         w += x;
         x = 0;
@@ -111,8 +103,7 @@ void rect_fill(int x, int y, int w, int h, uint32_t color)
         memset32(back_buffer + offset, color, w);
     }
 }
-void rect_draw(int cx, int cy, int w, int h, int32_t d, uint32_t color)
-{
+void rect_draw(int cx, int cy, int w, int h, int32_t d, uint32_t color) {
     if (d == 0) {
         rect_fill(cx - w / 2, cy - h / 2, w, 1, color);
         rect_fill(cx - w / 2, cy + h / 2, w, 1, color);
@@ -136,8 +127,7 @@ void rect_draw(int cx, int cy, int w, int h, int32_t d, uint32_t color)
         }
     }
 }
-void circle_draw_AA(int xc, int yc, int r, uint32_t color)
-{
+void circle_draw_AA(int xc, int yc, int r, uint32_t color) {
     int r_fp = r << 8;
     int r_sq = r * r;
     for (int y = -r - 1; y <= r + 1; y++) {
@@ -163,8 +153,7 @@ void circle_draw_AA(int xc, int yc, int r, uint32_t color)
         }
     }
 }
-void circle_fill(int xc, int yc, int r, uint32_t color)
-{
+void circle_fill(int xc, int yc, int r, uint32_t color) {
     int x = 0;
     int y = r;
     int d = 3 - 2 * r;
@@ -182,8 +171,7 @@ void circle_fill(int xc, int yc, int r, uint32_t color)
         }
     }
 }
-void circle_fill_AA(int xc, int yc, int r, uint32_t color)
-{
+void circle_fill_AA(int xc, int yc, int r, uint32_t color) {
     int r_fp = r << 8;
     int r_sq = r * r;
     for (int y = -r - 1; y <= r + 1; y++) {
@@ -216,8 +204,7 @@ void circle_fill_AA(int xc, int yc, int r, uint32_t color)
         }
     }
 }
-void shadow_draw(int x, int y, int w, int h)
-{
+void shadow_draw(int x, int y, int w, int h) {
     if (!shadow_corner)
         return;
     int r = shadow_radius;
@@ -257,14 +244,12 @@ void shadow_draw(int x, int y, int w, int h)
         }
     }
 }
-void clear_screen(uint32_t color)
-{
+void clear_screen(uint32_t color) {
     if (!back_buffer)
         return;
     memset32(back_buffer, color, fb_width * fb_height);
 }
-void swap_rect(int x, int y, int w, int h)
-{
+void swap_rect(int x, int y, int w, int h) {
     if (!fb_ptr || !back_buffer)
         return;
     int x1 = x;
@@ -290,8 +275,7 @@ void swap_rect(int x, int y, int w, int h)
         memcpy32((void *)(uint8_t *)fb_ptr + offset, (void *)(back_buffer + offset), new_w);
     }
 }
-void drv_fb_swap_buffers()
-{
+void drv_fb_swap_buffers() {
     if (!fb_ptr || !back_buffer)
         return;
     for (uint32_t y = 0; y < fb_height; y++) {
@@ -301,8 +285,7 @@ void drv_fb_swap_buffers()
     }
     virtio_gpu_flush();
 }
-void char_draw(int x, int y, char c, uint32_t color, uint32_t bgcolor)
-{
+void char_draw(int x, int y, char c, uint32_t color, uint32_t bgcolor) {
     if (c == 0)
         return;
     const uint8_t *glyph = &font[(int)(unsigned char)c * 16];
@@ -316,15 +299,13 @@ void char_draw(int x, int y, char c, uint32_t color, uint32_t bgcolor)
         }
     }
 }
-void string_draw(int x, int y, const char *str, uint32_t color, uint32_t bgcolor)
-{
+void string_draw(int x, int y, const char *str, uint32_t color, uint32_t bgcolor) {
     while (*str) {
         char_draw(x, y, *str++, color, bgcolor);
         x += 8;
     }
 }
-void draw_sprite(int x, int y, int w, int h, const uint8_t *data, const uint32_t *palette)
-{
+void draw_sprite(int x, int y, int w, int h, const uint8_t *data, const uint32_t *palette) {
     for (int i = 0; i < h; i++) {
         for (int j = 0; j < w; j++) {
             if (x + j < 0 || x + j >= (int)fb_width || y + i < 0 || y + i >= (int)fb_height)
@@ -337,8 +318,7 @@ void draw_sprite(int x, int y, int w, int h, const uint8_t *data, const uint32_t
         }
     }
 }
-void draw_corner_mask(int x, int y, int r, uint32_t color, const uint8_t *mask, int quadrant)
-{
+void draw_corner_mask(int x, int y, int r, uint32_t color, const uint8_t *mask, int quadrant) {
     if (!back_buffer || !mask)
         return;
     for (int dy = 0; dy < r; dy++) {

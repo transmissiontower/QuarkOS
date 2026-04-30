@@ -15,9 +15,9 @@
 #define MOUSE_SPEED_MULTIPLIER 2
 #define BUTTON_QUEUE_CAP 32
 #define KEY_MOD_SHIFT 0x01
-#define KEY_MOD_CTRL  0x02
-#define KEY_MOD_ALT   0x04
-#define KEY_MOD_CAPS  0x08
+#define KEY_MOD_CTRL 0x02
+#define KEY_MOD_ALT 0x04
+#define KEY_MOD_CAPS 0x08
 typedef struct {
     EventType type;
     uint8_t button;
@@ -37,8 +37,7 @@ static int button_head = 0;
 static int button_tail = 0;
 static bool move_pending = false;
 static mouse_event_t move_event;
-static void clamp_mouse_position(void)
-{
+static void clamp_mouse_position(void) {
     if (screen_w <= 0) {
         screen_w = 1;
     }
@@ -54,8 +53,7 @@ static void clamp_mouse_position(void)
     if (mouse_y >= screen_h)
         mouse_y = screen_h - 1;
 }
-static void init_mouse_state(void)
-{
+static void init_mouse_state(void) {
     fb_info_t fb;
     if (qk_map_framebuffer(&fb) == 0) {
         if ((int)fb.width > 0)
@@ -67,16 +65,13 @@ static void init_mouse_state(void)
     mouse_y = screen_h / 2;
     clamp_mouse_position();
 }
-static inline bool button_queue_empty(void)
-{
+static inline bool button_queue_empty(void) {
     return button_head == button_tail;
 }
-static int button_queue_next(int idx)
-{
+static int button_queue_next(int idx) {
     return (idx + 1) % BUTTON_QUEUE_CAP;
 }
-static void queue_button_event(EventType type, uint8_t button)
-{
+static void queue_button_event(EventType type, uint8_t button) {
     int next_tail = button_queue_next(button_tail);
     if (next_tail == button_head) {
         button_head = button_queue_next(button_head);
@@ -85,16 +80,14 @@ static void queue_button_event(EventType type, uint8_t button)
         (mouse_event_t){.type = type, .button = button, .x = mouse_x, .y = mouse_y};
     button_tail = next_tail;
 }
-static void queue_mouse_move(uint8_t buttons)
-{
+static void queue_mouse_move(uint8_t buttons) {
     move_event.type = EVENT_MOUSE_MOVE;
     move_event.button = buttons;
     move_event.x = mouse_x;
     move_event.y = mouse_y;
     move_pending = true;
 }
-static void deliver_mouse_event(int comp_pid, mouse_event_t *evt)
-{
+static void deliver_mouse_event(int comp_pid, mouse_event_t *evt) {
     message_t msg;
     memset(&msg, 0, sizeof(message_t));
     msg.type = MSG_MOUSE_EVENT;
@@ -109,8 +102,7 @@ static void deliver_mouse_event(int comp_pid, mouse_event_t *evt)
     payload->scroll = evt->scroll;
     (void)qk_sys_ipc_send(comp_pid, &msg);
 }
-static void flush_mouse_events(int comp_pid)
-{
+static void flush_mouse_events(int comp_pid) {
     while (!button_queue_empty()) {
         mouse_event_t evt = button_queue[button_head];
         button_head = button_queue_next(button_head);
@@ -122,12 +114,11 @@ static void flush_mouse_events(int comp_pid)
     }
 }
 static bool shift_held = false;
-static bool ctrl_held  = false;
-static bool alt_held   = false;
-static bool caps_lock  = false;
+static bool ctrl_held = false;
+static bool alt_held = false;
+static bool caps_lock = false;
 static bool e0_pending = false;
-static void handle_keyboard(int comp_pid, uint8_t scancode)
-{
+static void handle_keyboard(int comp_pid, uint8_t scancode) {
     if (scancode == 0xE0) {
         e0_pending = true;
         return;
@@ -147,35 +138,39 @@ static void handle_keyboard(int comp_pid, uint8_t scancode)
             caps_lock = !caps_lock;
         }
     } else {
-        if (code == 0x1D) ctrl_held = !release;
-        if (code == 0x38) alt_held  = !release;
+        if (code == 0x1D)
+            ctrl_held = !release;
+        if (code == 0x38)
+            alt_held = !release;
     }
     uint32_t mods = 0;
-    if (shift_held) mods |= KEY_MOD_SHIFT;
-    if (ctrl_held)  mods |= KEY_MOD_CTRL;
-    if (alt_held)   mods |= KEY_MOD_ALT;
-    if (caps_lock)  mods |= KEY_MOD_CAPS;
+    if (shift_held)
+        mods |= KEY_MOD_SHIFT;
+    if (ctrl_held)
+        mods |= KEY_MOD_CTRL;
+    if (alt_held)
+        mods |= KEY_MOD_ALT;
+    if (caps_lock)
+        mods |= KEY_MOD_CAPS;
     message_t msg;
     memset(&msg, 0, sizeof(message_t));
-    msg.type  = MSG_KEY_EVENT;
+    msg.type = MSG_KEY_EVENT;
     msg.data1 = (uint32_t)code | (release ? 0x80U : 0) | (extended ? 0x100U : 0);
     msg.data2 = mods;
     Event *ev = (Event *)msg.payload;
     ev->type = release ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
-    ev->key  = (uint32_t)code | (extended ? 0x100U : 0);
+    ev->key = (uint32_t)code | (extended ? 0x100U : 0);
     (void)qk_sys_ipc_send(comp_pid, &msg);
 }
-static void queue_scroll_event(int scroll)
-{
+static void queue_scroll_event(int scroll) {
     int next_tail = button_queue_next(button_tail);
     if (next_tail == button_head)
         button_head = button_queue_next(button_head);
-    button_queue[button_tail] =
-        (mouse_event_t){.type = EVENT_MOUSE_SCROLL, .button = 0, .x = mouse_x, .y = mouse_y, .scroll = scroll};
+    button_queue[button_tail] = (mouse_event_t){
+        .type = EVENT_MOUSE_SCROLL, .button = 0, .x = mouse_x, .y = mouse_y, .scroll = scroll};
     button_tail = next_tail;
 }
-static void handle_mouse_byte(uint8_t data)
-{
+static void handle_mouse_byte(uint8_t data) {
     switch (mouse_cycle) {
     case 0:
         if (!(data & 0x08))
@@ -231,8 +226,7 @@ static void handle_mouse_byte(uint8_t data)
     }
     }
 }
-static int resolve_compositor_pid(void)
-{
+static int resolve_compositor_pid(void) {
     int pid;
     do {
         pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
@@ -241,8 +235,7 @@ static int resolve_compositor_pid(void)
     } while (pid <= 0);
     return pid;
 }
-void main()
-{
+void main() {
     init_mouse_state();
     while (qk_hw_inb(PS2_STATUS) & ST_OUTPUT_FULL)
         qk_hw_inb(PS2_DATA);

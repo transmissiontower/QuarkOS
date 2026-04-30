@@ -14,26 +14,21 @@ volatile int dbg_pop_count = 0;
 volatile int dbg_handle_key_count = 0;
 volatile int dbg_ignore_kbd_push = 0;
 volatile int dbg_kbd_ignored_count = 0;
-static inline uint32_t save_flags_and_cli(void)
-{
+static inline uint32_t save_flags_and_cli(void) {
     uint32_t flags;
-    asm volatile("mrs %0, daif" : "=r"(flags) :: "memory");
+    asm volatile("mrs %0, daif" : "=r"(flags)::"memory");
     asm volatile("msr daifset, #2" ::: "memory");
     return flags;
 }
-static inline void restore_flags(uint32_t flags)
-{
-    asm volatile("msr daif, %0" :: "r"(flags) : "memory");
+static inline void restore_flags(uint32_t flags) {
+    asm volatile("msr daif, %0" ::"r"(flags) : "memory");
 }
-void events_init()
-{
+void events_init() {
 }
-void event_push(Event e)
-{
+void event_push(Event e) {
     (void)e;
 }
-int event_pop(Event *e)
-{
+int event_pop(Event *e) {
     (void)e;
     return 0;
 }

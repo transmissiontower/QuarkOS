@@ -14,8 +14,7 @@ const uint32_t freq = 100;
 static Timer software_timers[MAX_TIMERS];
 static int next_timer_id = 1;
 extern void k_tick_handler();
-void on_irq_0(struct InterruptRegisters *regs)
-{
+void on_irq_0(struct InterruptRegisters *regs) {
     (void)regs;
     extern void arm_timer_clear_irq(void);
     arm_timer_clear_irq();
@@ -41,27 +40,23 @@ void on_irq_0(struct InterruptRegisters *regs)
         }
     }
 }
-void drv_pit_init()
-{
+void drv_pit_init() {
     ticks = 0;
     for (int i = 0; i < MAX_TIMERS; i++)
         software_timers[i].id = 0;
     irq_install_handler(0, &on_irq_0);
 }
-uint64_t get_uptime_ms()
-{
+uint64_t get_uptime_ms() {
     return ticks * (1000 / freq);
 }
-void sleep(uint32_t ms)
-{
+void sleep(uint32_t ms) {
     uint64_t end_time = ticks + (ms / (1000 / freq));
     while (ticks < end_time) {
         asm volatile("msr daifclr, #2" ::: "memory");
         asm volatile("wfi");
     }
 }
-int add_timer(uint32_t ms, TimerCallback callback, int is_interval)
-{
+int add_timer(uint32_t ms, TimerCallback callback, int is_interval) {
     for (int i = 0; i < MAX_TIMERS; i++) {
         if (software_timers[i].id == 0) {
             software_timers[i].id = next_timer_id++;
@@ -76,16 +71,13 @@ int add_timer(uint32_t ms, TimerCallback callback, int is_interval)
     }
     return -1;
 }
-int set_timeout(uint32_t ms, TimerCallback callback)
-{
+int set_timeout(uint32_t ms, TimerCallback callback) {
     return add_timer(ms, callback, 0);
 }
-int set_interval(uint32_t ms, TimerCallback callback)
-{
+int set_interval(uint32_t ms, TimerCallback callback) {
     return add_timer(ms, callback, 1);
 }
-void cancel_timer(int id)
-{
+void cancel_timer(int id) {
     for (int i = 0; i < MAX_TIMERS; i++) {
         if (software_timers[i].id == id) {
             software_timers[i].id = 0;

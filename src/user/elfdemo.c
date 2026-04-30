@@ -33,8 +33,7 @@ typedef struct {
     uint16_t e_shstrndx;
 } Elf32_Ehdr;
 static int comp_pid = -1;
-static void rect(int x, int y, int w, int h, uint32_t col)
-{
+static void rect(int x, int y, int w, int h, uint32_t col) {
     message_t m;
     m.type = MSG_WIN_DRAW_RECT;
     m.data1 = y;
@@ -44,29 +43,24 @@ static void rect(int x, int y, int w, int h, uint32_t col)
     *(uint32_t *)&m.payload[4] = col;
     qk_sys_ipc_send(comp_pid, &m);
 }
-static void row(int y, uint32_t accent, const char *key, const char *val, uint32_t vcol)
-{
+static void row(int y, uint32_t accent, const char *key, const char *val, uint32_t vcol) {
     rect(0, y, WIN_W, 22, C_ROW_A);
     rect(0, y, 4, 22, accent);
     qk_print_at(14, y + 5, C_GREY, key);
     qk_print_at(160, y + 5, vcol, val);
 }
-static void gap(int y)
-{
+static void gap(int y) {
     rect(0, y, WIN_W, 10, C_BG);
 }
-static void pad(int y)
-{
+static void pad(int y) {
     rect(0, y, WIN_W, 6, C_ROW_A);
 }
-static void num_str(char *buf, uint32_t v)
-{
+static void num_str(char *buf, uint32_t v) {
     char tmp[12];
     int_to_str((int)v, tmp, 10);
     strcat(buf, tmp);
 }
-static void hex_str(char *buf, uint32_t v)
-{
+static void hex_str(char *buf, uint32_t v) {
     static const char h[] = "0123456789ABCDEF";
     strcat(buf, "0x");
     int s = strlen(buf);
@@ -76,8 +70,7 @@ static void hex_str(char *buf, uint32_t v)
         v >>= 4;
     }
 }
-static void draw_ui(void)
-{
+static void draw_ui(void) {
     rect(0, 0, WIN_W, WIN_H, C_BG);
     const Elf32_Ehdr *ehdr = (const Elf32_Ehdr *)0x400000;
     int y = 8;
@@ -161,8 +154,7 @@ static void draw_ui(void)
     y += 22;
     pad(y);
 }
-int main(void)
-{
+int main(void) {
     qk_set_proc_name(-1, "elfdemo");
     comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
     if (comp_pid < 0)
@@ -179,8 +171,7 @@ int main(void)
             break;
     }
     while (1) {
-        while (qk_ipc_recv_nb(&msg) == 0) {
-        }
+        while (qk_ipc_recv_nb(&msg) == 0) {}
         message_t clr;
         clr.type = MSG_WIN_CLEAR;
         qk_sys_ipc_send(comp_pid, &clr);

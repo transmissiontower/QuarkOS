@@ -42,8 +42,7 @@ typedef struct {
     uint32_t p_flags;
     uint32_t p_align;
 } __attribute__((packed)) elf32_phdr_t;
-int elf_validate(const uint8_t *data, uint32_t size)
-{
+int elf_validate(const uint8_t *data, uint32_t size) {
     if (!data || size < sizeof(elf32_ehdr_t))
         return 0;
     const elf32_ehdr_t *hdr = (const elf32_ehdr_t *)data;
@@ -61,8 +60,7 @@ int elf_validate(const uint8_t *data, uint32_t size)
         return 0;
     return 1;
 }
-int elf_load_image(const uint8_t *data, uint32_t size, exec_image_info_t *info)
-{
+int elf_load_image(const uint8_t *data, uint32_t size, exec_image_info_t *info) {
     if (!info || !elf_validate(data, size))
         return -1;
     const elf32_ehdr_t *hdr = (const elf32_ehdr_t *)data;

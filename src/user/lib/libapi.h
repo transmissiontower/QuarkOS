@@ -24,14 +24,19 @@ typedef struct {
     int state;
     char name[16];
 } process_info_t;
-typedef enum { QK_SERVER_STORAGE = 0, QK_SERVER_COMPOSITOR = 1, QK_SERVER_INPUT = 2, QK_SERVER_TTYSH = 3 } qk_server_type_t;
+typedef enum {
+    QK_SERVER_STORAGE = 0,
+    QK_SERVER_COMPOSITOR = 1,
+    QK_SERVER_INPUT = 2,
+    QK_SERVER_TTYSH = 3
+} qk_server_type_t;
 
 typedef enum {
     DISK_TYPE_UNKNOWN = 0,
-    DISK_TYPE_HDD     = 1,
-    DISK_TYPE_CDROM   = 2,
-    DISK_TYPE_FLOPPY  = 3,
-    DISK_TYPE_USB     = 4,
+    DISK_TYPE_HDD = 1,
+    DISK_TYPE_CDROM = 2,
+    DISK_TYPE_FLOPPY = 3,
+    DISK_TYPE_USB = 4,
 } disk_type_t;
 typedef struct {
     uint32_t type;
@@ -43,7 +48,7 @@ typedef struct {
 typedef struct {
     uint32_t sector;
     uint32_t count;
-    void    *buf;
+    void *buf;
 } blk_io_req_t;
 void qk_sys_exit(int code);
 void qk_sleep(uint32_t ms);
@@ -77,15 +82,14 @@ void qk_trigger_panic(const char *msg);
 void qk_pcspk_play(uint32_t freq);
 void qk_pcspk_stop(void);
 void qk_pcspk_pwm_play(const uint8_t *buf, uint32_t len, uint32_t rate);
-int  qk_pcspk_pwm_ready(void);
+int qk_pcspk_pwm_ready(void);
 uint8_t qk_hw_inb(uint16_t port);
 void qk_hw_outb(uint16_t port, uint8_t val);
 uint32_t qk_hw_inl(uint16_t port);
 void qk_hw_outl(uint16_t port, uint32_t val);
-int  qk_sb16_init(void);
-int  qk_sb16_play(const void *buf, uint32_t len, uint32_t rate,
-                  uint8_t channels, uint8_t bits);
-int  qk_sb16_ready(void);
+int qk_sb16_init(void);
+int qk_sb16_play(const void *buf, uint32_t len, uint32_t rate, uint8_t channels, uint8_t bits);
+int qk_sb16_ready(void);
 int qk_ata_read_sectors(uint32_t lba, uint32_t count, void *buf);
 int qk_blk_read(uint32_t sector, uint32_t count, void *buf);
 int qk_blk_write(uint32_t sector, uint32_t count, const void *buf);
@@ -95,11 +99,11 @@ int qk_disk_info(int disk_idx, disk_info_t *out);
 int qk_disk_read(int disk_idx, uint32_t sector, uint32_t count, void *buf);
 int qk_disk_write(int disk_idx, uint32_t sector, uint32_t count, const void *buf);
 void qk_disk_select(int disk_idx);
-int      qk_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out);
+int qk_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out);
 uint32_t qk_map_phys_list(uint32_t *phys_pages, uint32_t count);
-void    *qk_map_foreign_mem(int src_pid, uint32_t src_virt, uint32_t size);
-void    *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out);
-void     qk_win_dirty(int comp_pid);
+void *qk_map_foreign_mem(int src_pid, uint32_t src_virt, uint32_t size);
+void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out);
+void qk_win_dirty(int comp_pid);
 uint16_t qk_inw(uint16_t port);
 void qk_outw(uint16_t port, uint16_t val);
 int qk_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu);
@@ -108,17 +112,17 @@ void qk_compositor_suspend(int comp_pid);
 void qk_compositor_resume(int comp_pid);
 void qk_input_redirect(int target_pid);
 void qk_input_restore(void);
-int  qk_getpid(void);
-int      qk_waitpid(int pid);
-int      qk_pipe_create(const char *name);
-int      qk_pipe_open(const char *name);
-int      qk_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len);
-int      qk_pipe_read(int pipe_id, uint8_t *buf, uint32_t len);
-int      qk_pipe_close(int pipe_id);
-int      qk_set_alarm(uint32_t ms);
-int      qk_setenv(const char *kv);
-int      qk_getenv(const char *key, char *out, uint32_t maxlen);
-int      qk_signal_send(int pid, int signum);
+int qk_getpid(void);
+int qk_waitpid(int pid);
+int qk_pipe_create(const char *name);
+int qk_pipe_open(const char *name);
+int qk_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len);
+int qk_pipe_read(int pipe_id, uint8_t *buf, uint32_t len);
+int qk_pipe_close(int pipe_id);
+int qk_set_alarm(uint32_t ms);
+int qk_setenv(const char *kv);
+int qk_getenv(const char *key, char *out, uint32_t maxlen);
+int qk_signal_send(int pid, int signum);
 void *malloc(uint32_t size);
 void *realloc(void *ptr, uint32_t new_size);
 void free(void *ptr);

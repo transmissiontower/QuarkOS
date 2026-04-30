@@ -30,8 +30,8 @@ typedef struct {
 
 } __attribute__((packed)) fat_boot_sector_t;
 
-#define FAT32_SECTORS_PER_FAT(buf)  (*(uint32_t *)((uint8_t *)(buf) + 0x24))
-#define FAT32_ROOT_CLUSTER(buf)     (*(uint32_t *)((uint8_t *)(buf) + 0x2C))
+#define FAT32_SECTORS_PER_FAT(buf) (*(uint32_t *)((uint8_t *)(buf) + 0x24))
+#define FAT32_ROOT_CLUSTER(buf) (*(uint32_t *)((uint8_t *)(buf) + 0x2C))
 typedef struct {
     char filename[8];
     char ext[3];
@@ -49,14 +49,14 @@ typedef struct {
 } __attribute__((packed)) fat_dir_entry_t;
 
 typedef struct {
-    uint8_t  sequence;
-    uint8_t  name1[10];
-    uint8_t  attributes;
-    uint8_t  type;
-    uint8_t  checksum;
-    uint8_t  name2[12];
+    uint8_t sequence;
+    uint8_t name1[10];
+    uint8_t attributes;
+    uint8_t type;
+    uint8_t checksum;
+    uint8_t name2[12];
     uint16_t first_cluster;
-    uint8_t  name3[4];
+    uint8_t name3[4];
 } __attribute__((packed)) fat_lfn_entry_t;
 
 void fat_init();

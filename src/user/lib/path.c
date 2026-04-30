@@ -11,14 +11,12 @@ typedef struct {
     uint32_t cluster;
     char name[64];
 } dir_entry_info_t;
-static int upcase(char c)
-{
+static int upcase(char c) {
     if (c >= 'a' && c <= 'z')
         return c - 32;
     return c;
 }
-static int name_equals(const char *a, const char *b)
-{
+static int name_equals(const char *a, const char *b) {
     if (!a || !b)
         return 0;
     while (*a && *b) {
@@ -30,8 +28,7 @@ static int name_equals(const char *a, const char *b)
     return (*a == 0 && *b == 0);
 }
 static int dir_lookup(int storage_pid, uint32_t dir_cluster, const char *target,
-                      dir_entry_info_t *out_entry)
-{
+                      dir_entry_info_t *out_entry) {
     if (!target || !*target)
         return -1;
     message_t req;
@@ -80,8 +77,7 @@ static int dir_lookup(int storage_pid, uint32_t dir_cluster, const char *target,
     return found ? 0 : -1;
 }
 int qk_path_resolve_ext(uint32_t start_cluster, const char *path, uint32_t *out_dir_cluster,
-                        char *out_name)
-{
+                        char *out_name) {
     int storage_pid = qk_get_server_pid(QK_SERVER_STORAGE);
     if (storage_pid < 0)
         return -1;
@@ -129,7 +125,6 @@ int qk_path_resolve_ext(uint32_t start_cluster, const char *path, uint32_t *out_
     }
     return -1;
 }
-int qk_path_resolve(const char *path, uint32_t *out_dir_cluster, char *out_name)
-{
+int qk_path_resolve(const char *path, uint32_t *out_dir_cluster, char *out_name) {
     return qk_path_resolve_ext(0, path, out_dir_cluster, out_name);
 }

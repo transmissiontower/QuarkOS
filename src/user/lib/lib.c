@@ -4,26 +4,23 @@
  */
 #include "lib/stdint.h"
 #include "user/lib/libapi.h"
-static void    *_last_alloc_ptr  = 0;
+static void *_last_alloc_ptr = 0;
 static uint32_t _last_alloc_size = 0;
-void free(void *ptr)
-{
+void free(void *ptr) {
     (void)ptr;
 }
-void *malloc(uint32_t size)
-{
+void *malloc(uint32_t size) {
     if (size == 0)
         return 0;
     uint32_t aligned = (size + 3) & ~3;
     int res = qk_sbrk(aligned);
     if (res == -1)
         return 0;
-    _last_alloc_ptr  = (void *)res;
+    _last_alloc_ptr = (void *)res;
     _last_alloc_size = aligned;
     return (void *)res;
 }
-void *realloc(void *ptr, uint32_t new_size)
-{
+void *realloc(void *ptr, uint32_t new_size) {
     if (!ptr)
         return malloc(new_size);
     if (new_size == 0) {
@@ -48,20 +45,19 @@ void *realloc(void *ptr, uint32_t new_size)
     memcpy(np, ptr, _last_alloc_size < aligned ? _last_alloc_size : aligned);
     return np;
 }
-void memcpy32(void *dest, const void *src, uint32_t count_bytes)
-{
+void memcpy32(void *dest, const void *src, uint32_t count_bytes) {
     uint32_t *d = (uint32_t *)dest;
     const uint32_t *s = (const uint32_t *)src;
     uint32_t n = count_bytes / 4;
-    while (n--) *d++ = *s++;
+    while (n--)
+        *d++ = *s++;
 }
-void memset32(void *dest, uint32_t val, uint32_t count_dwords)
-{
+void memset32(void *dest, uint32_t val, uint32_t count_dwords) {
     uint32_t *d = (uint32_t *)dest;
-    while (count_dwords--) *d++ = val;
+    while (count_dwords--)
+        *d++ = val;
 }
-int memcmp(const void *s1, const void *s2, uint32_t n)
-{
+int memcmp(const void *s1, const void *s2, uint32_t n) {
     const uint8_t *p1 = s1, *p2 = s2;
     while (n--) {
         if (*p1 != *p2)
@@ -71,30 +67,30 @@ int memcmp(const void *s1, const void *s2, uint32_t n)
     }
     return 0;
 }
-void *memcpy(void *dest, const void *src, uint32_t n)
-{
+void *memcpy(void *dest, const void *src, uint32_t n) {
     uint8_t *d = dest;
     const uint8_t *s = src;
     while (n--)
         *d++ = *s++;
     return dest;
 }
-void *memset(void *s, int c, uint32_t n)
-{
+void *memset(void *s, int c, uint32_t n) {
     uint8_t *p = s;
     while (n--)
         *p++ = (uint8_t)c;
     return s;
 }
-void *memmove(void *dest, const void *src, uint32_t n)
-{
-    uint8_t       *d = (uint8_t *)dest;
+void *memmove(void *dest, const void *src, uint32_t n) {
+    uint8_t *d = (uint8_t *)dest;
     const uint8_t *s = (const uint8_t *)src;
     if (d < s) {
-        while (n--) *d++ = *s++;
+        while (n--)
+            *d++ = *s++;
     } else if (d > s) {
-        d += n; s += n;
-        while (n--) *--d = *--s;
+        d += n;
+        s += n;
+        while (n--)
+            *--d = *--s;
     }
     return dest;
 }

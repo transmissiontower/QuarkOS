@@ -4,8 +4,7 @@
  */
 #include "gfx/bmp.h"
 #include "drivers/GUI/framebuffer.h"
-void draw_bmp(void *bmp_data, int x, int y)
-{
+void draw_bmp(void *bmp_data, int x, int y) {
     BITMAPFILEHEADER *file_header = (BITMAPFILEHEADER *)bmp_data;
     BITMAPINFOHEADER *info_header = (BITMAPINFOHEADER *)(bmp_data + sizeof(BITMAPFILEHEADER));
     uint8_t *pixels = (uint8_t *)bmp_data + file_header->bf_off_bits;

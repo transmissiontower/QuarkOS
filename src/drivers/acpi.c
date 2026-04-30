@@ -22,16 +22,14 @@ static uint8_t reset_value;
 static bool acpi_initialized = false;
 static bool power_capable = false;
 static bool reset_capable = false;
-static uint8_t acpi_calculate_checksum(uint8_t *ptr, uint32_t length)
-{
+static uint8_t acpi_calculate_checksum(uint8_t *ptr, uint32_t length) {
     uint8_t sum = 0;
     for (uint32_t i = 0; i < length; i++) {
         sum += ptr[i];
     }
     return sum;
 }
-static struct rsdp_descriptor *acpi_scan_rsdp(uint32_t start, uint32_t end)
-{
+static struct rsdp_descriptor *acpi_scan_rsdp(uint32_t start, uint32_t end) {
     for (uint8_t *ptr = (uint8_t *)start; ptr < (uint8_t *)end; ptr += 16) {
         if (memcmp(ptr, RSDP_SIGNATURE, 8) == 0) {
             struct rsdp_descriptor *rsdp = (struct rsdp_descriptor *)ptr;
@@ -42,26 +40,22 @@ static struct rsdp_descriptor *acpi_scan_rsdp(uint32_t start, uint32_t end)
     }
     return 0;
 }
-static struct rsdp_descriptor *acpi_find_rsdp(void)
-{
+static struct rsdp_descriptor *acpi_find_rsdp(void) {
     return acpi_scan_rsdp(0xE0000, 0x100000);
 }
-static struct acpi_header *acpi_map_full_table(uint32_t phys_addr)
-{
+static struct acpi_header *acpi_map_full_table(uint32_t phys_addr) {
     struct acpi_header *hdr =
         (struct acpi_header *)map_module(phys_addr, sizeof(struct acpi_header));
     if (!hdr)
         return 0;
     return (struct acpi_header *)map_module(phys_addr, hdr->length);
 }
-static bool acpi_validate_table(struct acpi_header *hdr)
-{
+static bool acpi_validate_table(struct acpi_header *hdr) {
     if (!hdr)
         return false;
     return acpi_calculate_checksum((uint8_t *)hdr, hdr->length) == 0;
 }
-static uint32_t acpi_parse_pkg_length(uint8_t **ptr, uint8_t *end)
-{
+static uint32_t acpi_parse_pkg_length(uint8_t **ptr, uint8_t *end) {
     if (*ptr >= end)
         return 0;
     uint8_t first = **ptr;
@@ -74,8 +68,7 @@ static uint32_t acpi_parse_pkg_length(uint8_t **ptr, uint8_t *end)
     }
     return length;
 }
-static uint32_t acpi_parse_pkg_value(uint8_t **ptr, uint8_t *end)
-{
+static uint32_t acpi_parse_pkg_value(uint8_t **ptr, uint8_t *end) {
     if (*ptr >= end)
         return 0;
     uint8_t prefix = **ptr;
@@ -106,8 +99,7 @@ static uint32_t acpi_parse_pkg_value(uint8_t **ptr, uint8_t *end)
         return prefix;
     }
 }
-static void acpi_extract_s5(void)
-{
+static void acpi_extract_s5(void) {
     if (!acpi_fadt || !acpi_fadt->dsdt)
         return;
     struct acpi_header *dsdt_hdr = acpi_map_full_table(acpi_fadt->dsdt);
@@ -142,8 +134,7 @@ static void acpi_extract_s5(void)
         ptr++;
     }
 }
-static void acpi_enable(void)
-{
+static void acpi_enable(void) {
     if (!acpi_fadt)
         return;
     if (!(pm1a_cnt_block && (inw(pm1a_cnt_block) & SCI_EN_FLAG))) {
@@ -156,8 +147,7 @@ static void acpi_enable(void)
         }
     }
 }
-int acpi_init(void)
-{
+int acpi_init(void) {
     acpi_rsdp = acpi_find_rsdp();
     if (!acpi_rsdp)
         return 0;
@@ -176,20 +166,16 @@ int acpi_init(void)
     acpi_initialized = true;
     return acpi_initialized;
 }
-bool acpi_power_ready(void)
-{
+bool acpi_power_ready(void) {
     return acpi_initialized && power_capable && pm1a_cnt_block;
 }
-bool acpi_power_button_available(void)
-{
+bool acpi_power_button_available(void) {
     return acpi_initialized && power_capable;
 }
-bool acpi_reset_available(void)
-{
+bool acpi_reset_available(void) {
     return acpi_initialized && reset_capable;
 }
-void *acpi_find_table(const char *sig)
-{
+void *acpi_find_table(const char *sig) {
     if (!acpi_rsdt)
         return 0;
     uint32_t entries = (acpi_rsdt->length - sizeof(struct acpi_header)) / 4;
@@ -208,8 +194,7 @@ void *acpi_find_table(const char *sig)
     }
     return 0;
 }
-int acpi_get_cpu_count(void)
-{
+int acpi_get_cpu_count(void) {
     struct madt_header *madt = (struct madt_header *)acpi_find_table("APIC");
     if (!madt)
         return 1;
@@ -228,8 +213,7 @@ int acpi_get_cpu_count(void)
     }
     return count > 0 ? count : 1;
 }
-void acpi_shutdown(void)
-{
+void acpi_shutdown(void) {
     asm volatile("cli");
     if (acpi_power_ready()) {
         acpi_enable();
@@ -246,8 +230,7 @@ void acpi_shutdown(void)
         asm volatile("hlt");
     }
 }
-void acpi_reboot(void)
-{
+void acpi_reboot(void) {
     asm volatile("cli");
     if (reset_capable && reset_reg.address) {
         if (reset_reg.address_space == 1) {

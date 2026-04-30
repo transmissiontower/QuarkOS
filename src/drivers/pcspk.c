@@ -5,12 +5,11 @@
 #include "drivers/pcspk.h"
 #include "drivers/timer.h"
 #include "util/util.h"
-#define PIT_BASE_FREQ   1193180
-#define PIT_CMD         0x43
-#define PIT_CH2         0x42
-#define PCSPK_PORT      0x61
-void drv_pcspk_play(uint32_t freq)
-{
+#define PIT_BASE_FREQ 1193180
+#define PIT_CMD 0x43
+#define PIT_CH2 0x42
+#define PCSPK_PORT 0x61
+void drv_pcspk_play(uint32_t freq) {
     if (freq == 0) {
         drv_pcspk_stop();
         return;
@@ -22,25 +21,22 @@ void drv_pcspk_play(uint32_t freq)
     uint8_t state = inb(PCSPK_PORT);
     outb(PCSPK_PORT, state | 0x03);
 }
-void drv_pcspk_stop()
-{
+void drv_pcspk_stop() {
     uint8_t state = inb(PCSPK_PORT);
     outb(PCSPK_PORT, state & ~0x03);
 }
-void drv_pcspk_beep(uint32_t freq, uint32_t ms)
-{
+void drv_pcspk_beep(uint32_t freq, uint32_t ms) {
     drv_pcspk_play(freq);
     sleep(ms);
     drv_pcspk_stop();
 }
 #define SYS_TICK_HZ 100
-static volatile const uint8_t *pwm_buf         = 0;
-static volatile uint32_t       pwm_len         = 0;
-static volatile uint32_t       pwm_pos         = 0;
-volatile uint32_t drv_pcspk_pwm_subtick     = 0;
+static volatile const uint8_t *pwm_buf = 0;
+static volatile uint32_t pwm_len = 0;
+static volatile uint32_t pwm_pos = 0;
+volatile uint32_t drv_pcspk_pwm_subtick = 0;
 volatile uint32_t drv_pcspk_pwm_subtick_max = 0;
-void drv_pcspk_pwm_start(const uint8_t *buf, uint32_t len, uint32_t rate)
-{
+void drv_pcspk_pwm_start(const uint8_t *buf, uint32_t len, uint32_t rate) {
     if (len == 0 || rate == 0)
         return;
     outb(PIT_CMD, 0xB6);
@@ -48,9 +44,9 @@ void drv_pcspk_pwm_start(const uint8_t *buf, uint32_t len, uint32_t rate)
     outb(PIT_CH2, 0);
     uint8_t state = inb(PCSPK_PORT);
     outb(PCSPK_PORT, (state | 0x01) & ~0x02);
-    pwm_buf         = buf;
-    pwm_len         = len;
-    pwm_pos         = 0;
+    pwm_buf = buf;
+    pwm_len = len;
+    pwm_pos = 0;
     drv_pcspk_pwm_subtick_max = rate / SYS_TICK_HZ;
     if (drv_pcspk_pwm_subtick_max == 0)
         drv_pcspk_pwm_subtick_max = 1;
@@ -60,16 +56,13 @@ void drv_pcspk_pwm_start(const uint8_t *buf, uint32_t len, uint32_t rate)
     outb(0x40, (uint8_t)(divisor & 0xFF));
     outb(0x40, (uint8_t)(divisor >> 8));
 }
-int drv_pcspk_pwm_active(void)
-{
+int drv_pcspk_pwm_active(void) {
     return pwm_buf != 0 && pwm_pos < pwm_len;
 }
-int drv_pcspk_pwm_ready(void)
-{
+int drv_pcspk_pwm_ready(void) {
     return pwm_buf == 0 || pwm_pos >= pwm_len;
 }
-void drv_pcspk_pwm_tick(void)
-{
+void drv_pcspk_pwm_tick(void) {
     if (pwm_pos >= pwm_len) {
         uint8_t state = inb(PCSPK_PORT);
         outb(PCSPK_PORT, state & ~0x03);

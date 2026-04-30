@@ -25,8 +25,7 @@
 #define C_STACK 0xFFFFD24C
 #define C_BAR_BG 0xFF151515
 #define C_FRAME 0xFF333333
-void v_rect(int x, int y, int w, int h, uint32_t color)
-{
+void v_rect(int x, int y, int w, int h, uint32_t color) {
     message_t msg;
     msg.type = MSG_WIN_DRAW_RECT;
     msg.data1 = y;
@@ -36,8 +35,7 @@ void v_rect(int x, int y, int w, int h, uint32_t color)
     *(uint32_t *)&msg.payload[4] = color;
     qk_sys_ipc_send(COMP_PID, &msg);
 }
-void main()
-{
+void main() {
     vmap_region_t regions[16];
     int count = qk_get_vmap(regions);
     message_t msg;
