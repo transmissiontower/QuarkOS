@@ -9,7 +9,6 @@
 extern void arm_uart_puts(const char *s);
 extern void arm_uart_putc(char c);
 
-/* Virtio constants */
 #define VIRTIO_STATUS_ACKNOWLEDGE 1
 #define VIRTIO_STATUS_DRIVER 2
 #define VIRTIO_STATUS_DRIVER_OK 4
@@ -20,16 +19,12 @@ extern void arm_uart_putc(char c);
 #define VIRTQ_DESC_F_NEXT 1
 #define VIRTQ_DESC_F_WRITE 2
 
-/* Virtio-snd protocol */
 #define VIRTIO_SND_DEVICE_ID 25
 #define VIRTIO_SND_R_PCM_SET_PARAMS 0x0200
 #define VIRTIO_SND_R_PCM_PREPARE 0x0300
 #define VIRTIO_SND_R_PCM_START 0x0500
 #define VIRTIO_SND_S_OK 0
-/* Rates: 48000=7, 44100=6, 22050=4, 11025=2 */
-/* Formats: S16=5, U8=4 */
 
-/* ---- Exact same virtqueue structures as GPU driver ---- */
 struct virtq_desc {
     uint64_t addr;
     uint32_t len;
@@ -51,17 +46,12 @@ struct virtq_used {
     struct virtq_used_elem ring[];
 } __attribute__((packed));
 
-/* ---- Driver state (mirrors GPU driver layout) ---- */
 #define QUEUE_SIZE 16
 static uint32_t snd_base = 0;
 static uint32_t snd_version = 0;
 static int snd_ok = 0;
 static int snd_stream_running = 0;
 
-/*
- * VQ memory: 2 pages each (page0 = desc+avail, page1 = used).
- * Legacy v1 requires desc/avail/used at known offsets from PFN base.
- */
 static uint8_t ctrl_vq_mem[8192] __attribute__((aligned(4096)));
 static uint8_t tx_vq_mem[8192] __attribute__((aligned(4096)));
 
@@ -77,12 +67,10 @@ static volatile struct virtq_used *tx_used;
 static uint16_t tx_last_used = 0;
 static uint32_t tx_free = 0;
 
-/* DMA buffers */
 static uint8_t cmd_buf[512] __attribute__((aligned(4096)));
 static uint8_t rsp_buf[512] __attribute__((aligned(4096)));
 static uint8_t snd_bounce[8192] __attribute__((aligned(4096)));
 
-/* TX xfer/status (page-aligned for clean DMA) */
 static uint32_t tx_xfer_hdr[1] __attribute__((aligned(4096)));
 static uint32_t tx_status[2] __attribute__((aligned(4096)));
 
@@ -90,7 +78,6 @@ static inline uint32_t va_to_pa(void *va) {
     return (uint32_t)(uintptr_t)va - 0xC0000000 + 0x40000000;
 }
 
-/* ---- Desc allocator (same as GPU) ---- */
 static void vq_init(struct virtq_desc *d, uint32_t *free) {
     for (int i = 0; i < QUEUE_SIZE; i++) {
         d[i].addr = 0;
@@ -120,8 +107,6 @@ static void free_d(struct virtq_desc *d, uint32_t *free, uint16_t h) {
     }
 }
 
-/* ---- Setup one virtqueue (mirrors GPU exactly) ---- */
-/* Setup VQ using 8KB memory block (page0=desc+avail, page1=used) */
 static int setup_vq(uint32_t base, uint32_t ver, int idx, uint8_t *mem8k,
                     volatile struct virtq_avail **av, volatile struct virtq_used **us,
                     uint32_t *fr) {
@@ -138,7 +123,7 @@ static int setup_vq(uint32_t base, uint32_t ver, int idx, uint8_t *mem8k,
     memset(mem8k, 0, 8192);
     vq_init(desc, fr);
 
-    /* avail at offset desc_size, used at offset 4096 */
+
     *av = (volatile struct virtq_avail *)(mem8k + QUEUE_SIZE * sizeof(struct virtq_desc));
     (*av)->flags = 0;
     (*av)->idx = 0;
@@ -166,9 +151,8 @@ static int setup_vq(uint32_t base, uint32_t ver, int idx, uint8_t *mem8k,
     return 0;
 }
 
-/* ---- Send ctrl command (2 descriptors, exactly like GPU send_cmd) ---- */
 static int snd_ctrl(void *req, uint32_t rlen, void *rsp, uint32_t slen) {
-    /* Flush req to DRAM */
+
     for (uint32_t i = 0; i < rlen; i += 64)
         asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)((uint8_t *)req + i)));
     arm_dsb();
@@ -187,7 +171,7 @@ static int snd_ctrl(void *req, uint32_t rlen, void *rsp, uint32_t slen) {
     VQ_DESC(ctrl_vq_mem)[d1].flags = VIRTQ_DESC_F_WRITE;
     VQ_DESC(ctrl_vq_mem)[d1].next = 0;
 
-    /* Flush descriptors */
+
     asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)&VQ_DESC(ctrl_vq_mem)[d0]));
     asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)&VQ_DESC(ctrl_vq_mem)[d1]));
     arm_dsb();
@@ -202,7 +186,7 @@ static int snd_ctrl(void *req, uint32_t rlen, void *rsp, uint32_t slen) {
 
     mmio_write32(snd_base + VIRTIO_MMIO_QUEUE_NOTIFY, 0);
 
-    /* Poll used ring (same as GPU) */
+
     for (volatile int j = 0; j < 2000000; j++) {
         asm volatile("dc ivac, %0" ::"r"((uint64_t)(uintptr_t)&ctrl_used->idx) : "memory");
         arm_dmb();
@@ -212,7 +196,7 @@ static int snd_ctrl(void *req, uint32_t rlen, void *rsp, uint32_t slen) {
         }
     }
 
-    /* Read response from DRAM */
+
     for (uint32_t i = 0; i < slen; i += 64)
         asm volatile("dc ivac, %0" ::"r"((uint64_t)(uintptr_t)((uint8_t *)rsp + i)) : "memory");
     arm_dsb();
@@ -223,7 +207,6 @@ static int snd_ctrl(void *req, uint32_t rlen, void *rsp, uint32_t slen) {
     return (code == VIRTIO_SND_S_OK) ? 0 : (int)code;
 }
 
-/* ---- Init ---- */
 void virtio_snd_init(void) {
     snd_base = 0;
     for (uint32_t i = 0; i < VIRTIO_MMIO_COUNT; i++) {
@@ -248,7 +231,7 @@ void virtio_snd_init(void) {
     arm_uart_putc('0' + snd_version);
     arm_uart_putc('\n');
 
-    /* Reset + negotiate (same as GPU) */
+
     mmio_write32(snd_base + VIRTIO_MMIO_STATUS, 0);
     mmio_write32(snd_base + VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACKNOWLEDGE);
     mmio_write32(snd_base + VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
@@ -265,21 +248,15 @@ void virtio_snd_init(void) {
         }
     }
 
-    /* For legacy v1: desc must be big enough for avail+used.
-     * VQ_DESC(ctrl_vq_mem) is 16*16=256 bytes. Avail at +256. Used at +4096.
-     * desc array must span 8KB. We have VQ_DESC(ctrl_vq_mem)[16] = 256 bytes,
-     * but the PFN covers the whole 4K page starting at VQ_DESC(ctrl_vq_mem).
-     * The avail ring goes at offset 256, used at offset 4096.
-     * ctrl_avail_buf/ctrl_used_buf are separate — but for v1 PFN mode,
-     * avail and used MUST be within the PFN-based region! */
 
-    /* VQ0: control */
+
+
     if (setup_vq(snd_base, snd_version, 0, ctrl_vq_mem, &ctrl_avail, &ctrl_used, &ctrl_free) < 0) {
         arm_uart_puts("virtio-snd: ctrl VQ fail\n");
         return;
     }
 
-    /* VQ1: event (must init but unused) */
+
     {
         static uint8_t ev_mem[8192] __attribute__((aligned(4096)));
         volatile struct virtq_avail *ea;
@@ -288,7 +265,7 @@ void virtio_snd_init(void) {
         setup_vq(snd_base, snd_version, 1, ev_mem, &ea, &eu, &ef);
     }
 
-    /* VQ2: TX */
+
     if (setup_vq(snd_base, snd_version, 2, tx_vq_mem, &tx_avail, &tx_used, &tx_free) < 0) {
         arm_uart_puts("virtio-snd: TX VQ fail\n");
         return;
@@ -302,22 +279,18 @@ void virtio_snd_init(void) {
     snd_ok = 1;
     arm_uart_puts("virtio-snd: initialized\n");
 
-    /* Test: try SET_PARAMS
-     * Struct layout per virtio 1.2 spec:
-     *   u32 code, u32 stream_id, u32 buffer_bytes, u32 period_bytes,
-     *   u32 features, u8 channels, u8 format, u8 rate, u8 padding
-     * Total = 24 bytes */
+
     memset(cmd_buf, 0, 64);
     uint32_t *p = (uint32_t *)cmd_buf;
     p[0] = VIRTIO_SND_R_PCM_SET_PARAMS;
-    p[1] = 0;        /* stream_id */
-    p[2] = 16384;    /* buffer_bytes */
-    p[3] = 4096;     /* period_bytes */
-    p[4] = 0;        /* features */
-    cmd_buf[20] = 2; /* channels (u8) */
-    cmd_buf[21] = 5; /* format = S16 (u8) */
-    cmd_buf[22] = 7; /* rate = 48000 (u8) */
-    cmd_buf[23] = 0; /* padding */
+    p[1] = 0;
+    p[2] = 16384;
+    p[3] = 4096;
+    p[4] = 0;
+    cmd_buf[20] = 2;
+    cmd_buf[21] = 5;
+    cmd_buf[22] = 7;
+    cmd_buf[23] = 0;
 
     memset(rsp_buf, 0, 64);
     int rc = snd_ctrl(cmd_buf, 24, rsp_buf, 4);
@@ -335,7 +308,7 @@ void virtio_snd_init(void) {
     arm_uart_putc('\n');
 
     if (rc == 0) {
-        /* PREPARE */
+
         memset(cmd_buf, 0, 16);
         p[0] = VIRTIO_SND_R_PCM_PREPARE;
         p[1] = 0;
@@ -346,7 +319,7 @@ void virtio_snd_init(void) {
         arm_uart_putc('\n');
 
         if (rc == 0) {
-            /* START */
+
             memset(cmd_buf, 0, 16);
             p[0] = VIRTIO_SND_R_PCM_START;
             p[1] = 0;
@@ -361,7 +334,6 @@ void virtio_snd_init(void) {
     }
 }
 
-/* ---- Play audio ---- */
 int virtio_snd_play(const void *buf, uint32_t len, uint32_t rate, uint8_t channels, uint8_t bits) {
     (void)rate;
     (void)channels;
@@ -397,12 +369,12 @@ int virtio_snd_play(const void *buf, uint32_t len, uint32_t rate, uint8_t channe
         if (chunk > 8192)
             chunk = 8192;
 
-        /* Copy to bounce buffer */
+
         memcpy(snd_bounce, src + sent, chunk);
         for (uint32_t i = 0; i < chunk; i += 64)
             asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)(snd_bounce + i)));
 
-        tx_xfer_hdr[0] = 0; /* stream_id = 0 */
+        tx_xfer_hdr[0] = 0;
         tx_status[0] = 0;
         tx_status[1] = 0;
         asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)tx_xfer_hdr));
@@ -445,7 +417,7 @@ int virtio_snd_play(const void *buf, uint32_t len, uint32_t rate, uint8_t channe
 
         mmio_write32(snd_base + VIRTIO_MMIO_QUEUE_NOTIFY, 2);
 
-        /* Wait for completion */
+
         for (volatile int j = 0; j < 2000000; j++) {
             asm volatile("dc ivac, %0" ::"r"((uint64_t)(uintptr_t)&tx_used->idx) : "memory");
             arm_dmb();

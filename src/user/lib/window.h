@@ -58,6 +58,8 @@ extern Window *window_stack[MAX_WINDOWS];
 extern int window_count;
 extern Window *dragging_window;
 void window_manager_init(void);
+Window *window_at_point(int x, int y);
+void drag_start(uint32_t data_type, const void *data, uint32_t len);
 Window *window_create(int owner_pid, int x, int y, int w, int h, const char *title);
 void close_window(Window *win);
 void draw_windows(gfx_context_t *ctx);

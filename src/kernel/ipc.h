@@ -62,6 +62,8 @@ typedef struct {
 #define MSG_CLIP_SET 710
 #define MSG_CLIP_GET 711
 #define MSG_CLIP_DATA 712
+#define MSG_FILE_MOVE 330
+#define MSG_FILE_DELETE 331
 #define MSG_DISK_LIST 320
 #define MSG_DISK_LIST_REPLY 321
 #define MSG_DISK_EJECT 322
@@ -69,6 +71,11 @@ typedef struct {
 #define MSG_DISK_STATUS 324
 #define MSG_DISK_CHANGED 325
 #define MSG_DISK_SUBSCRIBE 326
+#define MSG_DRAG_START  800
+#define MSG_DRAG_OVER   801
+#define MSG_DRAG_LEFT   802
+#define MSG_DROP        803
+#define MSG_DRAG_CANCEL 804
 #define IPC_QUEUE_SIZE 128
 typedef struct {
     message_t messages[IPC_QUEUE_SIZE];

@@ -12,6 +12,7 @@
 #define ICON_IMAGE 0xEA06
 #endif
 #include "user/lib/libapi.h"
+#include "user/lib/storage_client.h"
 #include "user/lib/window.h"
 #define WIN_W 900
 #define WIN_H 580
@@ -74,6 +75,17 @@ static int selected = -1;
 static int grid_scroll = 0;
 static int hover_sb = -1;
 static int hover_grid = -1;
+static int mouse_held = 0;
+static int mouse_held_x = 0;
+static int mouse_held_y = 0;
+static int mouse_held_idx = -1;
+static int drag_active = 0;
+static int drag_cur_x = 0;
+static int drag_cur_y = 0;
+static int drop_hover_sb = -1;
+static int cross_drop_active = 0;
+static int comp_drag_started = 0;
+static int reload_pending = 0;
 static int path_editing = 0;
 static char edit_buf[128];
 static int edit_len = 0;
@@ -287,6 +299,31 @@ static void fill(int x, int y, int w, int h, uint32_t c) {
         uint32_t *p = gfx + (y + row) * gfx_w + x;
         for (int k = 0; k < w; k++)
             p[k] = c;
+    }
+}
+static void fill_alpha(int x, int y, int w, int h, uint32_t c) {
+    uint8_t a = (uint8_t)(c >> 24);
+    if (a == 0)
+        return;
+    if (a == 0xFF) {
+        fill(x, y, w, h, c);
+        return;
+    }
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > gfx_w) w = gfx_w - x;
+    if (y + h > gfx_h) h = gfx_h - y;
+    if (w <= 0 || h <= 0) return;
+    uint32_t inv = 255 - a;
+    uint32_t r1 = (c >> 16) & 0xFF, g1 = (c >> 8) & 0xFF, b1 = c & 0xFF;
+    for (int row = 0; row < h; row++) {
+        uint32_t *p = gfx + (y + row) * gfx_w + x;
+        for (int k = 0; k < w; k++) {
+            uint32_t bg = p[k];
+            uint32_t r2 = (bg >> 16) & 0xFF, g2 = (bg >> 8) & 0xFF, b2 = bg & 0xFF;
+            p[k] = 0xFF000000u | (((r1*a + r2*inv) >> 8) << 16) |
+                   (((g1*a + g2*inv) >> 8) << 8) | ((b1*a + b2*inv) >> 8);
+        }
     }
 }
 static void fill_round(int x, int y, int w, int h, uint32_t c) {
@@ -766,6 +803,8 @@ static void render(void) {
             }
             if (i == active_sb)
                 fill_round(6, sy + 2, SIDEBAR_W - 14, SB_ITEM_H - 4, CB_SEL);
+            else if (i == drop_hover_sb && drag_active)
+                fill_round(6, sy + 2, SIDEBAR_W - 14, SB_ITEM_H - 4, 0xFF3A3A3Au);
             else if (i == hover_sb)
                 fill_round(6, sy + 2, SIDEBAR_W - 14, SB_ITEM_H - 4, CB_HOVER);
             uint32_t col = i == active_sb ? C_TEXT : ejected ? 0xFF444444u : C_DIM;
@@ -939,6 +978,51 @@ static void render(void) {
                     fill(field_x + 8, bar_y + 8, 1, 20, C_TEXT);
             }
         }
+    }
+
+    if (drag_active && !comp_drag_started && mouse_held_idx >= 0 && mouse_held_idx < entry_count) {
+        fm_entry_t *de = &entries[mouse_held_idx];
+        int gw = GICON_SZ + 20, gh = GICON_SZ + fh + 20;
+        int gx = drag_cur_x - gw / 2;
+        int gy = drag_cur_y - TITLE_BAR_HEIGHT - gh / 2;
+        if (gx < 0) gx = 0;
+        if (gy < 0) gy = 0;
+        if (gx + gw > gfx_w) gx = gfx_w - gw;
+        if (gy + gh > gfx_h) gy = gfx_h - gh;
+        fill_alpha(gx, gy, gw, gh, 0xCC2E2E2Eu);
+        if (gui_icons) {
+            gfx_context_t ctx2 = {gfx, (uint32_t)gfx_w, (uint32_t)gfx_h, (uint32_t)gfx_w};
+            int is_img = str_ends_ext(de->name, "BMP") || str_ends_ext(de->name, "PNG") ||
+                         str_ends_ext(de->name, "JPG");
+            uint32_t icon_id = de->is_dir ? ICON_FOLDER
+                               : str_ends_ext(de->name, "QEX") || str_ends_ext(de->name, "ELF")
+                                   ? ICON_TERMINAL
+                               : str_ends_ext(de->name, "BIN") ? ICON_BINARY
+                               : is_img                        ? ICON_IMAGE
+                                                               : ICON_FILE_TEXT;
+            uint32_t ic = de->is_dir ? C_ACCENT
+                          : str_ends_ext(de->name, "QEX") || str_ends_ext(de->name, "ELF")
+                              ? 0xFF80CC80u
+                          : str_ends_ext(de->name, "BIN") ? 0xFFCC9944u
+                          : is_img                        ? 0xFF88AADDu
+                                                          : C_TEXT;
+            draw_icon_sized(&ctx2, gui_icons, gx + (gw - GICON_SZ) / 2, gy + 8, icon_id, ic,
+                            GICON_SZ);
+        }
+        char label[16];
+        strncpy(label, de->name, 15);
+        label[15] = 0;
+        int tw = str_w(label);
+        dstr(gx + (gw - tw) / 2, gy + 8 + GICON_SZ + 4, label, C_TEXT);
+    }
+
+    if (cross_drop_active) {
+        int cax = CONTENT_X + 6, cay = HEADER_H + 6;
+        int caw = gfx_w - CONTENT_X - 12, cah = gfx_h - HEADER_H - 12;
+        fill_alpha(cax, cay, caw, cah, 0x182E2E2Eu);
+
+        fill_round(cax, cay, caw, cah, 0xFF484848u);
+        fill_round(cax + 2, cay + 2, caw - 4, cah - 4, CB_CONTENT);
     }
 
     qk_win_dirty(comp_pid);
@@ -1244,6 +1328,55 @@ int main(void) {
                         pfn_cursor = col;
                         needs_render = 1;
                     }
+                    if (mouse_held && mouse_held_idx >= 0) {
+                        drag_cur_x = ev->x;
+                        drag_cur_y = ev->y;
+                        if (!drag_active) {
+                            int ddx = ev->x - mouse_held_x;
+                            int ddy = ev->y - mouse_held_y;
+                            if (ddx < 0) ddx = -ddx;
+                            if (ddy < 0) ddy = -ddy;
+                            if (ddx + ddy > 8) {
+                                drag_active = 1;
+
+                                if (!entries[mouse_held_idx].is_dir) {
+                                    uint8_t dpayload[4 + 4 + 64];
+                                    uint32_t d = (uint32_t)fm_disk_idx;
+                                    uint32_t c = cur_cluster;
+                                    memcpy(dpayload, &d, 4);
+                                    memcpy(dpayload + 4, &c, 4);
+                                    const char *fn = entries[mouse_held_idx].name;
+                                    int fnl = strlen(fn);
+                                    if (fnl > 63) fnl = 63;
+                                    memcpy(dpayload + 8, fn, fnl + 1);
+                                    drag_start(1, dpayload, 8 + fnl + 1);
+                                    comp_drag_started = 1;
+                                }
+                            }
+                        }
+                        if (drag_active) {
+                            int new_dsb = -1;
+                            if (mx >= 0 && mx < SIDEBAR_W && my >= HEADER_H) {
+                                int sy2 = HEADER_H + 8 + sb_extra_h;
+                                for (int i = 0; i < sb_count; i++) {
+                                    if (sb[i].kind == 1) { sy2 += 12; continue; }
+                                    if (!sb[i].label) continue;
+                                    if (sb[i].kind == 2 && sb[i].disk_idx > 0 &&
+                                        sb[i].disk_idx < SB_MAX_DISKS && disk_ejected[sb[i].disk_idx])
+                                        continue;
+                                    if (my >= sy2 && my < sy2 + SB_ITEM_H && sb[i].kind == 0)
+                                        new_dsb = i;
+                                    sy2 += SB_ITEM_H;
+                                }
+                            }
+                            if (new_dsb != drop_hover_sb) {
+                                drop_hover_sb = new_dsb;
+                                needs_render = 1;
+                            } else {
+                                needs_render = 1;
+                            }
+                        }
+                    }
                     if (new_hsb != hover_sb || new_hg != hover_grid)
                         needs_render = 1;
                     hover_sb = new_hsb;
@@ -1354,11 +1487,19 @@ int main(void) {
                         int row_s = (cy - CONTENT_Y) / GITEM_H;
                         int idx = (row_s + grid_scroll) * GCOLS + col;
                         if (idx >= 0 && idx < entry_count) {
+                            mouse_held = 1;
+                            mouse_held_x = ev->x;
+                            mouse_held_y = ev->y;
+                            mouse_held_idx = idx;
+                            drag_active = 0;
+                            drop_hover_sb = -1;
                             if (idx == selected) {
                                 if (needs_render)
                                     render();
                                 needs_render = 0;
                                 launch_entry(idx);
+                                mouse_held = 0;
+                                mouse_held_idx = -1;
                             } else {
                                 selected = idx;
                                 needs_render = 1;
@@ -1367,6 +1508,33 @@ int main(void) {
                     }
                 } else if (ev->type == EVENT_MOUSE_UP) {
                     pfn_mouse_sel = false;
+                    if (drag_active && mouse_held_idx >= 0 && drop_hover_sb >= 0 &&
+                        drop_hover_sb < sb_count && sb[drop_hover_sb].kind == 0 &&
+                        sb[drop_hover_sb].path && !entries[mouse_held_idx].is_dir) {
+                        message_t mv;
+                        memset(&mv, 0, sizeof(mv));
+                        mv.type = MSG_FILE_MOVE;
+                        mv.data1 = (uint32_t)fm_disk_idx;
+                        mv.data2 = cur_cluster;
+                        const char *fname = entries[mouse_held_idx].name;
+                        int fnl = strlen(fname);
+                        memcpy(mv.payload, fname, fnl + 1);
+                        const char *dpath = sb[drop_hover_sb].path;
+                        int dpl = strlen(dpath);
+                        if (fnl + 1 + dpl + 1 <= 4096)
+                            memcpy(mv.payload + fnl + 1, dpath, dpl + 1);
+                        qk_sys_ipc_send(storage_pid, &mv);
+                        message_t reply;
+                        qk_ipc_recv(&reply);
+                        load_dir();
+                        needs_render = 1;
+                    }
+                    mouse_held = 0;
+                    mouse_held_idx = -1;
+                    drag_active = 0;
+                    drop_hover_sb = -1;
+                    cross_drop_active = 0;
+                    comp_drag_started = 0;
                 }
             } else if (msg.type == MSG_KEY_EVENT) {
                 uint8_t sc = (uint8_t)(msg.data1 & 0x7F);
@@ -1593,10 +1761,118 @@ int main(void) {
                         }
                     }
                 }
+            } else if (msg.type == MSG_DRAG_OVER) {
+                if (!cross_drop_active) {
+                    cross_drop_active = 1;
+                    needs_render = 1;
+                }
+            } else if (msg.type == MSG_DRAG_LEFT) {
+                if (cross_drop_active) {
+                    cross_drop_active = 0;
+                    needs_render = 1;
+                }
+            } else if (msg.type == MSG_DRAG_CANCEL) {
+
+                if (msg.data1 == 1)
+                    reload_pending = 1;
+                mouse_held = 0;
+                mouse_held_idx = -1;
+                drag_active = 0;
+                drop_hover_sb = -1;
+                cross_drop_active = 0;
+                comp_drag_started = 0;
+                needs_render = 1;
+            } else if (msg.type == MSG_DROP && msg.data1 == 1) {
+                cross_drop_active = 0;
+
+                uint32_t src_disk, src_cluster2;
+                memcpy(&src_disk, msg.payload, 4);
+                memcpy(&src_cluster2, msg.payload + 4, 4);
+                const char *drop_fn = (const char *)(msg.payload + 8);
+                int drop_src_pid = (int)msg.data3;
+                if (drop_fn[0]) {
+                    if ((int)src_disk == fm_disk_idx) {
+
+                        message_t mv;
+                        memset(&mv, 0, sizeof(mv));
+                        mv.type = MSG_FILE_MOVE;
+                        mv.data1 = src_disk;
+                        mv.data2 = src_cluster2;
+                        int fnl = strlen(drop_fn);
+                        if (fnl > 63) fnl = 63;
+                        memcpy(mv.payload, drop_fn, fnl + 1);
+                        int dpl = strlen(cur_path);
+                        if (fnl + 1 + dpl + 1 <= 4096)
+                            memcpy(mv.payload + fnl + 1, cur_path, dpl + 1);
+                        qk_sys_ipc_send(storage_pid, &mv);
+                        message_t reply;
+                        qk_ipc_recv(&reply);
+                    } else {
+
+                        message_t req, resp;
+                        memset(&req, 0, sizeof(req));
+                        req.type = MSG_FILE_OPEN;
+                        req.data1 = src_cluster2;
+                        req.data3 = src_disk;
+                        int fnl2 = strlen(drop_fn);
+                        if (fnl2 > 63) fnl2 = 63;
+                        memcpy(req.payload, drop_fn, fnl2 + 1);
+                        qk_ipc_send_recv(storage_pid, &req, &resp);
+                        if (resp.type == MSG_FILE_SIZE && resp.data1 > 0) {
+                            uint32_t fsz = resp.data1;
+                            uint8_t *fbuf = (uint8_t *)malloc(fsz);
+                            if (fbuf) {
+                                uint32_t off = 0;
+                                while (off < fsz) {
+                                    memset(&req, 0, sizeof(req));
+                                    req.type = MSG_REQ_DATA;
+                                    req.data1 = off;
+                                    req.data2 = sizeof(resp.payload);
+                                    qk_ipc_send_recv(storage_pid, &req, &resp);
+                                    if (resp.type != MSG_FILE_DATA || resp.data1 == 0)
+                                        break;
+                                    uint32_t got = resp.data1;
+                                    if (off + got > fsz) got = fsz - off;
+                                    memcpy(fbuf + off, resp.payload, got);
+                                    off += got;
+                                }
+                                if (off == fsz) {
+
+                                    storage_send_file(storage_pid, cur_cluster, drop_fn,
+                                                      fbuf, fsz, fm_disk_idx);
+
+                                    message_t del;
+                                    memset(&del, 0, sizeof(del));
+                                    del.type = MSG_FILE_DELETE;
+                                    del.data1 = src_disk;
+                                    del.data2 = src_cluster2;
+                                    memcpy(del.payload, drop_fn, fnl2 + 1);
+                                    qk_ipc_send_recv(storage_pid, &del, &resp);
+                                }
+                                free(fbuf);
+                            }
+                        }
+                    }
+                    load_dir();
+
+                    if (drop_src_pid > 0) {
+                        message_t reload;
+                        memset(&reload, 0, sizeof(reload));
+                        reload.type = MSG_DRAG_CANCEL;
+                        reload.data1 = 1;
+                        qk_sys_ipc_send(drop_src_pid, &reload);
+                    }
+                }
+                needs_render = 1;
             }
         } while (qk_ipc_recv_nb(&msg) == 0);
         if (needs_render)
             render();
+        if (reload_pending) {
+            reload_pending = 0;
+            load_dir();
+            render();
+        }
     }
     return 0;
 }

@@ -215,7 +215,7 @@ static void win_print_at(int x, int y, uint32_t color, const char *s) {
 int main(void) {
     qk_set_proc_name(-1, "imgview");
     static char file_path[128];
-    strncpy(file_path, "/SYS/DAT/LOGO.BMP", sizeof(file_path) - 1);
+    file_path[0] = '\0';
     int retries = 0;
     while ((comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR)) < 0 ||
            (store_pid = qk_get_server_pid(QK_SERVER_STORAGE)) < 0) {
@@ -260,10 +260,13 @@ int main(void) {
     }
     int win_w = (img_w > 0 && img_w <= 4096) ? img_w : WIN_W;
     int win_h = (img_h > 0 && img_h <= 4096) ? img_h : WIN_H;
-    const char *title = file_path;
-    for (const char *p = file_path; *p; p++)
-        if (*p == '/' || *p == '\\')
-            title = p + 1;
+    const char *title = "Image Viewer";
+    if (file_path[0]) {
+        title = file_path;
+        for (const char *p = file_path; *p; p++)
+            if (*p == '/' || *p == '\\')
+                title = p + 1;
+    }
     message_t msg, resp;
     memset(&msg, 0, sizeof(msg));
     msg.type = MSG_WIN_CREATE;
@@ -296,11 +299,13 @@ int main(void) {
             decode_bmp_to_buf(gfx, gfx_w, gfx_h, file_data, file_size);
         else if (rgba)
             blit_rgba_to_buf(gfx, gfx_w, gfx_h, rgba, img_w, img_h);
+        else if (!file_path[0])
+            win_print_at(gfx_w / 2 - 60, gfx_h / 2 - 6, 0xFF6A6A6A, "No image opened");
         else if (!file_data)
             win_print_at(4, 4, 0xFFFF4444, "could not load file");
         else
             win_print_at(4, 4, 0xFFFF4444, "unsupported format");
-        {
+        if (file_path[0]) {
             static char tbuf[64];
             uint32_t i = 0;
             tbuf[i++] = 'L';
