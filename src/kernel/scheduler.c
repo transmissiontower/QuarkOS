@@ -20,19 +20,18 @@ void arch_tss_set_stack(uint32_t kernel_stack);
 #include "mm/memory.h"
 #include "util/util.h"
 #if defined(__aarch64__)
-#define KSTACK_SIZE   32768
-#define KSTACK_GUARD  4096
+#define KSTACK_SIZE 32768
+#define KSTACK_GUARD 4096
 #else
 #define KSTACK_SIZE 4096
 #define KSTACK_GUARD 0
 #endif
-process_t * volatile current_process = 0;
+process_t *volatile current_process = 0;
 process_t *ready_queue = 0;
 static int next_pid = 1;
 #if defined(__aarch64__)
 
-__attribute__((returns_twice))
-extern void switch_context(uintptr_t *old_esp, uintptr_t new_esp);
+__attribute__((returns_twice)) extern void switch_context(uintptr_t *old_esp, uintptr_t new_esp);
 #else
 extern void switch_context(uint32_t *old_esp, uint32_t new_esp);
 #endif
@@ -44,20 +43,17 @@ static process_t *process_to_free = 0;
 
 #if defined(__aarch64__)
 
-void validate_current(const char *tag)
-{
+void validate_current(const char *tag) {
     uintptr_t cp = (uintptr_t)current_process;
 
     if (cp < 0xD0000000UL || cp >= 0xE0000000UL) {
-        KLOG_PROC(LOG_CRIT, "CORRUPT current_process=%lx at %s",
-                  (uint64_t)cp, tag);
+        KLOG_PROC(LOG_CRIT, "CORRUPT current_process=%lx at %s", (uint64_t)cp, tag);
         extern void kernel_panic(const char *msg);
         kernel_panic("current_process out of range");
     }
     int pid = current_process->pid;
     if (pid < 0 || pid > 64) {
-        KLOG_PROC(LOG_CRIT, "CORRUPT pid=%d cp=%lx at %s",
-                  pid, (uint64_t)cp, tag);
+        KLOG_PROC(LOG_CRIT, "CORRUPT pid=%d cp=%lx at %s", pid, (uint64_t)cp, tag);
         extern void kernel_panic(const char *msg);
         kernel_panic("current_process->pid out of range");
     }
@@ -68,8 +64,8 @@ void validate_current(const char *tag)
         extern uint32_t stack_top;
         uintptr_t stop = (uintptr_t)&stack_top;
         if (sp_val > stop || sp_val < stop - 131072) {
-            KLOG_PROC(LOG_CRIT, "SP_CORRUPT pid=0 sp=%lx stack_top=%lx at %s",
-                      sp_val, (uint64_t)stop, tag);
+            KLOG_PROC(LOG_CRIT, "SP_CORRUPT pid=0 sp=%lx stack_top=%lx at %s", sp_val,
+                      (uint64_t)stop, tag);
             extern void kernel_panic(const char *msg);
             kernel_panic("kernel SP out of range");
         }
@@ -77,8 +73,8 @@ void validate_current(const char *tag)
         uintptr_t lo = current_process->kstack_alloc;
         uintptr_t hi = current_process->kernel_stack + 4096;
         if (lo && (sp_val < lo || sp_val > hi)) {
-            KLOG_PROC(LOG_CRIT, "SP_CORRUPT pid=%d sp=%lx range=%lx-%lx at %s",
-                      pid, sp_val, (uint64_t)lo, (uint64_t)hi, tag);
+            KLOG_PROC(LOG_CRIT, "SP_CORRUPT pid=%d sp=%lx range=%lx-%lx at %s", pid, sp_val,
+                      (uint64_t)lo, (uint64_t)hi, tag);
             extern void kernel_panic(const char *msg);
             kernel_panic("process SP out of kernel stack range");
         }
@@ -89,8 +85,7 @@ void validate_current(const char *tag)
 #endif
 
 typedef enum { EXEC_FMT_NONE = 0, EXEC_FMT_QEX = 1, EXEC_FMT_ELF = 2 } exec_format_t;
-static int load_quark_exec_image(const QuarkExec *exec, uint32_t size, exec_image_info_t *info)
-{
+static int load_quark_exec_image(const QuarkExec *exec, uint32_t size, exec_image_info_t *info) {
     if (!exec || !info || size <= sizeof(QuarkExec))
         return -1;
     uint32_t user_base = 0x400000;
@@ -118,20 +113,19 @@ static int load_quark_exec_image(const QuarkExec *exec, uint32_t size, exec_imag
         if (page_start < payload_size) {
             uint32_t copy_start = page_start;
             uint32_t copy_end = payload_size < page_end ? payload_size : page_end;
-            memcpy(page_virt + (copy_start - page_start),
-                   payload + copy_start, copy_end - copy_start);
+            memcpy(page_virt + (copy_start - page_start), payload + copy_start,
+                   copy_end - copy_start);
 
             if (copy_end < page_end) {
                 uint32_t zero_start = copy_end - page_start;
                 memset(page_virt + zero_start, 0, page_end - page_start - zero_start);
             }
         } else {
-
             memset(page_virt, 0, 4096);
         }
 
         for (uint32_t off = 0; off < 4096; off += 64)
-            asm volatile("dc cvau, %0" :: "r"((uint64_t)(uintptr_t)(page_virt + off)) : "memory");
+            asm volatile("dc cvau, %0" ::"r"((uint64_t)(uintptr_t)(page_virt + off)) : "memory");
 #endif
     }
 #if !defined(__arm__) && !defined(__aarch64__)
@@ -146,8 +140,7 @@ static int load_quark_exec_image(const QuarkExec *exec, uint32_t size, exec_imag
         return -1;
     return 0;
 }
-void k_scheduler_init()
-{
+void k_scheduler_init() {
     process_t *kernel_proc = (process_t *)mm_heap_alloc(sizeof(process_t));
     kernel_proc->pid = 0;
 #if defined(__aarch64__)
@@ -178,8 +171,7 @@ void k_scheduler_init()
     ready_queue = kernel_proc;
     KLOG_SCHED(LOG_INFO, "scheduler initialized, kernel pid=0");
 }
-void k_scheduler_update_sleeps()
-{
+void k_scheduler_update_sleeps() {
     if (!ready_queue)
         return;
     uint64_t now = get_uptime_ms();
@@ -196,8 +188,7 @@ void k_scheduler_update_sleeps()
     void sys_alarm_tick(uint64_t now_ms);
     sys_alarm_tick(now);
 }
-void k_scheduler_yield()
-{
+void k_scheduler_yield() {
     if (!current_process)
         return;
     process_t *old_proc = current_process;
@@ -224,7 +215,6 @@ void k_scheduler_yield()
     current_process->state = PROCESS_RUNNING;
 #if defined(__aarch64__)
     {
-
         uintptr_t new_pd = current_process->pd_phys;
         uintptr_t new_kstack = current_process->kernel_stack;
         uintptr_t new_esp = current_process->esp;
@@ -278,8 +268,7 @@ void k_scheduler_yield()
         process_to_free = 0;
     }
 }
-process_t *k_proc_find_by_id(int pid)
-{
+process_t *k_proc_find_by_id(int pid) {
     if (!ready_queue)
         return 0;
     process_t *curr = ready_queue;
@@ -290,14 +279,12 @@ process_t *k_proc_find_by_id(int pid)
     } while (curr != ready_queue);
     return 0;
 }
-void block_current_process(uint32_t ms)
-{
+void block_current_process(uint32_t ms) {
     current_process->state = PROCESS_BLOCKED;
     current_process->wake_up_time = get_uptime_ms() + ms;
     k_scheduler_yield();
 }
-process_t *k_proc_spawn(uint8_t *code, uint32_t size)
-{
+process_t *k_proc_spawn(uint8_t *code, uint32_t size) {
     if (!code || size < 4)
         return 0;
     int temp_code_freed = 0;
@@ -374,7 +361,7 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size)
     new_pd_virt64[3] = aarch64_kernel_l1[3];
 
     for (int ci = 0; ci < 4096; ci += 64)
-        asm volatile("dc civac, %0" :: "r"((uint64_t)(uintptr_t)new_pd_virt64 + ci) : "memory");
+        asm volatile("dc civac, %0" ::"r"((uint64_t)(uintptr_t)new_pd_virt64 + ci) : "memory");
     asm volatile("dsb sy" ::: "memory");
     extern void mm_vmm_set_l1_override(uint64_t *);
     mm_vmm_set_l1_override(new_pd_virt64);
@@ -466,9 +453,9 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size)
     }
 #elif defined(__arm__)
 
-    asm volatile("mcr p15, 0, %0, c7, c10, 0" :: "r"(0) : "memory");
+    asm volatile("mcr p15, 0, %0, c7, c10, 0" ::"r"(0) : "memory");
     arm_dsb();
-    asm volatile("mcr p15, 0, %0, c7, c5, 0" :: "r"(0) : "memory");
+    asm volatile("mcr p15, 0, %0, c7, c5, 0" ::"r"(0) : "memory");
     arm_dsb();
     arm_isb();
     arm_set_ttbr0(old_cr3);
@@ -499,7 +486,8 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size)
         sp64[10] = 0;
         sp64[11] = (uint64_t)(uintptr_t)irq_ret_stub;
 
-        for (int i = 0; i < 10; i++) sp64[i] = 0;
+        for (int i = 0; i < 10; i++)
+            sp64[i] = 0;
 
         sp64[12] = 0;
         sp64[13] = 0;
@@ -507,51 +495,50 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size)
     }
 #elif defined(__arm__)
     {
-    uint32_t *esp = (uint32_t *)proc->kernel_stack;
+        uint32_t *esp = (uint32_t *)proc->kernel_stack;
 
-    *--esp = user_stack_virt + user_stack_size;
-    *--esp = image_info.entry;
-    *--esp = (uint32_t)irq_ret_stub;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    proc->esp = (uint32_t)esp;
+        *--esp = user_stack_virt + user_stack_size;
+        *--esp = image_info.entry;
+        *--esp = (uint32_t)irq_ret_stub;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        proc->esp = (uint32_t)esp;
     }
 #else
     {
-    uint32_t *esp = (uint32_t *)proc->kernel_stack;
-    *--esp = 0x23;
-    *--esp = user_stack_virt + user_stack_size;
-    *--esp = 0x202;
-    *--esp = 0x1B;
-    *--esp = image_info.entry;
-    *--esp = (uint32_t)irq_ret_stub;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0;
-    *--esp = 0x202;
-    proc->esp = (uint32_t)esp;
+        uint32_t *esp = (uint32_t *)proc->kernel_stack;
+        *--esp = 0x23;
+        *--esp = user_stack_virt + user_stack_size;
+        *--esp = 0x202;
+        *--esp = 0x1B;
+        *--esp = image_info.entry;
+        *--esp = (uint32_t)irq_ret_stub;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0;
+        *--esp = 0x202;
+        proc->esp = (uint32_t)esp;
     }
 #endif
     proc->next = ready_queue->next;
     ready_queue->next = proc;
-    KLOG_SCHED(LOG_INFO, "spawned pid=%d entry=%x kstack=%x-%x", proc->pid,
-               image_info.entry, (uint32_t)proc->kstack_alloc,
-               (uint32_t)proc->kernel_stack);
+    KLOG_SCHED(LOG_INFO, "spawned pid=%d entry=%x kstack=%x-%x", proc->pid, image_info.entry,
+               (uint32_t)proc->kstack_alloc, (uint32_t)proc->kernel_stack);
     return proc;
 spawn_fail:
 #if defined(__aarch64__)
 
-    {
-        extern void mm_vmm_clear_l1_override(void);
-        mm_vmm_clear_l1_override();
-    }
+{
+    extern void mm_vmm_clear_l1_override(void);
+    mm_vmm_clear_l1_override();
+}
 
     mm_pmm_free_frame(new_pd_phys);
 #elif defined(__arm__)
@@ -577,8 +564,7 @@ spawn_fail:
     mm_heap_free(proc);
     return 0;
 }
-void k_proc_terminate(int pid)
-{
+void k_proc_terminate(int pid) {
     if (pid == 0)
         return;
 
@@ -586,9 +572,8 @@ void k_proc_terminate(int pid)
     process_t *curr = ready_queue->next;
     while (curr && curr != ready_queue) {
         if (curr->pid == pid) {
-            KLOG_PROC(LOG_WARN, "TERMINATE pid=%d name='%s' state=%d by=%d",
-                       pid, curr->name, (int)curr->state,
-                       current_process ? current_process->pid : -1);
+            KLOG_PROC(LOG_WARN, "TERMINATE pid=%d name='%s' state=%d by=%d", pid, curr->name,
+                      (int)curr->state, current_process ? current_process->pid : -1);
             void k_notify_server_proc_exit(int pid);
             k_notify_server_proc_exit(pid);
             {
@@ -623,8 +608,7 @@ void k_proc_terminate(int pid)
     }
     KLOG_PROC(LOG_ERROR, "KILL-NOTFOUND pid=%d — not in ready_queue!", pid);
 }
-void k_scheduler_direct_switch(process_t *dest)
-{
+void k_scheduler_direct_switch(process_t *dest) {
     if (!dest || dest == current_process)
         return;
     process_t *old = current_process;
@@ -685,14 +669,12 @@ void k_scheduler_direct_switch(process_t *dest)
         process_to_free = 0;
     }
 }
-void k_proc_wait_irq(int irq)
-{
+void k_proc_wait_irq(int irq) {
     current_process->state = PROCESS_WAIT_IRQ;
     current_process->waiting_irq = irq;
     k_scheduler_yield();
 }
-void process_wake_on_irq(int irq)
-{
+void process_wake_on_irq(int irq) {
     if (!ready_queue)
         return;
     process_t *curr = ready_queue;

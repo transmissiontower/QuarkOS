@@ -4,8 +4,7 @@
  */
 #include "lib/stdlib.h"
 #include "lib/stdint.h"
-void reverse(char *str, int len)
-{
+void reverse(char *str, int len) {
     int i = 0, j = len - 1;
     while (i < j) {
         char temp = str[i];
@@ -15,8 +14,7 @@ void reverse(char *str, int len)
         j--;
     }
 }
-int int_to_str(int x, char str[], int d)
-{
+int int_to_str(int x, char str[], int d) {
     int i = 0;
     int sign = 0;
     (void)d;
@@ -36,8 +34,7 @@ int int_to_str(int x, char str[], int d)
     str[i] = '\0';
     return i;
 }
-void time_to_str(int x, char *buf)
-{
+void time_to_str(int x, char *buf) {
     if (x < 10) {
         buf[0] = '0';
         int_to_str(x, buf + 1, 0);
@@ -45,8 +42,7 @@ void time_to_str(int x, char *buf)
         int_to_str(x, buf, 0);
     }
 }
-uint32_t strlen(const char *str)
-{
+uint32_t strlen(const char *str) {
     uint32_t len = 0;
     if (!str)
         return 0;
@@ -54,8 +50,7 @@ uint32_t strlen(const char *str)
         len++;
     return len;
 }
-char *strncpy(char *dest, const char *src, uint32_t n)
-{
+char *strncpy(char *dest, const char *src, uint32_t n) {
     uint32_t i;
     for (i = 0; i < n && src[i] != '\0'; i++)
         dest[i] = src[i];
@@ -63,22 +58,19 @@ char *strncpy(char *dest, const char *src, uint32_t n)
         dest[i] = '\0';
     return dest;
 }
-char *strcat(char *dest, const char *src)
-{
+char *strcat(char *dest, const char *src) {
     char *ptr = dest + strlen(dest);
     while (*src)
         *ptr++ = *src++;
     *ptr = '\0';
     return dest;
 }
-void bzero(void *dest, int len)
-{
+void bzero(void *dest, int len) {
     char *d = (char *)dest;
     while (len--)
         *d++ = 0;
 }
-void uint_to_hex(uint32_t val, char *buf)
-{
+void uint_to_hex(uint32_t val, char *buf) {
     char *chars = "0123456789ABCDEF";
     buf[0] = '0';
     buf[1] = 'x';
@@ -88,8 +80,7 @@ void uint_to_hex(uint32_t val, char *buf)
     }
     buf[10] = '\0';
 }
-char *strstr(const char *haystack, const char *needle)
-{
+char *strstr(const char *haystack, const char *needle) {
     if (!*needle)
         return (char *)haystack;
     for (; *haystack; haystack++) {

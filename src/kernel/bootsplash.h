@@ -4,7 +4,7 @@
  */
 #ifndef KERNEL_BOOTSPLASH_H
 #define KERNEL_BOOTSPLASH_H
-#include "arch/x86/multiboot.h"
+#include "kernel/multiboot.h"
 #include "drivers/rtc.h"
 #include "lib/stdbool.h"
 #include "lib/stdint.h"

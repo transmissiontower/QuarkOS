@@ -10,7 +10,7 @@
 #endif
 typedef unsigned int size_t;
 void *malloc(unsigned int size);
-void  free(void *ptr);
+void free(void *ptr);
 void *realloc(void *ptr, unsigned int size);
 #ifndef abs
 #define abs(x) ((x) < 0 ? -(x) : (x))

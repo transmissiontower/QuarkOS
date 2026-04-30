@@ -22,13 +22,12 @@ extern uint32_t total_alloc;
 extern uint32_t total_phys_pages;
 extern uint32_t k_font_phys_addr;
 extern uint32_t k_font_size;
-extern void    *k_font_virt_addr;
+extern void *k_font_virt_addr;
 extern uint32_t k_icons_phys_start;
 extern uint32_t k_icons_size;
 extern uint32_t k_wallpaper_phys_addr;
 extern uint32_t k_wallpaper_size;
-int sys_map_wallpaper(uint32_t *virt_addr_out)
-{
+int sys_map_wallpaper(uint32_t *virt_addr_out) {
     if (k_wallpaper_phys_addr == 0)
         return -1;
     uint32_t virt_start = 0x93000000;
@@ -46,8 +45,7 @@ static int storage_server_pid = -1;
 static int compositor_server_pid = -1;
 static int input_server_pid = -1;
 static int ttysh_server_pid = -1;
-static int is_ptr_safe(const void *ptr, uint32_t size)
-{
+static int is_ptr_safe(const void *ptr, uint32_t size) {
     uintptr_t addr = (uintptr_t)ptr;
     if (addr < 0x1000)
         return 0;
@@ -55,8 +53,7 @@ static int is_ptr_safe(const void *ptr, uint32_t size)
         return 0;
     return 1;
 }
-int sys_grant_io_privilege(int pid, uint32_t mask)
-{
+int sys_grant_io_privilege(int pid, uint32_t mask) {
     process_t *p = k_proc_find_by_id(pid);
     if (p) {
         p->io_privilege_mask |= mask;
@@ -64,8 +61,7 @@ int sys_grant_io_privilege(int pid, uint32_t mask)
     }
     return -1;
 }
-int sys_set_server_pid(int type, int pid)
-{
+int sys_set_server_pid(int type, int pid) {
     if (type == 0)
         storage_server_pid = pid;
     else if (type == 1)
@@ -76,8 +72,7 @@ int sys_set_server_pid(int type, int pid)
         ttysh_server_pid = pid;
     return 0;
 }
-int sys_get_server_pid(int type)
-{
+int sys_get_server_pid(int type) {
     if (type == 0)
         return storage_server_pid;
     if (type == 1)
@@ -88,8 +83,7 @@ int sys_get_server_pid(int type)
         return ttysh_server_pid;
     return -1;
 }
-void k_notify_server_proc_exit(int pid)
-{
+void k_notify_server_proc_exit(int pid) {
     if (compositor_server_pid < 0)
         return;
     process_t *comp = k_proc_find_by_id(compositor_server_pid);
@@ -107,35 +101,30 @@ void k_notify_server_proc_exit(int pid)
             comp->state = PROCESS_READY;
     }
 }
-int sys_exit(int code)
-{
-    KLOG_PROC(LOG_INFO, "EXIT pid=%d name='%s' code=%d",
-              current_process->pid, current_process->name, code);
+int sys_exit(int code) {
+    KLOG_PROC(LOG_INFO, "EXIT pid=%d name='%s' code=%d", current_process->pid,
+              current_process->name, code);
     current_process->exit_code = code;
     k_proc_terminate(current_process->pid);
     k_scheduler_yield();
     return 0;
 }
-int sys_kill(int pid)
-{
+int sys_kill(int pid) {
     if (pid <= 1)
         return -1;
-    KLOG_PROC(LOG_WARN, "KILL pid=%d by=%d name='%s'",
-              pid, current_process->pid, current_process->name);
+    KLOG_PROC(LOG_WARN, "KILL pid=%d by=%d name='%s'", pid, current_process->pid,
+              current_process->name);
     k_proc_terminate(pid);
     return 0;
 }
-int sys_uptime()
-{
+int sys_uptime() {
     return (int)get_uptime_ms();
 }
-int sys_sleep(uint32_t ms)
-{
+int sys_sleep(uint32_t ms) {
     block_current_process(ms);
     return 0;
 }
-int sys_spawn(void *buffer, uint32_t size)
-{
+int sys_spawn(void *buffer, uint32_t size) {
     if (!buffer || size == 0)
         return -1;
     if (!is_ptr_safe(buffer, size))
@@ -145,8 +134,7 @@ int sys_spawn(void *buffer, uint32_t size)
         return -1;
     return proc->pid;
 }
-int sys_map_fb(fb_info_t *user_info)
-{
+int sys_map_fb(fb_info_t *user_info) {
     if (!is_ptr_safe(user_info, sizeof(fb_info_t)))
         return -1;
     uint32_t virt_start = USER_FB_VIRT_START;
@@ -163,34 +151,30 @@ int sys_map_fb(fb_info_t *user_info)
     user_info->buffer = (void *)(virt_start + offset);
     return 0;
 }
-static void ipc_enqueue(process_t *dest, message_t *msg)
-{
+static void ipc_enqueue(process_t *dest, message_t *msg) {
     message_t *slot = &dest->ipc_queue.messages[dest->ipc_queue.tail];
     memcpy(slot, msg, sizeof(message_t));
     slot->sender_pid = current_process->pid;
     dest->ipc_queue.tail = (dest->ipc_queue.tail + 1) % IPC_QUEUE_SIZE;
     dest->ipc_queue.count++;
 }
-static message_t *ipc_dequeue(process_t *proc)
-{
+static message_t *ipc_dequeue(process_t *proc) {
     message_t *slot = &proc->ipc_queue.messages[proc->ipc_queue.head];
     proc->ipc_queue.head = (proc->ipc_queue.head + 1) % IPC_QUEUE_SIZE;
     proc->ipc_queue.count--;
     return slot;
 }
-int sys_ipc_send(int dest_pid, message_t *user_msg)
-{
+int sys_ipc_send(int dest_pid, message_t *user_msg) {
     if (!is_ptr_safe(user_msg, sizeof(message_t)))
         return -1;
     process_t *dest = k_proc_find_by_id(dest_pid);
     if (!dest) {
-        KLOG_IPC(LOG_WARN, "send: pid=%d→%d NOENT",
-                 current_process->pid, dest_pid);
+        KLOG_IPC(LOG_WARN, "send: pid=%d→%d NOENT", current_process->pid, dest_pid);
         return -1;
     }
     if (dest->ipc_wait_from == current_process->pid) {
-        KLOG_IPC(LOG_TRACE, "reply: pid=%d→%d type=%d",
-                 current_process->pid, dest_pid, user_msg->type);
+        KLOG_IPC(LOG_TRACE, "reply: pid=%d→%d type=%d", current_process->pid, dest_pid,
+                 user_msg->type);
         memcpy(&dest->ipc_reply_slot, user_msg, sizeof(message_t));
         dest->ipc_reply_slot.sender_pid = current_process->pid;
         dest->ipc_reply_ready = 1;
@@ -201,38 +185,34 @@ int sys_ipc_send(int dest_pid, message_t *user_msg)
     if (dest->ipc_wait_from != -1)
         return 0;
     if (dest->ipc_queue.count >= IPC_QUEUE_SIZE) {
-        KLOG_IPC(LOG_WARN, "send: pid=%d→%d FULL (type=%d q=%d)",
-                 current_process->pid, dest_pid, user_msg->type,
-                 dest->ipc_queue.count);
+        KLOG_IPC(LOG_WARN, "send: pid=%d→%d FULL (type=%d q=%d)", current_process->pid, dest_pid,
+                 user_msg->type, dest->ipc_queue.count);
         return -1;
     }
-    KLOG_IPC(LOG_TRACE, "send: pid=%d→%d type=%d q=%d",
-             current_process->pid, dest_pid, user_msg->type,
-             dest->ipc_queue.count);
+    KLOG_IPC(LOG_TRACE, "send: pid=%d→%d type=%d q=%d", current_process->pid, dest_pid,
+             user_msg->type, dest->ipc_queue.count);
     ipc_enqueue(dest, user_msg);
     if (dest->state == PROCESS_IPC_WAIT || dest->state == PROCESS_BLOCKED)
         dest->state = PROCESS_READY;
     return 0;
 }
-int sys_ipc_send_recv(int dest_pid, message_t *send_msg, message_t *recv_msg)
-{
+int sys_ipc_send_recv(int dest_pid, message_t *send_msg, message_t *recv_msg) {
     if (!is_ptr_safe(send_msg, sizeof(message_t)))
         return -1;
     if (!is_ptr_safe(recv_msg, sizeof(message_t)))
         return -1;
     process_t *dest = k_proc_find_by_id(dest_pid);
     if (!dest) {
-        KLOG_IPC(LOG_WARN, "sendrecv: pid=%d→%d NOENT",
-                 current_process->pid, dest_pid);
+        KLOG_IPC(LOG_WARN, "sendrecv: pid=%d→%d NOENT", current_process->pid, dest_pid);
         return -1;
     }
     if (dest->ipc_queue.count >= IPC_QUEUE_SIZE)
-        KLOG_IPC(LOG_WARN, "sendrecv: pid=%d→%d FULL q=%d, spinning",
-                 current_process->pid, dest_pid, dest->ipc_queue.count);
+        KLOG_IPC(LOG_WARN, "sendrecv: pid=%d→%d FULL q=%d, spinning", current_process->pid,
+                 dest_pid, dest->ipc_queue.count);
     while (dest->ipc_queue.count >= IPC_QUEUE_SIZE)
         k_scheduler_yield();
-    KLOG_IPC(LOG_TRACE, "sendrecv: pid=%d→%d type=%d (wait reply)",
-             current_process->pid, dest_pid, send_msg->type);
+    KLOG_IPC(LOG_TRACE, "sendrecv: pid=%d→%d type=%d (wait reply)", current_process->pid, dest_pid,
+             send_msg->type);
     ipc_enqueue(dest, send_msg);
     current_process->ipc_wait_from = dest_pid;
     current_process->ipc_reply_ready = 0;
@@ -250,14 +230,12 @@ int sys_ipc_send_recv(int dest_pid, message_t *send_msg, message_t *recv_msg)
         k_scheduler_yield();
     }
     current_process->ipc_wait_from = -1;
-    KLOG_IPC(LOG_TRACE, "sendrecv: pid=%d←%d reply type=%d",
-             current_process->pid, dest_pid,
+    KLOG_IPC(LOG_TRACE, "sendrecv: pid=%d←%d reply type=%d", current_process->pid, dest_pid,
              current_process->ipc_reply_slot.type);
     memcpy(recv_msg, &current_process->ipc_reply_slot, sizeof(message_t));
     return 0;
 }
-int sys_ipc_recv(message_t *user_msg)
-{
+int sys_ipc_recv(message_t *user_msg) {
     if (!is_ptr_safe(user_msg, sizeof(message_t)))
         return -1;
     while (current_process->ipc_queue.count == 0) {
@@ -265,14 +243,12 @@ int sys_ipc_recv(message_t *user_msg)
         k_scheduler_yield();
     }
     message_t *slot = ipc_dequeue(current_process);
-    KLOG_IPC(LOG_TRACE, "recv: pid=%d←%d type=%d q=%d",
-             current_process->pid, slot->sender_pid, slot->type,
-             current_process->ipc_queue.count);
+    KLOG_IPC(LOG_TRACE, "recv: pid=%d←%d type=%d q=%d", current_process->pid, slot->sender_pid,
+             slot->type, current_process->ipc_queue.count);
     memcpy(user_msg, slot, sizeof(message_t));
     return 0;
 }
-int sys_ipc_recv_nb(message_t *user_msg)
-{
+int sys_ipc_recv_nb(message_t *user_msg) {
     if (!is_ptr_safe(user_msg, sizeof(message_t)))
         return -1;
     if (current_process->ipc_queue.count == 0)
@@ -283,14 +259,13 @@ int sys_ipc_recv_nb(message_t *user_msg)
     current_process->ipc_queue.count--;
     return 0;
 }
-int sys_map_font_atlas(uint32_t *virt_addr_out)
-{
+int sys_map_font_atlas(uint32_t *virt_addr_out) {
     if (!is_ptr_safe(virt_addr_out, 4))
         return -1;
     uint32_t virt_start = 0x90000000;
     if (k_font_phys_addr != 0 && k_font_size != 0) {
         uint32_t phys_base = k_font_phys_addr & ~0xFFFu;
-        uint32_t offset    = k_font_phys_addr & 0xFFFu;
+        uint32_t offset = k_font_phys_addr & 0xFFFu;
         uint32_t font_pages = (k_font_size + offset + 4095) / 4096;
         for (uint32_t i = 0; i < font_pages; i++) {
             mm_vmm_map_page(virt_start + i * 4096, phys_base + i * 4096,
@@ -302,7 +277,7 @@ int sys_map_font_atlas(uint32_t *virt_addr_out)
 
     if (!k_font_virt_addr || k_font_size == 0)
         return -1;
-    uint32_t offset     = (uint32_t)(uintptr_t)k_font_virt_addr & 0xFFFu;
+    uint32_t offset = (uint32_t)(uintptr_t)k_font_virt_addr & 0xFFFu;
     uint32_t font_pages = (offset + k_font_size + 4095) / 4096;
     uint32_t base = (uint32_t)(uintptr_t)k_font_virt_addr & ~0xFFFu;
     for (uint32_t i = 0; i < font_pages; i++) {
@@ -314,18 +289,19 @@ int sys_map_font_atlas(uint32_t *virt_addr_out)
         {
             uint32_t pd_idx = addr >> 22;
             uint32_t pt_idx = (addr >> 12) & 0x3FF;
-            uint32_t *pt    = (uint32_t *)(0xFFC00000 + pd_idx * 4096);
+            uint32_t *pt = (uint32_t *)(0xFFC00000 + pd_idx * 4096);
             phys = pt[pt_idx] & ~0xFFFu;
         }
 #endif
-        if (!phys) continue;
-        mm_vmm_map_page(virt_start + i * 4096, phys, PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
+        if (!phys)
+            continue;
+        mm_vmm_map_page(virt_start + i * 4096, phys,
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     }
     *virt_addr_out = virt_start + ((uint32_t)(uintptr_t)k_font_virt_addr & 0xFFFu);
     return 0;
 }
-int sys_port_io(int port, int val, int type)
-{
+int sys_port_io(int port, int val, int type) {
     if (!(current_process->io_privilege_mask & 0x03))
         return -1;
     switch (type) {
@@ -347,8 +323,7 @@ int sys_port_io(int port, int val, int type)
     }
     return 0;
 }
-int sys_map_icons_atlas(uint32_t *virt_addr_out)
-{
+int sys_map_icons_atlas(uint32_t *virt_addr_out) {
     if (k_icons_phys_start == 0)
         return -1;
     uint32_t virt_start = 0x91000000;
@@ -362,8 +337,7 @@ int sys_map_icons_atlas(uint32_t *virt_addr_out)
     *virt_addr_out = virt_start + offset;
     return 0;
 }
-int sys_sbrk(uint32_t size)
-{
+int sys_sbrk(uint32_t size) {
     uint32_t old_heap_end = current_process->heap_end;
     if (size == 0)
         return (int)old_heap_end;
@@ -382,8 +356,7 @@ int sys_sbrk(uint32_t size)
     current_process->heap_end = new_heap_end;
     return (int)old_heap_end;
 }
-int sys_get_vmap(vmap_region_t *out_regions)
-{
+int sys_get_vmap(vmap_region_t *out_regions) {
     process_t *p = current_process;
     int i = 0;
     out_regions[i].start = 0x400000;
@@ -408,8 +381,7 @@ int sys_get_vmap(vmap_region_t *out_regions)
     i++;
     return i;
 }
-int sys_get_procs(process_info_t *out, int max)
-{
+int sys_get_procs(process_info_t *out, int max) {
     if (!is_ptr_safe(out, sizeof(process_info_t) * max))
         return -1;
     extern process_t *ready_queue;
@@ -427,8 +399,7 @@ int sys_get_procs(process_info_t *out, int max)
     } while (curr != ready_queue);
     return count;
 }
-int sys_set_proc_name(int pid, const char *name)
-{
+int sys_set_proc_name(int pid, const char *name) {
     if (!is_ptr_safe(name, 1))
         return -1;
     process_t *p = (pid == -1) ? current_process : k_proc_find_by_id(pid);
@@ -438,8 +409,7 @@ int sys_set_proc_name(int pid, const char *name)
     p->name[15] = 0;
     return 0;
 }
-int sys_get_time(Time *user_time)
-{
+int sys_get_time(Time *user_time) {
     extern volatile Time sys_time;
     user_time->second = sys_time.second;
     user_time->minute = sys_time.minute;
@@ -449,8 +419,7 @@ int sys_get_time(Time *user_time)
     user_time->year = sys_time.year;
     return 0;
 }
-int sys_power_action(int action)
-{
+int sys_power_action(int action) {
     if (action == 0) {
         acpi_shutdown();
     } else if (action == 1) {
@@ -458,8 +427,7 @@ int sys_power_action(int action)
     }
     return -1;
 }
-int sys_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu)
-{
+int sys_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu) {
     if (!is_ptr_safe(used, 4) || !is_ptr_safe(total, 4) || !is_ptr_safe(cpu, 4))
         return -1;
     extern uint32_t total_alloc;
@@ -470,20 +438,19 @@ int sys_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu)
     *cpu = cpu_usage_pct;
     return 0;
 }
-int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out)
-{
+int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out) {
     if (size == 0 || !out)
         return -1;
-    uint32_t offset    = virt & 0xFFF;
+    uint32_t offset = virt & 0xFFF;
     uint32_t page_base = virt & ~0xFFF;
-    uint32_t pages     = (offset + size + 4095) / 4096;
+    uint32_t pages = (offset + size + 4095) / 4096;
     if (!is_ptr_safe(out, pages * 4))
         return -1;
     for (uint32_t i = 0; i < pages; i++) {
-        uint32_t addr   = page_base + i * 4096;
+        uint32_t addr = page_base + i * 4096;
         uint32_t pd_idx = addr >> 22;
         uint32_t pt_idx = (addr >> 12) & 0x3FF;
-        uint32_t *pd    = REC_PAGEDIR;
+        uint32_t *pd = REC_PAGEDIR;
         if (!(pd[pd_idx] & PAGE_FLAG_PRESENT))
             return -1;
         uint32_t *pt = Rec_PAGEDIR(pd_idx);
@@ -493,8 +460,7 @@ int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out)
     }
     return (int)pages;
 }
-uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count)
-{
+uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count) {
     if (!phys_pages || count == 0 || count > 4096)
         return 0;
     if (!is_ptr_safe(phys_pages, count * 4))
@@ -510,8 +476,7 @@ uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count)
     current_process->shared_virt_bump += count * 4096;
     return virt_start;
 }
-int sys_trigger_panic(const char *msg)
-{
+int sys_trigger_panic(const char *msg) {
     if (current_process->pid != 0)
         return -1;
     const char *default_msg = "User requested panic";
@@ -525,8 +490,7 @@ int sys_trigger_panic(const char *msg)
     kernel_panic(panic_msg);
     return -1;
 }
-int sys_waitpid(int pid)
-{
+int sys_waitpid(int pid) {
     process_t *target = k_proc_find_by_id(pid);
     if (!target)
         return -1;
@@ -539,33 +503,34 @@ int sys_waitpid(int pid)
     }
     return (int)current_process->ipc_reply_slot.data1;
 }
-#define MAX_PIPES    16
+#define MAX_PIPES 16
 #define PIPE_BUF_SIZE 4096
 typedef struct {
-    int      id;
-    char     name[16];
-    uint8_t  buf[PIPE_BUF_SIZE];
+    int id;
+    char name[16];
+    uint8_t buf[PIPE_BUF_SIZE];
     uint32_t head, tail, count;
-    int      blocked_reader;
-    int      blocked_writer;
+    int blocked_reader;
+    int blocked_writer;
 } kpipe_t;
 static kpipe_t k_pipes[MAX_PIPES];
-static int     k_pipes_inited = 0;
-static void pipes_init(void)
-{
-    if (k_pipes_inited) return;
-    for (int i = 0; i < MAX_PIPES; i++) k_pipes[i].id = 0;
+static int k_pipes_inited = 0;
+static void pipes_init(void) {
+    if (k_pipes_inited)
+        return;
+    for (int i = 0; i < MAX_PIPES; i++)
+        k_pipes[i].id = 0;
     k_pipes_inited = 1;
 }
-static int pipe_name_eq(const char *a, const char *b)
-{
+static int pipe_name_eq(const char *a, const char *b) {
     int i = 0;
-    while (i < 15 && a[i] && b[i] && a[i] == b[i]) i++;
+    while (i < 15 && a[i] && b[i] && a[i] == b[i])
+        i++;
     return (a[i] == 0 && b[i] == 0);
 }
-int sys_pipe_create(const char *name)
-{
-    if (!is_ptr_safe(name, 1)) return -1;
+int sys_pipe_create(const char *name) {
+    if (!is_ptr_safe(name, 1))
+        return -1;
     pipes_init();
     for (int i = 0; i < MAX_PIPES; i++) {
         if (k_pipes[i].id == 0) {
@@ -582,9 +547,9 @@ int sys_pipe_create(const char *name)
     }
     return -1;
 }
-int sys_pipe_open(const char *name)
-{
-    if (!is_ptr_safe(name, 1)) return -1;
+int sys_pipe_open(const char *name) {
+    if (!is_ptr_safe(name, 1))
+        return -1;
     pipes_init();
     for (int i = 0; i < MAX_PIPES; i++) {
         if (k_pipes[i].id != 0 && pipe_name_eq(k_pipes[i].name, name))
@@ -592,12 +557,14 @@ int sys_pipe_open(const char *name)
     }
     return -1;
 }
-int sys_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len)
-{
-    if (pipe_id < 1 || pipe_id > MAX_PIPES) return -1;
+int sys_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len) {
+    if (pipe_id < 1 || pipe_id > MAX_PIPES)
+        return -1;
     kpipe_t *p = &k_pipes[pipe_id - 1];
-    if (p->id == 0 || !buf || len == 0) return -1;
-    if (!is_ptr_safe(buf, len)) return -1;
+    if (p->id == 0 || !buf || len == 0)
+        return -1;
+    if (!is_ptr_safe(buf, len))
+        return -1;
     for (uint32_t w = 0; w < len; w++) {
         while (p->count >= PIPE_BUF_SIZE) {
             p->blocked_writer = current_process->pid;
@@ -610,18 +577,21 @@ int sys_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len)
         p->count++;
         if (p->blocked_reader != -1) {
             process_t *r = k_proc_find_by_id(p->blocked_reader);
-            if (r && r->state == PROCESS_BLOCKED) r->state = PROCESS_READY;
+            if (r && r->state == PROCESS_BLOCKED)
+                r->state = PROCESS_READY;
             p->blocked_reader = -1;
         }
     }
     return (int)len;
 }
-int sys_pipe_read(int pipe_id, uint8_t *buf, uint32_t len)
-{
-    if (pipe_id < 1 || pipe_id > MAX_PIPES) return -1;
+int sys_pipe_read(int pipe_id, uint8_t *buf, uint32_t len) {
+    if (pipe_id < 1 || pipe_id > MAX_PIPES)
+        return -1;
     kpipe_t *p = &k_pipes[pipe_id - 1];
-    if (p->id == 0 || !buf || len == 0) return -1;
-    if (!is_ptr_safe(buf, len)) return -1;
+    if (p->id == 0 || !buf || len == 0)
+        return -1;
+    if (!is_ptr_safe(buf, len))
+        return -1;
     for (uint32_t r = 0; r < len; r++) {
         while (p->count == 0) {
             p->blocked_reader = current_process->pid;
@@ -634,65 +604,77 @@ int sys_pipe_read(int pipe_id, uint8_t *buf, uint32_t len)
         p->count--;
         if (p->blocked_writer != -1) {
             process_t *w = k_proc_find_by_id(p->blocked_writer);
-            if (w && w->state == PROCESS_BLOCKED) w->state = PROCESS_READY;
+            if (w && w->state == PROCESS_BLOCKED)
+                w->state = PROCESS_READY;
             p->blocked_writer = -1;
         }
     }
     return (int)len;
 }
-int sys_pipe_close(int pipe_id)
-{
-    if (pipe_id < 1 || pipe_id > MAX_PIPES) return -1;
+int sys_pipe_close(int pipe_id) {
+    if (pipe_id < 1 || pipe_id > MAX_PIPES)
+        return -1;
     kpipe_t *p = &k_pipes[pipe_id - 1];
-    if (p->id == 0) return -1;
+    if (p->id == 0)
+        return -1;
     if (p->blocked_reader != -1) {
         process_t *r = k_proc_find_by_id(p->blocked_reader);
-        if (r && r->state == PROCESS_BLOCKED) r->state = PROCESS_READY;
+        if (r && r->state == PROCESS_BLOCKED)
+            r->state = PROCESS_READY;
     }
     if (p->blocked_writer != -1) {
         process_t *w = k_proc_find_by_id(p->blocked_writer);
-        if (w && w->state == PROCESS_BLOCKED) w->state = PROCESS_READY;
+        if (w && w->state == PROCESS_BLOCKED)
+            w->state = PROCESS_READY;
     }
     p->id = 0;
     return 0;
 }
 #define MAX_ALARMS 32
-typedef struct { int pid; uint64_t fire_at; } k_alarm_entry_t;
+typedef struct {
+    int pid;
+    uint64_t fire_at;
+} k_alarm_entry_t;
 static k_alarm_entry_t k_alarms[MAX_ALARMS];
 static int k_alarms_inited = 0;
-static void alarms_init(void)
-{
-    if (k_alarms_inited) return;
-    for (int i = 0; i < MAX_ALARMS; i++) k_alarms[i].pid = 0;
+static void alarms_init(void) {
+    if (k_alarms_inited)
+        return;
+    for (int i = 0; i < MAX_ALARMS; i++)
+        k_alarms[i].pid = 0;
     k_alarms_inited = 1;
 }
-int sys_set_alarm(uint32_t ms)
-{
+int sys_set_alarm(uint32_t ms) {
     alarms_init();
     int free_slot = -1;
     for (int i = 0; i < MAX_ALARMS; i++) {
         if (k_alarms[i].pid == current_process->pid) {
             k_alarms[i].pid = 0;
-            if (free_slot < 0) free_slot = i;
+            if (free_slot < 0)
+                free_slot = i;
         } else if (k_alarms[i].pid == 0 && free_slot < 0) {
             free_slot = i;
         }
     }
-    if (ms == 0) return 0;
-    if (free_slot < 0) return -1;
+    if (ms == 0)
+        return 0;
+    if (free_slot < 0)
+        return -1;
     k_alarms[free_slot].pid = current_process->pid;
     k_alarms[free_slot].fire_at = get_uptime_ms() + ms;
     return 0;
 }
-void sys_alarm_tick(uint64_t now_ms)
-{
-    if (!k_alarms_inited) return;
+void sys_alarm_tick(uint64_t now_ms) {
+    if (!k_alarms_inited)
+        return;
     for (int i = 0; i < MAX_ALARMS; i++) {
         if (k_alarms[i].pid > 0 && now_ms >= k_alarms[i].fire_at) {
             process_t *target = k_proc_find_by_id(k_alarms[i].pid);
             k_alarms[i].pid = 0;
-            if (!target) continue;
-            if (target->ipc_queue.count >= IPC_QUEUE_SIZE) continue;
+            if (!target)
+                continue;
+            if (target->ipc_queue.count >= IPC_QUEUE_SIZE)
+                continue;
             message_t *slot = &target->ipc_queue.messages[target->ipc_queue.tail];
             memset(slot, 0, sizeof(message_t));
             slot->type = MSG_ALARM;
@@ -704,59 +686,76 @@ void sys_alarm_tick(uint64_t now_ms)
         }
     }
 }
-int sys_setenv(const char *kv)
-{
-    if (!is_ptr_safe(kv, 1)) return -1;
+int sys_setenv(const char *kv) {
+    if (!is_ptr_safe(kv, 1))
+        return -1;
     const char *eq = kv;
-    while (*eq && *eq != '=') eq++;
-    if (*eq != '=') return -1;
+    while (*eq && *eq != '=')
+        eq++;
+    if (*eq != '=')
+        return -1;
     uint32_t klen = (uint32_t)(eq - kv);
-    if (klen == 0 || klen > 63) return -1;
+    if (klen == 0 || klen > 63)
+        return -1;
     static char tmp[256];
     uint32_t kv_len = 0;
-    while (kv[kv_len]) kv_len++;
+    while (kv[kv_len])
+        kv_len++;
     uint32_t out = 0;
     const char *p = current_process->env;
     while (*p) {
         const char *entry = p;
-        while (*p) p++;
+        while (*p)
+            p++;
         p++;
         uint32_t elen = (uint32_t)(p - entry - 1);
         int match = (elen > klen);
         if (match) {
             for (uint32_t i = 0; i < klen; i++)
-                if (entry[i] != kv[i]) { match = 0; break; }
-            if (match) match = (entry[klen] == '=');
+                if (entry[i] != kv[i]) {
+                    match = 0;
+                    break;
+                }
+            if (match)
+                match = (entry[klen] == '=');
         }
         if (!match) {
-            if (out + elen + 1 >= 256) return -1;
+            if (out + elen + 1 >= 256)
+                return -1;
             memcpy(tmp + out, entry, elen);
             out += elen;
             tmp[out++] = 0;
         }
     }
-    if (out + kv_len + 2 > 256) return -1;
+    if (out + kv_len + 2 > 256)
+        return -1;
     memcpy(tmp + out, kv, kv_len);
     out += kv_len;
     tmp[out++] = 0;
-    tmp[out]   = 0;
+    tmp[out] = 0;
     memcpy(current_process->env, tmp, out + 1);
     return 0;
 }
-int sys_getenv(const char *key, char *out, uint32_t maxlen)
-{
-    if (!is_ptr_safe(key, 1)) return -1;
-    if (!is_ptr_safe(out, maxlen)) return -1;
+int sys_getenv(const char *key, char *out, uint32_t maxlen) {
+    if (!is_ptr_safe(key, 1))
+        return -1;
+    if (!is_ptr_safe(out, maxlen))
+        return -1;
     uint32_t klen = 0;
-    while (key[klen]) klen++;
+    while (key[klen])
+        klen++;
     const char *p = current_process->env;
     while (*p) {
         const char *next = p;
-        while (*next) next++;
+        while (*next)
+            next++;
         next++;
         int match = 1;
         for (uint32_t i = 0; i < klen; i++)
-            if (p[i] != key[i]) { match = 0; break; }
+            if (p[i] != key[i]) {
+                match = 0;
+                break;
+            }
         if (match && p[klen] == '=') {
             const char *val = p + klen + 1;
             strncpy(out, val, maxlen - 1);
@@ -765,19 +764,20 @@ int sys_getenv(const char *key, char *out, uint32_t maxlen)
         }
         p = next;
     }
-    if (maxlen > 0) out[0] = 0;
+    if (maxlen > 0)
+        out[0] = 0;
     return -1;
 }
-int sys_signal_send(int pid, int signum)
-{
-    KLOG_PROC(LOG_DEBUG, "SIGNAL pid=%d→%d sig=%d",
-              current_process->pid, pid, signum);
+int sys_signal_send(int pid, int signum) {
+    KLOG_PROC(LOG_DEBUG, "SIGNAL pid=%d→%d sig=%d", current_process->pid, pid, signum);
     if (signum == 9) {
         return sys_kill(pid);
     }
     process_t *target = k_proc_find_by_id(pid);
-    if (!target) return -1;
-    if (target->ipc_queue.count >= IPC_QUEUE_SIZE) return -1;
+    if (!target)
+        return -1;
+    if (target->ipc_queue.count >= IPC_QUEUE_SIZE)
+        return -1;
     message_t *slot = &target->ipc_queue.messages[target->ipc_queue.tail];
     memset(slot, 0, sizeof(message_t));
     slot->type = MSG_SIGNAL;
@@ -789,8 +789,7 @@ int sys_signal_send(int pid, int signum)
         target->state = PROCESS_READY;
     return 0;
 }
-void k_syscall_entry(struct InterruptRegisters *regs)
-{
+void k_syscall_entry(struct InterruptRegisters *regs) {
     switch (regs->eax) {
     case 0:
         regs->eax = sys_exit(regs->ebx);
@@ -894,9 +893,7 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         regs->eax = 0;
         break;
     case 52:
-        drv_pcspk_pwm_start((const uint8_t *)regs->ebx,
-                             (uint32_t)regs->ecx,
-                             (uint32_t)regs->edx);
+        drv_pcspk_pwm_start((const uint8_t *)regs->ebx, (uint32_t)regs->ecx, (uint32_t)regs->edx);
         regs->eax = 0;
         break;
     case 53:
@@ -912,25 +909,34 @@ void k_syscall_entry(struct InterruptRegisters *regs)
             regs->eax = -1;
             break;
         }
-        uint32_t lba   = regs->ebx;
+        uint32_t lba = regs->ebx;
         uint32_t count = regs->ecx;
-        uint16_t *buf  = (uint16_t *)regs->edx;
-        if (!buf || count == 0 || count > 255) { regs->eax = -1; break; }
-        if (!is_ptr_safe(buf, count * 512)) { regs->eax = -1; break; }
-        #define ATA_SR  0x1F7
-        #define ATA_DH  0x1F6
-        #define ATA_SC  0x1F2
-        #define ATA_LB0 0x1F3
-        #define ATA_LB1 0x1F4
-        #define ATA_LB2 0x1F5
-        #define ATA_CMD 0x1F7
-        #define ATA_DAT 0x1F0
+        uint16_t *buf = (uint16_t *)regs->edx;
+        if (!buf || count == 0 || count > 255) {
+            regs->eax = -1;
+            break;
+        }
+        if (!is_ptr_safe(buf, count * 512)) {
+            regs->eax = -1;
+            break;
+        }
+#define ATA_SR 0x1F7
+#define ATA_DH 0x1F6
+#define ATA_SC 0x1F2
+#define ATA_LB0 0x1F3
+#define ATA_LB1 0x1F4
+#define ATA_LB2 0x1F5
+#define ATA_CMD 0x1F7
+#define ATA_DAT 0x1F0
         uint8_t slave_mask_saved = inb(0xA1);
         outb(0xA1, slave_mask_saved | 0x40);
-        for (int t = 0; t < 100000; t++) { if (!(inb(ATA_SR) & 0x80)) break; }
-        outb(ATA_DH,  0xE0 | ((lba >> 24) & 0x0F));
-        outb(0x1F1,   0x00);
-        outb(ATA_SC,  (uint8_t)count);
+        for (int t = 0; t < 100000; t++) {
+            if (!(inb(ATA_SR) & 0x80))
+                break;
+        }
+        outb(ATA_DH, 0xE0 | ((lba >> 24) & 0x0F));
+        outb(0x1F1, 0x00);
+        outb(ATA_SC, (uint8_t)count);
         outb(ATA_LB0, (uint8_t)(lba & 0xFF));
         outb(ATA_LB1, (uint8_t)((lba >> 8) & 0xFF));
         outb(ATA_LB2, (uint8_t)((lba >> 16) & 0xFF));
@@ -939,10 +945,15 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         for (uint32_t s = 0; s < count; s++) {
             for (int t = 0; t < 100000; t++) {
                 uint8_t st = inb(ATA_SR);
-                if (st & 0x08) break;
-                if (st & 0x01) { ok = 0; break; }
+                if (st & 0x08)
+                    break;
+                if (st & 0x01) {
+                    ok = 0;
+                    break;
+                }
             }
-            if (!ok) break;
+            if (!ok)
+                break;
             uint16_t *dst = buf + s * 256;
             asm volatile("rep insw" : "+D"(dst) : "c"(256), "d"(ATA_DAT) : "memory");
             inb(ATA_SR);
@@ -965,39 +976,58 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         regs->eax = sys_map_phys_list((uint32_t *)regs->ebx, regs->ecx);
         break;
     case 58: {
-        int      src_pid  = (int)regs->ebx;
+        int src_pid = (int)regs->ebx;
         uint32_t src_virt = (uint32_t)regs->ecx;
-        uint32_t size     = (uint32_t)regs->edx;
-        if (size == 0 || size > 16 * 1024 * 1024) { regs->eax = 0; break; }
+        uint32_t size = (uint32_t)regs->edx;
+        if (size == 0 || size > 16 * 1024 * 1024) {
+            regs->eax = 0;
+            break;
+        }
         process_t *src = k_proc_find_by_id(src_pid);
-        if (!src) { regs->eax = 0; break; }
-        uint32_t offset     = src_virt & 0xFFFu;
-        uint32_t page_base  = src_virt & ~0xFFFu;
+        if (!src) {
+            regs->eax = 0;
+            break;
+        }
+        uint32_t offset = src_virt & 0xFFFu;
+        uint32_t page_base = src_virt & ~0xFFFu;
         uint32_t page_count = (offset + size + 4095) / 4096;
-        if (page_count > 4096) { regs->eax = 0; break; }
+        if (page_count > 4096) {
+            regs->eax = 0;
+            break;
+        }
         uint32_t virt_start = current_process->shared_virt_bump;
         int ok = 1;
 #if defined(__aarch64__)
 
         uint64_t *src_l1 = (uint64_t *)(uintptr_t)(src->pd_phys + 0x80000000U);
         for (uint32_t i = 0; i < page_count && ok; i++) {
-            uint32_t addr   = page_base + i * 4096;
+            uint32_t addr = page_base + i * 4096;
             uint32_t l1_idx = (addr >> 30) & 0x1FF;
             uint32_t l2_idx = (addr >> 21) & 0x1FF;
             uint32_t l3_idx = (addr >> 12) & 0x1FF;
             uint64_t l1e = src_l1[l1_idx];
-            if ((l1e & 0x3) != 0x3) { ok = 0; break; }
+            if ((l1e & 0x3) != 0x3) {
+                ok = 0;
+                break;
+            }
             uint32_t l2_phys = (uint32_t)(l1e & 0xFFFFF000ULL);
             uint64_t *l2 = (uint64_t *)(uintptr_t)(l2_phys + 0x80000000U);
             uint64_t l2e = l2[l2_idx];
-            if ((l2e & 0x3) != 0x3) { ok = 0; break; }
+            if ((l2e & 0x3) != 0x3) {
+                ok = 0;
+                break;
+            }
             uint32_t l3_phys = (uint32_t)(l2e & 0xFFFFF000ULL);
             uint64_t *l3 = (uint64_t *)(uintptr_t)(l3_phys + 0x80000000U);
             uint64_t l3e = l3[l3_idx];
-            if (!(l3e & 0x1)) { ok = 0; break; }
+            if (!(l3e & 0x1)) {
+                ok = 0;
+                break;
+            }
             uint32_t phys = (uint32_t)(l3e & 0xFFFFF000ULL);
             mm_vmm_map_page(virt_start + i * 4096, phys,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
+                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER |
+                                PAGE_FLAG_SHARED);
         }
 #elif defined(__arm__)
 
@@ -1007,14 +1037,21 @@ void k_syscall_entry(struct InterruptRegisters *regs)
             uint32_t l1_idx = addr >> 20;
             uint32_t l2_idx = (addr >> 12) & 0xFF;
             uint32_t l1e = src_l1[l1_idx];
-            if ((l1e & 0x3) != 0x01) { ok = 0; break; }
+            if ((l1e & 0x3) != 0x01) {
+                ok = 0;
+                break;
+            }
             uint32_t l2_phys = l1e & 0xFFFFFC00;
             uint32_t *l2 = (uint32_t *)(uintptr_t)(l2_phys + 0x80000000U);
             uint32_t l2e = l2[l2_idx];
-            if (!(l2e & 0x2)) { ok = 0; break; }
+            if (!(l2e & 0x2)) {
+                ok = 0;
+                break;
+            }
             uint32_t phys = l2e & 0xFFFFF000;
             mm_vmm_map_page(virt_start + i * 4096, phys,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
+                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER |
+                                PAGE_FLAG_SHARED);
         }
 #else
         uint32_t saved_cr3 = current_process->pd_phys;
@@ -1022,24 +1059,29 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         asm volatile("mov %0, %%cr3" ::"r"(saved_cr3) : "memory");
         uint32_t *src_pd_virt = 0;
         uint32_t temp_pd_addr = 0xFF800000;
-        mm_vmm_map_page(temp_pd_addr, src->pd_phys,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
+        mm_vmm_map_page(temp_pd_addr, src->pd_phys, PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
         src_pd_virt = (uint32_t *)temp_pd_addr;
         for (uint32_t i = 0; i < page_count && ok; i++) {
-            uint32_t addr   = page_base + i * 4096;
+            uint32_t addr = page_base + i * 4096;
             uint32_t pd_idx = addr >> 22;
             uint32_t pt_idx = (addr >> 12) & 0x3FF;
             uint32_t pde = src_pd_virt[pd_idx];
-            if (!(pde & PAGE_FLAG_PRESENT)) { ok = 0; break; }
+            if (!(pde & PAGE_FLAG_PRESENT)) {
+                ok = 0;
+                break;
+            }
             uint32_t temp_pt_addr = 0xFF801000;
-            mm_vmm_map_page(temp_pt_addr, pde & ~0xFFF,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
+            mm_vmm_map_page(temp_pt_addr, pde & ~0xFFF, PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
             uint32_t *src_pt_virt = (uint32_t *)temp_pt_addr;
             uint32_t pte = src_pt_virt[pt_idx];
-            if (!(pte & PAGE_FLAG_PRESENT)) { ok = 0; break; }
+            if (!(pte & PAGE_FLAG_PRESENT)) {
+                ok = 0;
+                break;
+            }
             uint32_t phys = pte & ~0xFFFu;
             mm_vmm_map_page(virt_start + i * 4096, phys,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
+                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER |
+                                PAGE_FLAG_SHARED);
         }
 #endif
         if (ok) {
@@ -1060,14 +1102,19 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         regs->eax = (uint32_t)drv_sb16_init();
         break;
     case 62: {
-        void    *buf  = (void *)regs->ebx;
-        uint32_t len  = regs->ecx;
+        void *buf = (void *)regs->ebx;
+        uint32_t len = regs->ecx;
         uint32_t rate = regs->edx & 0xFFFF;
-        uint8_t  ch   = (uint8_t)((regs->edx >> 16) & 0xFF);
-        uint8_t  bits = (uint8_t)((regs->edx >> 24) & 0xFF);
-        if (ch == 0) ch = 1;
-        if (bits == 0) bits = 16;
-        if (!is_ptr_safe(buf, len)) { regs->eax = (uint32_t)-1; break; }
+        uint8_t ch = (uint8_t)((regs->edx >> 16) & 0xFF);
+        uint8_t bits = (uint8_t)((regs->edx >> 24) & 0xFF);
+        if (ch == 0)
+            ch = 1;
+        if (bits == 0)
+            bits = 16;
+        if (!is_ptr_safe(buf, len)) {
+            regs->eax = (uint32_t)-1;
+            break;
+        }
         regs->eax = (uint32_t)drv_sb16_play(buf, len, rate, ch, bits);
         break;
     }
@@ -1106,44 +1153,47 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         break;
     case 74:
 #if defined(__arm__) || defined(__aarch64__)
-        {
-            extern void virtio_gpu_flush(void);
-            virtio_gpu_flush();
-        }
+    {
+        extern void virtio_gpu_flush(void);
+        virtio_gpu_flush();
+    }
 #endif
         regs->eax = 0;
         break;
 #if defined(__aarch64__)
-    static int blk_active_disk = 0;
+        static int blk_active_disk = 0;
     case 86: {
-
         blk_active_disk = (int)regs->ebx;
         regs->eax = 0;
         break;
     }
     case 80: {
-        extern int virtio_blk_transfer_disk(int idx, uint64_t sector,
-                                            uint32_t count, void *buf, int write);
+        extern int virtio_blk_transfer_disk(int idx, uint64_t sector, uint32_t count, void *buf,
+                                            int write);
         extern int virtio_blk_get_disk_count(void);
         extern void arm_uart_puts(const char *);
         arm_uart_puts("BLK80 ");
         if (blk_active_disk >= virtio_blk_get_disk_count()) {
-            arm_uart_puts("NODEV\n"); regs->eax = (uint32_t)-1; break;
+            arm_uart_puts("NODEV\n");
+            regs->eax = (uint32_t)-1;
+            break;
         }
         uint32_t sector = regs->ebx;
         uint32_t count = regs->ecx;
         void *buf = (void *)(uintptr_t)regs->edx;
         if (!buf || count == 0 || count > 128 || !is_ptr_safe(buf, count * 512)) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         static uint8_t blk_bounce_r[512 * 8] __attribute__((aligned(64)));
         uint32_t done = 0;
         int ok = 1;
         while (done < count && ok) {
             uint32_t chunk = count - done;
-            if (chunk > 8) chunk = 8;
-            if (virtio_blk_transfer_disk(blk_active_disk,
-                    (uint64_t)(sector + done), chunk, blk_bounce_r, 0) != 0)
+            if (chunk > 8)
+                chunk = 8;
+            if (virtio_blk_transfer_disk(blk_active_disk, (uint64_t)(sector + done), chunk,
+                                         blk_bounce_r, 0) != 0)
                 ok = 0;
             else {
                 memcpy((uint8_t *)buf + done * 512, blk_bounce_r, chunk * 512);
@@ -1155,46 +1205,49 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         break;
     }
     case 81: {
-        extern int virtio_blk_transfer_disk(int idx, uint64_t sector,
-                                            uint32_t count, void *buf, int write);
+        extern int virtio_blk_transfer_disk(int idx, uint64_t sector, uint32_t count, void *buf,
+                                            int write);
         extern int virtio_blk_get_disk_count(void);
         if (blk_active_disk >= virtio_blk_get_disk_count()) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         uint32_t sector = regs->ebx;
         uint32_t count = regs->ecx;
         const void *buf = (const void *)(uintptr_t)regs->edx;
         if (!buf || count == 0 || count > 128 || !is_ptr_safe(buf, count * 512)) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         static uint8_t blk_bounce_w[512 * 8] __attribute__((aligned(64)));
         uint32_t done = 0;
         int ok = 1;
         while (done < count && ok) {
             uint32_t chunk = count - done;
-            if (chunk > 8) chunk = 8;
+            if (chunk > 8)
+                chunk = 8;
             memcpy(blk_bounce_w, (const uint8_t *)buf + done * 512, chunk * 512);
-            if (virtio_blk_transfer_disk(blk_active_disk,
-                    (uint64_t)(sector + done), chunk, blk_bounce_w, 1) != 0)
+            if (virtio_blk_transfer_disk(blk_active_disk, (uint64_t)(sector + done), chunk,
+                                         blk_bounce_w, 1) != 0)
                 ok = 0;
-            else done += chunk;
+            else
+                done += chunk;
         }
         regs->eax = ok ? 0 : (uint32_t)-1;
         break;
     }
     case 82: {
-
         extern int virtio_blk_get_disk_count(void);
         regs->eax = (uint32_t)virtio_blk_get_disk_count();
         break;
     }
     case 83: {
-
         extern int virtio_blk_get_disk_info(int idx, disk_info_t *out);
         int disk_idx = (int)regs->ebx;
         disk_info_t *info = (disk_info_t *)(uintptr_t)regs->ecx;
         if (!info || !is_ptr_safe(info, sizeof(disk_info_t))) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         disk_info_t tmp;
         int r = virtio_blk_get_disk_info(disk_idx, &tmp);
@@ -1204,28 +1257,30 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         break;
     }
     case 84: {
-
-        extern int virtio_blk_transfer_disk(int idx, uint64_t sector,
-                                            uint32_t count, void *buf, int write);
+        extern int virtio_blk_transfer_disk(int idx, uint64_t sector, uint32_t count, void *buf,
+                                            int write);
         int disk_idx = (int)regs->ebx;
         blk_io_req_t *req = (blk_io_req_t *)(uintptr_t)regs->ecx;
         if (!req || !is_ptr_safe(req, sizeof(blk_io_req_t))) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         blk_io_req_t r;
         memcpy(&r, req, sizeof(r));
         void *buf = r.buf;
         if (!buf || r.count == 0 || r.count > 128 || !is_ptr_safe(buf, r.count * 512)) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         static uint8_t blk_bounce_dr[512 * 8] __attribute__((aligned(64)));
         uint32_t done = 0;
         int ok = 1;
         while (done < r.count && ok) {
             uint32_t chunk = r.count - done;
-            if (chunk > 8) chunk = 8;
-            if (virtio_blk_transfer_disk(disk_idx, (uint64_t)(r.sector + done),
-                                         chunk, blk_bounce_dr, 0) != 0)
+            if (chunk > 8)
+                chunk = 8;
+            if (virtio_blk_transfer_disk(disk_idx, (uint64_t)(r.sector + done), chunk,
+                                         blk_bounce_dr, 0) != 0)
                 ok = 0;
             else {
                 memcpy((uint8_t *)buf + done * 512, blk_bounce_dr, chunk * 512);
@@ -1236,38 +1291,40 @@ void k_syscall_entry(struct InterruptRegisters *regs)
         break;
     }
     case 85: {
-
-        extern int virtio_blk_transfer_disk(int idx, uint64_t sector,
-                                            uint32_t count, void *buf, int write);
+        extern int virtio_blk_transfer_disk(int idx, uint64_t sector, uint32_t count, void *buf,
+                                            int write);
         int disk_idx = (int)regs->ebx;
         blk_io_req_t *req = (blk_io_req_t *)(uintptr_t)regs->ecx;
         if (!req || !is_ptr_safe(req, sizeof(blk_io_req_t))) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         blk_io_req_t r;
         memcpy(&r, req, sizeof(r));
         const void *buf = r.buf;
         if (!buf || r.count == 0 || r.count > 128 || !is_ptr_safe(buf, r.count * 512)) {
-            regs->eax = (uint32_t)-1; break;
+            regs->eax = (uint32_t)-1;
+            break;
         }
         static uint8_t blk_bounce_dw[512 * 8] __attribute__((aligned(64)));
         uint32_t done = 0;
         int ok = 1;
         while (done < r.count && ok) {
             uint32_t chunk = r.count - done;
-            if (chunk > 8) chunk = 8;
+            if (chunk > 8)
+                chunk = 8;
             memcpy(blk_bounce_dw, (const uint8_t *)buf + done * 512, chunk * 512);
-            if (virtio_blk_transfer_disk(disk_idx, (uint64_t)(r.sector + done),
-                                         chunk, blk_bounce_dw, 1) != 0)
+            if (virtio_blk_transfer_disk(disk_idx, (uint64_t)(r.sector + done), chunk,
+                                         blk_bounce_dw, 1) != 0)
                 ok = 0;
-            else done += chunk;
+            else
+                done += chunk;
         }
         regs->eax = ok ? 0 : (uint32_t)-1;
         break;
     }
 #endif
     case 90: {
-        /* Serial debug print from userspace */
         extern void arm_uart_puts(const char *);
         const char *msg = (const char *)(uintptr_t)regs->ebx;
         if (msg && is_ptr_safe(msg, 1)) {

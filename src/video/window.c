@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/video/window.c - Window manager with creation, dragging, drawing, text output, and event dispatch
+ * src/video/window.c - Window manager with creation, dragging, drawing, text output, and event
+ * dispatch
  */
 #include "video/window.h"
 #include "drivers/GUI/framebuffer.h"
@@ -20,12 +21,10 @@ static uint8_t *corner_mask = 0;
 Texture *tex_close = 0;
 Texture *tex_max = 0;
 Texture *tex_min = 0;
-void corner_mask_init()
-{
+void corner_mask_init() {
     corner_mask = corner_mask_texture(WIN_RADIUS);
 }
-void window_manager_init()
-{
+void window_manager_init() {
     corner_mask_init();
     shadows_init(24, WIN_RADIUS, 90);
     window_count = 0;
@@ -36,8 +35,7 @@ void window_manager_init()
         window_stack[i] = 0;
     }
 }
-char *get_last_line(Window *win)
-{
+char *get_last_line(Window *win) {
     if (!win || !win->text_buffer)
         return 0;
     if (win->text_cursor == 0)
@@ -47,8 +45,7 @@ char *get_last_line(Window *win)
         i--;
     return &win->text_buffer[i + 1];
 }
-int get_current_line_width(Window *win)
-{
+int get_current_line_width(Window *win) {
     int current_w = 0;
     int i = win->text_cursor - 1;
     while (i >= 0 && win->text_buffer[i] != '\n')
@@ -67,22 +64,19 @@ int get_current_line_width(Window *win)
     }
     return current_w;
 }
-int get_text_lines_count(Window *win)
-{
+int get_text_lines_count(Window *win) {
     int lines = 1;
     for (int i = 0; i < win->text_cursor; i++)
         if (win->text_buffer[i] == '\n')
             lines++;
     return lines;
 }
-void strcpy_custom(char *dest, const char *src)
-{
+void strcpy_custom(char *dest, const char *src) {
     while (*src)
         *dest++ = *src++;
     *dest = 0;
 }
-void to_front(Window *win)
-{
+void to_front(Window *win) {
     if (!win)
         return;
     int idx = -1;
@@ -99,8 +93,7 @@ void to_front(Window *win)
     window_stack[window_count - 1] = win;
     invalidate_screen();
 }
-Window *window_create(int x, int y, int w, int h, const char *title)
-{
+Window *window_create(int x, int y, int w, int h, const char *title) {
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (windows[i].id == 0) {
             windows[i].id = i + 1;
@@ -131,8 +124,7 @@ Window *window_create(int x, int y, int w, int h, const char *title)
     }
     return 0;
 }
-void close_window(Window *win)
-{
+void close_window(Window *win) {
     if (!win || win->id == 0)
         return;
     int pid_to_kill = win->owner_pid;
@@ -164,8 +156,7 @@ void close_window(Window *win)
         dragging_window = 0;
     invalidate_screen();
 }
-void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text)
-{
+void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text) {
     int r = WIN_RADIUS;
     rect_fill(x, y + r, w, h - 2 * r, color);
     rect_fill(x + r, y, w - 2 * r, r, color);
@@ -176,8 +167,7 @@ void draw_window_body(int x, int y, int w, int h, uint32_t color, char *text)
     draw_corner_mask(x + w - r, y + h - r, r, color, corner_mask, 3);
     draw_corner_mask(x + w - r, y + h - r, r, color, corner_mask, 3);
 }
-void draw_window_content(Window *win)
-{
+void draw_window_content(Window *win) {
     if (win->gfx_buffer) {
         int w = win->w;
         int h = win->h - TITLE_BAR_HEIGHT;
@@ -233,16 +223,14 @@ void draw_window_content(Window *win)
         }
     }
 }
-void draw_window_head(int x, int y, int w, int h, uint32_t color)
-{
+void draw_window_head(int x, int y, int w, int h, uint32_t color) {
     int r = WIN_RADIUS;
     rect_fill(x, y + r, w, h - 2 * r, color);
     rect_fill(x + r, y, w - 2 * r, r, color);
     draw_corner_mask(x, y, r, color, corner_mask, 0);
     draw_corner_mask(x + w - r, y, r, color, corner_mask, 1);
 }
-void draw_window(Window *win, int isActive)
-{
+void draw_window(Window *win, int isActive) {
     uint32_t color = isActive ? 0xFF7FB7BE : 0xFFD6DBD2;
     shadow_draw(win->x, win->y, win->w, win->h);
     shadow_draw(win->x, win->y, win->w, win->h);
@@ -261,16 +249,14 @@ void draw_window(Window *win, int isActive)
     draw_texture(tex_max, maxX, btnY);
     draw_texture(tex_min, minX, btnY);
 }
-void draw_windows()
-{
+void draw_windows() {
     for (int i = 0; i < window_count; i++) {
         Window *win = window_stack[i];
         if (win && win->id)
             draw_window(win, i == window_count - 1);
     }
 }
-void scroll_buffer(Window *win, int max_h)
-{
+void scroll_buffer(Window *win, int max_h) {
     int total_h = get_text_lines_count(win) * get_font_height();
     if (total_h > max_h || win->text_cursor >= win->max_len - 64) {
         int i = 0;
@@ -292,8 +278,7 @@ void scroll_buffer(Window *win, int max_h)
         }
     }
 }
-void window_event_handle(Event e)
-{
+void window_event_handle(Event e) {
     if (e.type == EVENT_MOUSE_MOVE) {
         if (dragging_window) {
             int new_x = e.x - dragging_window->drag_offset_x;
@@ -358,8 +343,7 @@ void window_event_handle(Event e)
         }
     }
 }
-void window_print(Window *win, const char *str)
-{
+void window_print(Window *win, const char *str) {
     if (!win || !win->text_buffer)
         return;
     int max_h = win->h - 55 - 10;
@@ -373,8 +357,7 @@ void window_print(Window *win, const char *str)
     scroll_buffer(win, max_h);
     invalidate_window(win->x, win->y, win->w, win->h);
 }
-void window_clear(Window *win)
-{
+void window_clear(Window *win) {
     if (!win || !win->text_buffer)
         return;
     win->text_cursor = 0;

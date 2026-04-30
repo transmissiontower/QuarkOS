@@ -4,12 +4,23 @@
  */
 #include "user/lib/libapi.h"
 
-static uint8_t get_hour(void)   { qk_time_t t; qk_get_time(&t); return t.hour; }
-static uint8_t get_minute(void) { qk_time_t t; qk_get_time(&t); return t.minute; }
-static uint8_t get_second(void) { qk_time_t t; qk_get_time(&t); return t.second; }
+static uint8_t get_hour(void) {
+    qk_time_t t;
+    qk_get_time(&t);
+    return t.hour;
+}
+static uint8_t get_minute(void) {
+    qk_time_t t;
+    qk_get_time(&t);
+    return t.minute;
+}
+static uint8_t get_second(void) {
+    qk_time_t t;
+    qk_get_time(&t);
+    return t.second;
+}
 
-int main()
-{
+int main() {
     message_t msg;
     while (1) {
         qk_ipc_recv(&msg);

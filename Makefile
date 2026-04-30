@@ -16,10 +16,13 @@ LIBGCC  = $(shell $(CC) -mcpu=cortex-a57 -print-libgcc-file-name)
 LDFLAGS = -T linker_aarch64.ld -nostdlib
 USER_LDFLAGS = -T src/user/linker_aarch64.ld -nostdlib
 
-FONT_ATLAS = Asm/boot/font_atlas.bin
-ICONS_BIN = Asm/boot/icons.bin
-WALLPAPER_BIN = Asm/boot/wallpaper.bin
-FONT_TTF = tools/Inter-VariableFont_opsz,wght.ttf
+FONT_ATLAS = build/font_atlas.bin
+ICONS_BIN = build/icons.bin
+WALLPAPER_BIN = build/wallpaper.bin
+
+# Auto-discovered assets — drop files in these folders, they appear on disk
+ASSETS_DESK := $(wildcard assets/desk/*)
+ASSETS_SYS  := $(wildcard assets/sys/*)
 
 KERNEL_C = \
 	src/kernel/kernel.c \
@@ -57,8 +60,8 @@ KERNEL_OBJ = $(KERNEL_C:.c=.o) \
 	src/arch/aarch64/context.o \
 	src/arch/aarch64/modules.o
 
-MUSIC_SPK = Asm/boot/music.spk
-MUSIC_WAV = Asm/boot/music.wav
+MUSIC_SPK = build/music.spk
+MUSIC_WAV = build/music.wav
 MUSIC_SRC := $(wildcard music.flac)
 
 DEPS := $(patsubst %.c,%.d,$(KERNEL_C)) $(patsubst %.c,%.d,$(wildcard src/user/*.c src/user/lib/*.c src/lib/*.c src/kernel/init.c))
@@ -85,6 +88,16 @@ AARCH64_USER_LIB_OBJ = \
     $(AARCH64_USER_DIR)/math.o $(AARCH64_USER_DIR)/stdlib.o $(AARCH64_USER_DIR)/path.o \
     $(AARCH64_USER_DIR)/storage_client.o
 
+# Auto-discover user apps: every src/user/*.c becomes a .qex
+# WIP/broken files go in src/user/wip/ — ignored automatically
+USER_APP_SRCS  := $(wildcard src/user/*.c)
+USER_APP_NAMES := $(basename $(notdir $(USER_APP_SRCS)))
+# init comes from src/kernel/init.c — add it separately
+USER_APP_NAMES += init
+USER_APP_QEXES := $(foreach n,$(USER_APP_NAMES),build/$(n).qex)
+
+AARCH64_USER_LIBGCC = $(shell aarch64-elf-gcc -mcpu=cortex-a57 -print-libgcc-file-name)
+
 $(AARCH64_USER_DIR)/crt0.o: src/arch/aarch64/crt0.S
 	@mkdir -p $(AARCH64_USER_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
@@ -109,91 +122,48 @@ $(AARCH64_USER_DIR)/init.o: src/kernel/init.c
 	@mkdir -p $(AARCH64_USER_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-AARCH64_USER_LIBGCC = $(shell aarch64-elf-gcc -mcpu=cortex-a57 -print-libgcc-file-name)
+# Template: elf → bin → qex for each user app
+define USER_APP_template
+$(AARCH64_USER_DIR)/$(1).elf: $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/$(1).o
+	$$(LD) $$(USER_LDFLAGS) -o $$@ $$(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/$(1).o $$(AARCH64_USER_LIBGCC)
+
+$(AARCH64_USER_DIR)/$(1).bin: $(AARCH64_USER_DIR)/$(1).elf
+	$$(OBJCOPY) -O binary $$< $$@
+
+build/$(1).qex: $(AARCH64_USER_DIR)/$(1).bin
+	@mkdir -p build
+	python3 tools/qex_builder.py $$< $$@
+endef
+
+$(foreach app,$(USER_APP_NAMES),$(eval $(call USER_APP_template,$(app))))
 
 
-user_bin: $(ICONS_BIN) $(AARCH64_USER_LIB_OBJ) \
-		$(AARCH64_USER_DIR)/storage_server.o $(AARCH64_USER_DIR)/input_server.o \
-		$(AARCH64_USER_DIR)/time_server.o $(AARCH64_USER_DIR)/comp.o \
-		$(AARCH64_USER_DIR)/ttysh.o $(AARCH64_USER_DIR)/init.o \
-		$(AARCH64_USER_DIR)/test.o $(AARCH64_USER_DIR)/procman.o \
-		$(AARCH64_USER_DIR)/paint.o $(AARCH64_USER_DIR)/terminal.o \
-		$(AARCH64_USER_DIR)/filemgr.o $(AARCH64_USER_DIR)/imgview.o \
-		$(AARCH64_USER_DIR)/notepad.o $(AARCH64_USER_DIR)/vkbd.o \
-		$(AARCH64_USER_DIR)/vmap.o $(AARCH64_USER_DIR)/fetch.o
-	mkdir -p Asm/boot
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/storage_server.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/storage_server.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/storage_server.elf $(AARCH64_USER_DIR)/storage_server.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/storage_server.bin Asm/boot/storage_server.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/input_server.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/input_server.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/input_server.elf $(AARCH64_USER_DIR)/input_server.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/input_server.bin Asm/boot/input_server.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/time_server.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/time_server.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/time_server.elf $(AARCH64_USER_DIR)/time_server.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/time_server.bin Asm/boot/time_server.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/comp.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/comp.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/comp.elf $(AARCH64_USER_DIR)/comp.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/comp.bin Asm/boot/comp.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/ttysh.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/ttysh.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/ttysh.elf $(AARCH64_USER_DIR)/ttysh.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/ttysh.bin Asm/boot/ttysh.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/init.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/init.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/init.elf $(AARCH64_USER_DIR)/init.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/init.bin Asm/boot/init.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/test.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/test.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/test.elf $(AARCH64_USER_DIR)/test.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/test.bin Asm/boot/test.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/procman.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/procman.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/procman.elf $(AARCH64_USER_DIR)/procman.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/procman.bin Asm/boot/procman.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/paint.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/paint.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/paint.elf $(AARCH64_USER_DIR)/paint.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/paint.bin Asm/boot/paint.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/terminal.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/terminal.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/terminal.elf $(AARCH64_USER_DIR)/terminal.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/terminal.bin Asm/boot/terminal.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/filemgr.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/filemgr.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/filemgr.elf $(AARCH64_USER_DIR)/filemgr.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/filemgr.bin Asm/boot/filemgr.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/imgview.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/imgview.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/imgview.elf $(AARCH64_USER_DIR)/imgview.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/imgview.bin Asm/boot/imgview.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/notepad.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/notepad.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/notepad.elf $(AARCH64_USER_DIR)/notepad.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/notepad.bin Asm/boot/notepad.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/vkbd.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/vkbd.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/vkbd.elf $(AARCH64_USER_DIR)/vkbd.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/vkbd.bin Asm/boot/vkbd.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/vmap.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/vmap.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/vmap.elf $(AARCH64_USER_DIR)/vmap.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/vmap.bin Asm/boot/vmap.qex
-	$(LD) $(USER_LDFLAGS) -o $(AARCH64_USER_DIR)/fetch.elf $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/fetch.o $(AARCH64_USER_LIBGCC)
-	$(OBJCOPY) -O binary $(AARCH64_USER_DIR)/fetch.elf $(AARCH64_USER_DIR)/fetch.bin
-	python3 tools/qex_builder.py $(AARCH64_USER_DIR)/fetch.bin Asm/boot/fetch.qex
+user_bin: $(ICONS_BIN) $(USER_APP_QEXES)
 
 resources:
 	$(MAKE) $(FONT_ATLAS) $(ICONS_BIN) $(WALLPAPER_BIN)
 
-src/arch/aarch64/modules.o: src/arch/aarch64/modules.S user_bin resources
+build/logo.bmp: assets/sys/logo.bmp
+	@mkdir -p build
+	cp $< $@
+
+src/arch/aarch64/modules.o: src/arch/aarch64/modules.S user_bin resources build/logo.bmp
 	$(CC) $(CFLAGS) -c $< -o $@
 
 src/user/lib/crt0.o: src/arch/aarch64/crt0.S
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(FONT_ATLAS): tools/font_baker.py
-	mkdir -p Asm/boot
+	mkdir -p build
 	python3 tools/font_baker.py
 
 $(ICONS_BIN): tools/icon_baker.py tools/lucide.ttf
-	mkdir -p Asm/boot
+	mkdir -p build
 	python3 tools/icon_baker.py
 
-$(WALLPAPER_BIN): tools/wallpaper_baker.py wallpaper.bmp
-	python3 tools/wallpaper_baker.py wallpaper.bmp Asm/boot/wallpaper.bin
+$(WALLPAPER_BIN): tools/wallpaper_baker.py assets/sys/wallpaper.bmp
+	python3 tools/wallpaper_baker.py assets/sys/wallpaper.bmp build/wallpaper.bin
 
-Asm/boot/kaori.bmp:
-
-Asm/boot/terry.bmp:
 
 src/user/%.o: src/user/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
@@ -218,10 +188,9 @@ $(MUSIC_WAV): music.flac
 
 MUSIC_WAV_EXISTS := $(wildcard $(MUSIC_WAV))
 
-disk: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boot/terry.bmp $(if $(MUSIC_SRC),$(MUSIC_SPK),) $(if $(MUSIC_SRC),$(MUSIC_WAV),)
-	mkdir -p Asm/boot
-	cp kernel Asm/boot/kernel
-	echo "Hello from fs!" > hello.txt
+disk: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) $(if $(MUSIC_SRC),$(MUSIC_SPK),)
+	mkdir -p build
+	cp kernel build/kernel
 	dd if=/dev/zero of=disk.img bs=1M count=64
 	mkfs.fat -F 32 disk.img
 	mmd -i disk.img ::PRG
@@ -234,34 +203,15 @@ disk: kernel user_bin $(FONT_ATLAS) $(WALLPAPER_BIN) Asm/boot/kaori.bmp Asm/boot
 	mmd -i disk.img ::USR/DEFAULT/DESK
 	mmd -i disk.img ::USR/DEFAULT/DOCS
 	mmd -i disk.img ::TMP
-	$(MCOPY) -i disk.img Asm/boot/test.qex ::PRG/TEST.QEX
-	$(MCOPY) -i disk.img Asm/boot/notepad.qex ::PRG/NOTEPAD.QEX
-	$(MCOPY) -i disk.img Asm/boot/procman.qex ::PRG/PROCMAN.QEX
-	$(MCOPY) -i disk.img Asm/boot/vmap.qex ::PRG/VMAP.QEX
-	$(MCOPY) -i disk.img Asm/boot/comp.qex ::PRG/COMP.QEX
-	$(MCOPY) -i disk.img Asm/boot/fetch.qex ::PRG/FETCH.QEX
-	$(MCOPY) -i disk.img Asm/boot/imgview.qex ::PRG/IMGVIEW.QEX
-	$(MCOPY) -i disk.img Asm/boot/filemgr.qex ::PRG/FILEMGR.QEX
-	$(MCOPY) -i disk.img Asm/boot/vkbd.qex ::PRG/VKBD.QEX
-	$(MCOPY) -i disk.img Asm/boot/paint.qex ::PRG/PAINT.QEX
+	$(foreach n,$(USER_APP_NAMES),$(MCOPY) -i disk.img build/$(n).qex ::PRG/$(shell echo $(n) | tr '[:lower:]' '[:upper:]').QEX ;)
 	
 	
-	$(MCOPY) -i disk.img Asm/boot/terminal.qex ::PRG/TERMINAL.QEX
-	$(MCOPY) -i disk.img Asm/boot/ttysh.qex ::PRG/TTYSH.QEX
 	$(if $(wildcard $(MUSIC_SPK)),$(MCOPY) -i disk.img $(MUSIC_SPK) ::SYS/DAT/MUSIC.SPK,)
-	$(if $(MUSIC_SRC),$(MCOPY) -i disk.img $(MUSIC_WAV) ::USR/DEFAULT/DESK/MUSIC.WAV,)
-	$(MCOPY) -i disk.img Asm/boot/font_atlas.bin ::SYS/DAT/ATL.BIN
-	$(if $(wildcard $(FONT_TTF)),$(MCOPY) -i disk.img "$(FONT_TTF)" ::SYS/DAT/FONT.TTF,)
+	$(MCOPY) -i disk.img build/font_atlas.bin ::SYS/DAT/ATL.BIN
 	$(MCOPY) -i disk.img $(ICONS_BIN) ::SYS/DAT/GUI.BIN
-	$(MCOPY) -i disk.img Asm/boot/wallpaper.bin ::SYS/DAT/BG.BIN
-	$(MCOPY) -i disk.img Asm/boot/logo.bmp ::SYS/DAT/LOGO.BMP
-	$(MCOPY) -i disk.img Asm/boot/kaori.bmp ::USR/DEFAULT/DESK/KAORI.BMP
-	$(MCOPY) -i disk.img Asm/boot/terry.bmp ::USR/DEFAULT/DESK/TERRY.BMP
-	echo "QuarkOS" > hostname.txt && $(MCOPY) -i disk.img hostname.txt ::SYS/BIN/HOST
-	echo "0.3.1-blanket" > version.txt && $(MCOPY) -i disk.img version.txt ::SYS/BIN/VER
-	echo "/dev/ata0 / fat16 defaults 0 0" > fstab.txt && $(MCOPY) -i disk.img fstab.txt ::SYS/BIN/BOOT
-	echo "Welcome to QuarkOS v0.3.1!" > readme.txt && $(MCOPY) -i disk.img readme.txt ::USR/DEFAULT/README.TXT
-	echo "User Manual:\n1. Use 'guide' for help.\n2. 'drift' (cd) to change dirs.\n3. 'glimpse' (ls) to list files." > manual.txt && $(MCOPY) -i disk.img manual.txt ::USR/DEFAULT/DOCS/MANUAL.TXT
+	$(MCOPY) -i disk.img build/wallpaper.bin ::SYS/DAT/BG.BIN
+	$(foreach f,$(ASSETS_SYS),$(MCOPY) -i disk.img $(f) ::SYS/DAT/$(shell echo $(notdir $(f)) | tr '[:lower:]' '[:upper:]') ;)
+	$(foreach f,$(ASSETS_DESK),$(MCOPY) -i disk.img $(f) ::USR/DEFAULT/DESK/$(shell echo $(notdir $(f)) | tr '[:lower:]' '[:upper:]') ;)
 	touch empty.tmp && $(MCOPY) -i disk.img empty.tmp ::TMP/.KEEP
 
 image: disk
@@ -364,10 +314,10 @@ clean:
 	find src -name "*.d" -delete
 	find src -name "*.o" -delete
 	rm -f *.elf *.bin *.img kernel kernel.iso
-	rm -f hello.txt fstab.txt hostname.txt readme.txt manual.txt version.txt boot.log empty.tmp
+	rm -f boot.log empty.tmp
 	rm -f floppy.img cdrom.img usb.img
 	rm -f src/user/lib/icons_def.h
 	rm -rf build_aarch64_user
-	rm -f Asm/boot/*.qex Asm/boot/*.bin Asm/boot/*.elf Asm/boot/kernel
+	rm -f build/*.qex build/*.bin build/*.elf build/kernel build/logo.bmp
 
 .PHONY: all clean image run run-gui run-hvf run-hvf-multi run-tcg user_bin resources test-disks

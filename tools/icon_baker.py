@@ -8,7 +8,7 @@ from PIL import Image, ImageFont, ImageDraw
 from fontTools import ttLib
 
 FONT_PATH = "tools/lucide.ttf"
-OUTPUT_BIN = "Asm/boot/icons.bin"
+OUTPUT_BIN = "build/icons.bin"
 OUTPUT_H = "src/user/lib/icons_def.h"
 FONT_SIZE = 48
 IMG_WIDTH = 1024

@@ -18,52 +18,45 @@ static uint32_t klog_tail = 0;
 static log_level_t uart_level = LOG_INFO;
 static log_level_t ring_level = LOG_DEBUG;
 
-static const char *level_names[] = {
-    "TRACE", "DEBUG", "INFO ", "WARN ", "ERROR", "CRIT "
-};
+static const char *level_names[] = {"TRACE", "DEBUG", "INFO ", "WARN ", "ERROR", "CRIT "};
 
-static const char *subsys_names[] = {
-    "BOOT", "SCHED", "VMM", "PMM", "IPC", "INPUT",
-    "BLK", "GIC", "SYSCALL", "GPU", "FS", "PROC"
-};
+static const char *subsys_names[] = {"BOOT", "SCHED", "VMM",     "PMM", "IPC", "INPUT",
+                                     "BLK",  "GIC",   "SYSCALL", "GPU", "FS",  "PROC"};
 
 extern uint64_t get_uptime_ms(void);
 
-void klog_init(void)
-{
+void klog_init(void) {
     klog_head = 0;
     klog_tail = 0;
 }
 
-void klog_set_uart_level(log_level_t level)
-{
+void klog_set_uart_level(log_level_t level) {
     uart_level = level;
 }
 
-void klog_set_ring_level(log_level_t level)
-{
+void klog_set_ring_level(log_level_t level) {
     ring_level = level;
 }
 
-static void ring_putc(char c)
-{
+static void ring_putc(char c) {
     klog_ring[klog_tail] = c;
     klog_tail = (klog_tail + 1) % KLOG_RING_SIZE;
     if (klog_tail == klog_head)
         klog_head = (klog_head + 1) % KLOG_RING_SIZE;
 }
 
-static void ring_puts(const char *s)
-{
+static void ring_puts(const char *s) {
     while (*s)
         ring_putc(*s++);
 }
 
-static void emit_uint(void (*put)(char), uint32_t val)
-{
+static void emit_uint(void (*put)(char), uint32_t val) {
     char buf[12];
     int i = 0;
-    if (val == 0) { put('0'); return; }
+    if (val == 0) {
+        put('0');
+        return;
+    }
     while (val > 0) {
         buf[i++] = '0' + (val % 10);
         val /= 10;
@@ -72,26 +65,25 @@ static void emit_uint(void (*put)(char), uint32_t val)
         put(buf[i]);
 }
 
-static void emit_hex32(void (*put)(char), uint32_t val)
-{
-    put('0'); put('x');
+static void emit_hex32(void (*put)(char), uint32_t val) {
+    put('0');
+    put('x');
     for (int s = 28; s >= 0; s -= 4) {
         int n = (val >> s) & 0xF;
         put(n < 10 ? '0' + n : 'a' + n - 10);
     }
 }
 
-static void emit_hex64(void (*put)(char), uint64_t val)
-{
-    put('0'); put('x');
+static void emit_hex64(void (*put)(char), uint64_t val) {
+    put('0');
+    put('x');
     for (int s = 60; s >= 0; s -= 4) {
         int n = (int)((val >> s) & 0xF);
         put(n < 10 ? '0' + n : 'a' + n - 10);
     }
 }
 
-static void klog_vformat(void (*put)(char), const char *fmt, __builtin_va_list ap)
-{
+static void klog_vformat(void (*put)(char), const char *fmt, __builtin_va_list ap) {
     while (*fmt) {
         if (*fmt != '%') {
             put(*fmt++);
@@ -99,17 +91,25 @@ static void klog_vformat(void (*put)(char), const char *fmt, __builtin_va_list a
         }
         fmt++;
         int is_long = 0;
-        if (*fmt == 'l') { is_long = 1; fmt++; }
+        if (*fmt == 'l') {
+            is_long = 1;
+            fmt++;
+        }
         switch (*fmt) {
         case 's': {
             const char *s = __builtin_va_arg(ap, const char *);
-            if (!s) s = "(null)";
-            while (*s) put(*s++);
+            if (!s)
+                s = "(null)";
+            while (*s)
+                put(*s++);
             break;
         }
         case 'd': {
             int32_t v = __builtin_va_arg(ap, int32_t);
-            if (v < 0) { put('-'); v = -v; }
+            if (v < 0) {
+                put('-');
+                v = -v;
+            }
             emit_uint(put, (uint32_t)v);
             break;
         }
@@ -151,20 +151,18 @@ static void klog_vformat(void (*put)(char), const char *fmt, __builtin_va_list a
 }
 
 #if defined(__aarch64__) || defined(__arm__)
-static void uart_putc_wrapper(char c)
-{
-    if (c == '\n') arm_uart_putc('\r');
+static void uart_putc_wrapper(char c) {
+    if (c == '\n')
+        arm_uart_putc('\r');
     arm_uart_putc(c);
 }
 #else
-static void uart_putc_wrapper(char c)
-{
+static void uart_putc_wrapper(char c) {
     (void)c;
 }
 #endif
 
-void klog(log_level_t level, int subsys, const char *fmt, ...)
-{
+void klog(log_level_t level, int subsys, const char *fmt, ...) {
     if (level < ring_level && level < uart_level)
         return;
 
@@ -181,13 +179,20 @@ void klog(log_level_t level, int subsys, const char *fmt, ...)
     if (level >= ring_level) {
         ring_putc('[');
 
-        char tbuf[12]; int ti = 0;
+        char tbuf[12];
+        int ti = 0;
         uint32_t sv = secs;
-        if (sv == 0) tbuf[ti++] = '0';
+        if (sv == 0)
+            tbuf[ti++] = '0';
         else {
-            char tmp[10]; int j = 0;
-            while (sv) { tmp[j++] = '0' + (sv % 10); sv /= 10; }
-            while (--j >= 0) tbuf[ti++] = tmp[j];
+            char tmp[10];
+            int j = 0;
+            while (sv) {
+                tmp[j++] = '0' + (sv % 10);
+                sv /= 10;
+            }
+            while (--j >= 0)
+                tbuf[ti++] = tmp[j];
         }
         tbuf[ti++] = '.';
         tbuf[ti++] = '0' + (frac / 100);
@@ -218,11 +223,13 @@ void klog(log_level_t level, int subsys, const char *fmt, ...)
         uart_putc_wrapper(']');
         uart_putc_wrapper(' ');
         const char *ln = level_names[level];
-        while (*ln) uart_putc_wrapper(*ln++);
+        while (*ln)
+            uart_putc_wrapper(*ln++);
         uart_putc_wrapper(' ');
         if (subsys >= 0 && subsys <= 11) {
             const char *sn = subsys_names[subsys];
-            while (*sn) uart_putc_wrapper(*sn++);
+            while (*sn)
+                uart_putc_wrapper(*sn++);
         }
         uart_putc_wrapper(':');
         uart_putc_wrapper(' ');
@@ -238,8 +245,7 @@ void klog(log_level_t level, int subsys, const char *fmt, ...)
 #endif
 }
 
-void klog_hex32(uint32_t val)
-{
+void klog_hex32(uint32_t val) {
 #if defined(__aarch64__) || defined(__arm__)
     for (int s = 28; s >= 0; s -= 4) {
         int n = (val >> s) & 0xF;
@@ -250,8 +256,7 @@ void klog_hex32(uint32_t val)
 #endif
 }
 
-void klog_hex64(uint64_t val)
-{
+void klog_hex64(uint64_t val) {
 #if defined(__aarch64__) || defined(__arm__)
     klog_hex32((uint32_t)(val >> 32));
     klog_hex32((uint32_t)val);
@@ -260,8 +265,7 @@ void klog_hex64(uint64_t val)
 #endif
 }
 
-int klog_read(char *buf, uint32_t max_len)
-{
+int klog_read(char *buf, uint32_t max_len) {
     uint32_t copied = 0;
 #if defined(__aarch64__) || defined(__arm__)
     uint32_t flags = arm_irq_save();

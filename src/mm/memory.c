@@ -3,7 +3,7 @@
  * src/mm/memory.c - Physical frame allocator, virtual memory mapper, and kernel panic handler
  */
 #include "mm/memory.h"
-#include "arch/x86/multiboot.h"
+#include "kernel/multiboot.h"
 #include "drivers/GUI/framebuffer.h"
 #include "kernel/crash.h"
 #include "lib/stdint.h"
@@ -19,8 +19,7 @@ uint32_t total_alloc;
 uint32_t total_phys_pages;
 static uint32_t last_search_index = 0;
 int mem_num_vpages;
-void kernel_panic(const char *msg)
-{
+void kernel_panic(const char *msg) {
     asm volatile("cli");
     clear_screen(COLOR_RED);
     string_draw(20, 20, "KERNEL PANIC", COLOR_WHITE, COLOR_RED);
@@ -31,23 +30,19 @@ void kernel_panic(const char *msg)
     drv_fb_swap_buffers();
     crash_wait_for_reboot();
 }
-void mm_vmm_tlb_flush_single(uint32_t addr)
-{
+void mm_vmm_tlb_flush_single(uint32_t addr) {
     asm volatile("invlpg (%0)" ::"r"(addr) : "memory");
 }
-uint32_t *mem_get_current_page_dir()
-{
+uint32_t *mem_get_current_page_dir() {
     return REC_PAGEDIR;
 }
-void mm_vmm_set_active_dir(uint32_t *pd)
-{
+void mm_vmm_set_active_dir(uint32_t *pd) {
     uint32_t phys = (uint32_t)pd - KERNEL_START;
     asm volatile("mov %0, %%eax\n\t"
                  "mov %%eax, %%cr3\n" ::"r"(phys)
                  : "eax");
 }
-void mm_pmm_lock_region(uint32_t base, uint32_t size)
-{
+void mm_pmm_lock_region(uint32_t base, uint32_t size) {
     uint32_t start = base >> 12;
     uint32_t count = (size + 0xFFF) >> 12;
     for (uint32_t i = 0; i < count; i++) {
@@ -57,8 +52,7 @@ void mm_pmm_lock_region(uint32_t base, uint32_t size)
         phys_mem_bitmap[page >> 3] |= (1 << (page & 7));
     }
 }
-void mm_pmm_free_region(uint32_t base, uint32_t size)
-{
+void mm_pmm_free_region(uint32_t base, uint32_t size) {
     uint32_t start = (base + 0xFFF) >> 12;
     uint32_t end = (base + size) >> 12;
     for (uint32_t page = start; page < end; page++) {
@@ -69,8 +63,7 @@ void mm_pmm_free_region(uint32_t base, uint32_t size)
             page_frame_max = page;
     }
 }
-uint32_t mm_pmm_alloc_frame()
-{
+uint32_t mm_pmm_alloc_frame() {
     uint32_t start_byte = page_frame_min >> 3;
     uint32_t end_byte = (page_frame_max >> 3) + 1;
     if (end_byte > BITMAP_SIZE)
@@ -105,8 +98,7 @@ uint32_t mm_pmm_alloc_frame()
     }
     return 0;
 }
-void mm_pmm_free_frame(uint32_t phys)
-{
+void mm_pmm_free_frame(uint32_t phys) {
     uint32_t page = phys >> 12;
     if (page >= MAX_PHYS_PAGES)
         return;
@@ -116,8 +108,7 @@ void mm_pmm_free_frame(uint32_t phys)
             total_alloc--;
     }
 }
-void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags)
-{
+void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
     uint32_t pd_index = virt >> 22;
     uint32_t pt_index = (virt >> 12) & 0x3FF;
     uint32_t *pd = REC_PAGEDIR;
@@ -141,8 +132,7 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags)
     mem_num_vpages++;
     mm_vmm_tlb_flush_single(virt);
 }
-void mm_vmm_cleanup_current_dir()
-{
+void mm_vmm_cleanup_current_dir() {
     uint32_t *pd = REC_PAGEDIR;
     for (int i = 0; i < 768; i++) {
         if (pd[i] & PAGE_FLAG_PRESENT) {
@@ -160,8 +150,7 @@ void mm_vmm_cleanup_current_dir()
         }
     }
 }
-void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start)
-{
+void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start) {
     mem_num_vpages = 0;
     uint32_t pd_phys = (uint32_t)initial_page_dir - KERNEL_START;
     initial_page_dir[1023] = pd_phys | PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE;
@@ -187,8 +176,7 @@ void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start)
     page_frame_min = (phys_alloc_start + 0xFFF) >> 12;
     last_search_index = page_frame_min >> 3;
 }
-void *map_module(uint32_t phys_addr, uint32_t size)
-{
+void *map_module(uint32_t phys_addr, uint32_t size) {
     uint32_t virt_addr = module_virt_alloc_ptr;
     if (virt_addr % 4096)
         virt_addr = (virt_addr & ~0xFFF) + 0x1000;
@@ -205,8 +193,7 @@ void *map_module(uint32_t phys_addr, uint32_t size)
     module_virt_alloc_ptr = virt_addr + offset;
     return (void *)(virt_addr + (phys_addr & 0xFFF));
 }
-void mem_free_identity_map()
-{
+void mem_free_identity_map() {
     initial_page_dir[0] = 0;
     initial_page_dir[1] = 0;
     initial_page_dir[2] = 0;

@@ -7,43 +7,39 @@
 static uint8_t ps2_status_latched;
 static uint8_t ps2_data_from_mouse_latched;
 
-void memset(void *dest, uint8_t val, uint32_t n)
-{
+void memset(void *dest, uint8_t val, uint32_t n) {
     uint8_t *d = dest;
     while (n--)
         *d++ = val;
 }
-void memcpy(void *dest, const void *src, uint32_t n)
-{
+void memcpy(void *dest, const void *src, uint32_t n) {
     char *d = dest;
     const char *s = src;
     while (n--)
         *d++ = *s++;
 }
-void memcpy32(void *dest, const void *src, uint32_t count)
-{
+void memcpy32(void *dest, const void *src, uint32_t count) {
     uint32_t *d = (uint32_t *)dest;
     const uint32_t *s = (const uint32_t *)src;
-    while (count--) *d++ = *s++;
+    while (count--)
+        *d++ = *s++;
 }
-void memset32(void *dest, uint32_t val, uint32_t count)
-{
+void memset32(void *dest, uint32_t val, uint32_t count) {
     uint32_t *d = (uint32_t *)dest;
-    while (count--) *d++ = val;
+    while (count--)
+        *d++ = val;
 }
-void outb(uint16_t port, uint8_t val)
-{
-    (void)port; (void)val;
+void outb(uint16_t port, uint8_t val) {
+    (void)port;
+    (void)val;
 }
-uint8_t inb(uint16_t port)
-{
+uint8_t inb(uint16_t port) {
     extern void virtio_input_poll(void);
     extern int virtio_input_kbd_has_data(void);
     extern uint8_t virtio_input_kbd_read(void);
     extern int virtio_input_mouse_has_data(void);
     extern uint8_t virtio_input_mouse_read(void);
     if (port == 0x64) {
-
         virtio_input_poll();
 
         uint8_t st = 0;
@@ -83,8 +79,7 @@ uint8_t inb(uint16_t port)
     }
     return 0;
 }
-uint32_t blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha)
-{
+uint32_t blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha) {
     if (alpha == 255)
         return fg;
     if (alpha == 0)
@@ -101,8 +96,7 @@ uint32_t blend_colors(uint32_t fg, uint32_t bg, uint8_t alpha)
     uint32_t b = (b1 * alpha + b2 * inv_alpha) >> 8;
     return 0xFF000000 | (r << 16) | (g << 8) | b;
 }
-uint32_t isqrt64(uint64_t n)
-{
+uint32_t isqrt64(uint64_t n) {
     uint64_t res = 0;
     uint64_t bit = 1ULL << 62;
     while (bit > n) {
@@ -119,8 +113,7 @@ uint32_t isqrt64(uint64_t n)
     }
     return (uint32_t)res;
 }
-int memcmp(const void *s1, const void *s2, uint32_t n)
-{
+int memcmp(const void *s1, const void *s2, uint32_t n) {
     const unsigned char *p1 = s1, *p2 = s2;
     while (n--) {
         if (*p1 != *p2)
@@ -130,19 +123,19 @@ int memcmp(const void *s1, const void *s2, uint32_t n)
     }
     return 0;
 }
-uint16_t inw(uint16_t port)
-{
-    (void)port; return 0;
+uint16_t inw(uint16_t port) {
+    (void)port;
+    return 0;
 }
-void outw(uint16_t port, uint16_t value)
-{
-    (void)port; (void)value;
+void outw(uint16_t port, uint16_t value) {
+    (void)port;
+    (void)value;
 }
-uint32_t inl(uint16_t port)
-{
-    (void)port; return 0;
+uint32_t inl(uint16_t port) {
+    (void)port;
+    return 0;
 }
-void outl(uint16_t port, uint32_t value)
-{
-    (void)port; (void)value;
+void outl(uint16_t port, uint32_t value) {
+    (void)port;
+    (void)value;
 }

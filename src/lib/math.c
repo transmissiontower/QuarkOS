@@ -12,25 +12,20 @@ static const int32_t sin_table[] = {
     51643, 52339, 53019, 53683, 54331, 54963, 55577, 56175, 56755, 57319, 57864, 58393, 58903,
     59395, 59870, 60326, 60763, 61183, 61583, 61965, 62328, 62672, 62997, 63302, 63589, 63856,
     64103, 64331, 64540, 64729, 64898, 65047, 65176, 65286, 65376, 65446, 65496, 65526, 65536};
-double fabs(double x)
-{
+double fabs(double x) {
     return (x < 0) ? -x : x;
 }
-double floor(double x)
-{
+double floor(double x) {
     long xi = (long)x;
     return (x < xi) ? xi - 1 : x;
 }
-double fmod(double x, double y)
-{
+double fmod(double x, double y) {
     return x - (int)(x / y) * y;
 }
-int32_t i_fmod(int32_t x, int32_t y)
-{
+int32_t i_fmod(int32_t x, int32_t y) {
     return x - (int)(x / y) * y;
 }
-double sqrt(double x)
-{
+double sqrt(double x) {
     if (x < 0)
         return -1.0;
     if (x == 0)
@@ -41,8 +36,7 @@ double sqrt(double x)
     }
     return z;
 }
-double sin(double x)
-{
+double sin(double x) {
     x = fmod(x, 2 * PI);
     if (x < -PI)
         x += 2 * PI;
@@ -58,12 +52,10 @@ double sin(double x)
     }
     return res;
 }
-double cos(double x)
-{
+double cos(double x) {
     return sin(x + PI / 2);
 }
-int32_t math_fixed_sin(int32_t deg)
-{
+int32_t math_fixed_sin(int32_t deg) {
     deg %= 360;
     if (deg < 0)
         deg += 360;
@@ -75,7 +67,6 @@ int32_t math_fixed_sin(int32_t deg)
         return -sin_table[deg - 180];
     return -sin_table[360 - deg];
 }
-int32_t math_fixed_cos(int32_t deg)
-{
+int32_t math_fixed_cos(int32_t deg) {
     return math_fixed_sin(deg + 90);
 }

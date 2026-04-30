@@ -57,8 +57,7 @@ static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t 
 static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext);
 static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t *b, uint32_t *c,
                          uint32_t *d);
-static inline uint64_t boot_read_tsc(void)
-{
+static inline uint64_t boot_read_tsc(void) {
 #if defined(__aarch64__)
 
     uint64_t val;
@@ -74,8 +73,7 @@ static inline uint64_t boot_read_tsc(void)
     return ((uint64_t)hi << 32) | lo;
 #endif
 }
-static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uint64_t multiplier)
-{
+static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uint64_t multiplier) {
     if (!start || !end || start >= end)
         return 0;
     while (start < end && *start == ' ')
@@ -106,8 +104,7 @@ static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uin
     return hz;
 }
 static uint64_t boot_extract_freq_value(const char *brand, const char *unit_pos,
-                                        uint64_t multiplier)
-{
+                                        uint64_t multiplier) {
     if (!brand || !unit_pos)
         return 0;
     const char *end = unit_pos;
@@ -124,8 +121,7 @@ static uint64_t boot_extract_freq_value(const char *brand, const char *unit_pos,
     }
     return boot_parse_decimal_to_hz(start, end, multiplier);
 }
-static uint64_t boot_brand_freq_from_string(const char *brand)
-{
+static uint64_t boot_brand_freq_from_string(const char *brand) {
     if (!brand)
         return 0;
     const char *unit = strstr(brand, "GHz");
@@ -142,8 +138,7 @@ static uint64_t boot_brand_freq_from_string(const char *brand)
     }
     return 0;
 }
-static void boot_cpuid_cache(void)
-{
+static void boot_cpuid_cache(void) {
     if (boot_cpuid_cached)
         return;
 #if defined(__aarch64__)
@@ -158,68 +153,162 @@ static void boot_cpuid_cache(void)
 
         const char *impl_name = "Unknown";
         switch (implementer) {
-        case 0x41: impl_name = "ARM Limited"; break;
-        case 0x42: impl_name = "Broadcom"; break;
-        case 0x43: impl_name = "Cavium"; break;
-        case 0x44: impl_name = "DEC"; break;
-        case 0x46: impl_name = "Fujitsu"; break;
-        case 0x48: impl_name = "HiSilicon"; break;
-        case 0x4E: impl_name = "NVIDIA"; break;
-        case 0x50: impl_name = "APM"; break;
-        case 0x51: impl_name = "Qualcomm"; break;
-        case 0x53: impl_name = "Samsung"; break;
-        case 0x56: impl_name = "Marvell"; break;
-        case 0x61: impl_name = "Apple"; break;
-        case 0x69: impl_name = "Intel"; break;
-        case 0xC0: impl_name = "Ampere"; break;
+        case 0x41:
+            impl_name = "ARM Limited";
+            break;
+        case 0x42:
+            impl_name = "Broadcom";
+            break;
+        case 0x43:
+            impl_name = "Cavium";
+            break;
+        case 0x44:
+            impl_name = "DEC";
+            break;
+        case 0x46:
+            impl_name = "Fujitsu";
+            break;
+        case 0x48:
+            impl_name = "HiSilicon";
+            break;
+        case 0x4E:
+            impl_name = "NVIDIA";
+            break;
+        case 0x50:
+            impl_name = "APM";
+            break;
+        case 0x51:
+            impl_name = "Qualcomm";
+            break;
+        case 0x53:
+            impl_name = "Samsung";
+            break;
+        case 0x56:
+            impl_name = "Marvell";
+            break;
+        case 0x61:
+            impl_name = "Apple";
+            break;
+        case 0x69:
+            impl_name = "Intel";
+            break;
+        case 0xC0:
+            impl_name = "Ampere";
+            break;
         }
         int vi = 0;
-        while (impl_name[vi] && vi < 12) { boot_cpu_vendor[vi] = impl_name[vi]; vi++; }
+        while (impl_name[vi] && vi < 12) {
+            boot_cpu_vendor[vi] = impl_name[vi];
+            vi++;
+        }
         boot_cpu_vendor[vi] = 0;
 
         const char *part_name = "Unknown";
         if (implementer == 0x41) {
             switch (partnum) {
-            case 0xD03: part_name = "Cortex-A53"; break;
-            case 0xD07: part_name = "Cortex-A57"; break;
-            case 0xD08: part_name = "Cortex-A72"; break;
-            case 0xD09: part_name = "Cortex-A73"; break;
-            case 0xD0A: part_name = "Cortex-A75"; break;
-            case 0xD0B: part_name = "Cortex-A76"; break;
-            case 0xD0D: part_name = "Cortex-A77"; break;
-            case 0xD40: part_name = "Neoverse-V1"; break;
-            case 0xD41: part_name = "Cortex-A78"; break;
-            case 0xD44: part_name = "Cortex-X1"; break;
-            case 0xD46: part_name = "Cortex-A510"; break;
-            case 0xD47: part_name = "Cortex-A710"; break;
-            case 0xD4D: part_name = "Cortex-A715"; break;
-            default:    part_name = "ARM Core"; break;
+            case 0xD03:
+                part_name = "Cortex-A53";
+                break;
+            case 0xD07:
+                part_name = "Cortex-A57";
+                break;
+            case 0xD08:
+                part_name = "Cortex-A72";
+                break;
+            case 0xD09:
+                part_name = "Cortex-A73";
+                break;
+            case 0xD0A:
+                part_name = "Cortex-A75";
+                break;
+            case 0xD0B:
+                part_name = "Cortex-A76";
+                break;
+            case 0xD0D:
+                part_name = "Cortex-A77";
+                break;
+            case 0xD40:
+                part_name = "Neoverse-V1";
+                break;
+            case 0xD41:
+                part_name = "Cortex-A78";
+                break;
+            case 0xD44:
+                part_name = "Cortex-X1";
+                break;
+            case 0xD46:
+                part_name = "Cortex-A510";
+                break;
+            case 0xD47:
+                part_name = "Cortex-A710";
+                break;
+            case 0xD4D:
+                part_name = "Cortex-A715";
+                break;
+            default:
+                part_name = "ARM Core";
+                break;
             }
         } else if (implementer == 0x61) {
             switch (partnum) {
-            case 0x022: part_name = "Apple M1 Icestorm"; break;
-            case 0x023: part_name = "Apple M1 Firestorm"; break;
-            case 0x024: part_name = "Apple M1 Pro"; break;
-            case 0x025: part_name = "Apple M1 Pro"; break;
-            case 0x028: part_name = "Apple M1 Max"; break;
-            case 0x029: part_name = "Apple M1 Max"; break;
-            case 0x030: part_name = "Apple M2 Blizzard"; break;
-            case 0x031: part_name = "Apple M2 Avalanche"; break;
-            case 0x032: part_name = "Apple M2 Pro"; break;
-            case 0x033: part_name = "Apple M2 Pro"; break;
-            case 0x034: part_name = "Apple M2 Max"; break;
-            case 0x035: part_name = "Apple M2 Max"; break;
-            case 0x038: part_name = "Apple M3 Blizzard"; break;
-            case 0x039: part_name = "Apple M3 Avalanche"; break;
-            case 0x049: part_name = "Apple M4 Sawtooth"; break;
-            case 0x048: part_name = "Apple M4 Everest"; break;
-            default:    part_name = "Apple Silicon"; break;
+            case 0x022:
+                part_name = "Apple M1 Icestorm";
+                break;
+            case 0x023:
+                part_name = "Apple M1 Firestorm";
+                break;
+            case 0x024:
+                part_name = "Apple M1 Pro";
+                break;
+            case 0x025:
+                part_name = "Apple M1 Pro";
+                break;
+            case 0x028:
+                part_name = "Apple M1 Max";
+                break;
+            case 0x029:
+                part_name = "Apple M1 Max";
+                break;
+            case 0x030:
+                part_name = "Apple M2 Blizzard";
+                break;
+            case 0x031:
+                part_name = "Apple M2 Avalanche";
+                break;
+            case 0x032:
+                part_name = "Apple M2 Pro";
+                break;
+            case 0x033:
+                part_name = "Apple M2 Pro";
+                break;
+            case 0x034:
+                part_name = "Apple M2 Max";
+                break;
+            case 0x035:
+                part_name = "Apple M2 Max";
+                break;
+            case 0x038:
+                part_name = "Apple M3 Blizzard";
+                break;
+            case 0x039:
+                part_name = "Apple M3 Avalanche";
+                break;
+            case 0x049:
+                part_name = "Apple M4 Sawtooth";
+                break;
+            case 0x048:
+                part_name = "Apple M4 Everest";
+                break;
+            default:
+                part_name = "Apple Silicon";
+                break;
             }
         }
 
         int bi = 0;
         const char *pn = part_name;
-        while (*pn && bi < 40) boot_cpu_brand[bi++] = *pn++;
+        while (*pn && bi < 40)
+            boot_cpu_brand[bi++] = *pn++;
         boot_cpu_brand[bi++] = ' ';
         boot_cpu_brand[bi++] = 'r';
         boot_cpu_brand[bi++] = '0' + (variant & 0xF);
@@ -238,8 +327,7 @@ static void boot_cpuid_cache(void)
 #endif
     boot_cpuid_cached = true;
 }
-static void boot_time_ensure_initialized(void)
-{
+static void boot_time_ensure_initialized(void) {
     if (boot_time_ready)
         return;
     boot_cpuid_cache();
@@ -285,8 +373,7 @@ static void boot_time_ensure_initialized(void)
     boot_time_tsc_start = boot_read_tsc();
     boot_time_ready = true;
 }
-static uint64_t boot_time_now_us(void)
-{
+static uint64_t boot_time_now_us(void) {
     if (!boot_time_ready || boot_time_ticks_per_us == 0)
         return boot_log_time_us;
     uint64_t now = boot_read_tsc();
@@ -295,8 +382,7 @@ static uint64_t boot_time_now_us(void)
     uint64_t delta = now - boot_time_tsc_start;
     return delta / boot_time_ticks_per_us;
 }
-static uint64_t boot_log_next_timestamp(void)
-{
+static uint64_t boot_log_next_timestamp(void) {
     if (!boot_time_ready)
         boot_time_ensure_initialized();
     if (boot_time_ready)
@@ -305,8 +391,7 @@ static uint64_t boot_log_next_timestamp(void)
     boot_log_time_us += BOOT_LOG_DEFAULT_DELTA_US;
     return ts;
 }
-static void boot_log_format_timestamp(char *dest, uint64_t usec)
-{
+static void boot_log_format_timestamp(char *dest, uint64_t usec) {
     char digits[32];
     int len = 0;
     if (usec == 0) {
@@ -352,21 +437,18 @@ static void boot_log_format_timestamp(char *dest, uint64_t usec)
     dest[idx++] = ' ';
     dest[idx] = '\0';
 }
-static void boot_log_render_entry(int index, const char *message, uint64_t timestamp)
-{
+static void boot_log_render_entry(int index, const char *message, uint64_t timestamp) {
     if (index < 0 || index >= (int)BOOT_LOG_MAX_LINES)
         return;
     char *line = boot_log_lines[index];
     boot_log_format_timestamp(line, timestamp);
     boot_log_line_append(line, message);
 }
-static void boot_log_reset(void)
-{
+static void boot_log_reset(void) {
     boot_log_count = 0;
     boot_log_time_us = 0;
 }
-int boot_log_add(const char *message)
-{
+int boot_log_add(const char *message) {
     if (boot_log_count >= BOOT_LOG_MAX_LINES)
         return -1;
     uint64_t timestamp = boot_log_next_timestamp();
@@ -375,14 +457,12 @@ int boot_log_add(const char *message)
     boot_log_entries[boot_log_count] = boot_log_lines[boot_log_count];
     return (int)boot_log_count++;
 }
-void boot_log_replace(int index, const char *message)
-{
+void boot_log_replace(int index, const char *message) {
     if (index < 0 || index >= (int)boot_log_count)
         return;
     boot_log_render_entry(index, message, boot_log_timestamps[index]);
 }
-static void boot_log_line_append(char *dest, const char *text)
-{
+static void boot_log_line_append(char *dest, const char *text) {
     if (!text)
         return;
     uint32_t dest_len = strlen(dest);
@@ -396,30 +476,32 @@ static void boot_log_line_append(char *dest, const char *text)
     }
     dest[dest_len + i] = '\0';
 }
-static void int_to_hex_str(uint32_t val, char *out)
-{
+static void int_to_hex_str(uint32_t val, char *out) {
     int i = 0;
     char tmp[9];
-    if (val == 0) { out[0] = '0'; out[1] = 0; return; }
+    if (val == 0) {
+        out[0] = '0';
+        out[1] = 0;
+        return;
+    }
     while (val > 0 && i < 8) {
         int n = val & 0xF;
         tmp[i++] = (n < 10) ? '0' + n : 'A' + n - 10;
         val >>= 4;
     }
     int j = 0;
-    while (--i >= 0) out[j++] = tmp[i];
+    while (--i >= 0)
+        out[j++] = tmp[i];
     out[j] = 0;
 }
-static void boot_log_add_pair(const char *label, const char *value)
-{
+static void boot_log_add_pair(const char *label, const char *value) {
     char line[BOOT_LOG_LINE_LEN];
     line[0] = '\0';
     boot_log_line_append(line, label);
     boot_log_line_append(line, value);
     boot_log_add(line);
 }
-void boot_log_add_dec(const char *label, uint32_t value, const char *suffix)
-{
+void boot_log_add_dec(const char *label, uint32_t value, const char *suffix) {
     char line[BOOT_LOG_LINE_LEN];
     char number[16];
     line[0] = '\0';
@@ -429,8 +511,7 @@ void boot_log_add_dec(const char *label, uint32_t value, const char *suffix)
     boot_log_line_append(line, suffix);
     boot_log_add(line);
 }
-void boot_log_add_hex(const char *label, uint32_t value)
-{
+void boot_log_add_hex(const char *label, uint32_t value) {
     char line[BOOT_LOG_LINE_LEN];
     char hex[11];
     uint_to_hex(value, hex);
@@ -439,8 +520,7 @@ void boot_log_add_hex(const char *label, uint32_t value)
     boot_log_line_append(line, hex);
     boot_log_add(line);
 }
-static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext)
-{
+static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext) {
     if (max_ext < 0x80000004u || len < 48) {
         if (len)
             out[0] = '\0';
@@ -457,8 +537,7 @@ static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext)
     out[47] = '\0';
     return true;
 }
-static void boot_log_add_cpu_signature(void)
-{
+static void boot_log_add_cpu_signature(void) {
     uint32_t eax, ebx, ecx, edx;
     cpuid(1, 0, &eax, &ebx, &ecx, &edx);
     uint32_t family = (eax >> 8) & 0xF;
@@ -484,8 +563,7 @@ static void boot_log_add_cpu_signature(void)
     boot_log_line_append(line, number);
     boot_log_add(line);
 }
-static void boot_log_add_memory_info(struct multiboot_info *boot_info)
-{
+static void boot_log_add_memory_info(struct multiboot_info *boot_info) {
     if (!boot_info || !(boot_info->flags & 0x1))
         return;
     char line[BOOT_LOG_LINE_LEN];
@@ -500,8 +578,7 @@ static void boot_log_add_memory_info(struct multiboot_info *boot_info)
     boot_log_line_append(line, " KB");
     boot_log_add(line);
 }
-static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
-{
+static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext) {
     if (max_basic < 1)
         return;
     uint32_t eax1, ebx1, ecx1, edx1;
@@ -595,8 +672,7 @@ static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext)
         boot_log_add("Hypervisor: none detected");
     }
 }
-void boot_log_add_framebuffer_info(void)
-{
+void boot_log_add_framebuffer_info(void) {
     if (fb_width == 0 || fb_height == 0)
         return;
     char line[BOOT_LOG_LINE_LEN];
@@ -613,8 +689,7 @@ void boot_log_add_framebuffer_info(void)
     boot_log_line_append(line, " bpp");
     boot_log_add(line);
 }
-void boot_log_add_rtc_line(const Time *t)
-{
+void boot_log_add_rtc_line(const Time *t) {
     if (!t)
         return;
     char line[BOOT_LOG_LINE_LEN];
@@ -640,8 +715,7 @@ void boot_log_add_rtc_line(const Time *t)
     boot_log_line_append(line, day);
     boot_log_add(line);
 }
-void boot_log_add_acpi_capabilities(bool power_button, bool reset_capable_flag)
-{
+void boot_log_add_acpi_capabilities(bool power_button, bool reset_capable_flag) {
     char line[BOOT_LOG_LINE_LEN];
     line[0] = '\0';
     boot_log_line_append(line, "ACPI S5 poweroff: ");
@@ -653,8 +727,7 @@ void boot_log_add_acpi_capabilities(bool power_button, bool reset_capable_flag)
     boot_log_line_append(reset_line, reset_capable_flag ? "available" : "missing");
     boot_log_add(reset_line);
 }
-void boot_log_record_boot_info(struct multiboot_info *boot_info)
-{
+void boot_log_record_boot_info(struct multiboot_info *boot_info) {
     boot_log_reset();
     boot_cpuid_cache();
 #if defined(__aarch64__)
@@ -695,15 +768,24 @@ void boot_log_record_boot_info(struct multiboot_info *boot_info)
         asm volatile("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
         line[0] = '\0';
         boot_log_line_append(line, "CPU features:");
-        if ((isar0 >> 4) & 0xF)  boot_log_line_append(line, " AES");
-        if ((isar0 >> 8) & 0xF)  boot_log_line_append(line, " SHA1");
-        if ((isar0 >> 12) & 0xF) boot_log_line_append(line, " SHA256");
-        if ((isar0 >> 16) & 0xF) boot_log_line_append(line, " CRC32");
-        if ((isar0 >> 20) & 0xF) boot_log_line_append(line, " ATOMICS");
-        if ((isar0 >> 28) & 0xF) boot_log_line_append(line, " SHA512");
-        if ((isar0 >> 32) & 0xF) boot_log_line_append(line, " SHA3");
-        if ((isar0 >> 44) & 0xF) boot_log_line_append(line, " FHM");
-        if ((isar0 >> 52) & 0xF) boot_log_line_append(line, " RNG");
+        if ((isar0 >> 4) & 0xF)
+            boot_log_line_append(line, " AES");
+        if ((isar0 >> 8) & 0xF)
+            boot_log_line_append(line, " SHA1");
+        if ((isar0 >> 12) & 0xF)
+            boot_log_line_append(line, " SHA256");
+        if ((isar0 >> 16) & 0xF)
+            boot_log_line_append(line, " CRC32");
+        if ((isar0 >> 20) & 0xF)
+            boot_log_line_append(line, " ATOMICS");
+        if ((isar0 >> 28) & 0xF)
+            boot_log_line_append(line, " SHA512");
+        if ((isar0 >> 32) & 0xF)
+            boot_log_line_append(line, " SHA3");
+        if ((isar0 >> 44) & 0xF)
+            boot_log_line_append(line, " FHM");
+        if ((isar0 >> 52) & 0xF)
+            boot_log_line_append(line, " RNG");
         boot_log_add(line);
 
         uint64_t cntfrq;
@@ -724,8 +806,7 @@ void boot_log_record_boot_info(struct multiboot_info *boot_info)
         boot_log_add_dec("Boot modules: ", boot_info->mods_count, " loaded");
     }
 }
-static void k_font_init(void *data)
-{
+static void k_font_init(void *data) {
     if (!data)
         return;
     uint32_t *ptr = (uint32_t *)data;
@@ -739,20 +820,21 @@ static void k_font_init(void *data)
     k_boot_font.bitmap =
         (uint32_t *)((uint8_t *)k_boot_font.glyphs + k_boot_font.count * sizeof(K_GlyphInfo));
 }
-static K_GlyphInfo *k_glyph_find(uint32_t cp)
-{
+static K_GlyphInfo *k_glyph_find(uint32_t cp) {
     int lo = 0, hi = (int)k_boot_font.count - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
         uint32_t mcp = k_boot_font.glyphs[mid].codepoint;
-        if (mcp == cp) return &k_boot_font.glyphs[mid];
-        if (mcp < cp)  lo = mid + 1;
-        else           hi = mid - 1;
+        if (mcp == cp)
+            return &k_boot_font.glyphs[mid];
+        if (mcp < cp)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
     }
     return 0;
 }
-static int k_draw_string_atlas(int x, int y, const char *str, uint32_t color)
-{
+static int k_draw_string_atlas(int x, int y, const char *str, uint32_t color) {
     if (!k_font_virt_addr)
         return x;
     while (*str) {
@@ -765,15 +847,23 @@ static int k_draw_string_atlas(int x, int y, const char *str, uint32_t color)
             cp = ((uint32_t)(b & 0x1F) << 6) | ((uint8_t)str[1] & 0x3F);
             n = 2;
         } else if ((b & 0xF0) == 0xE0) {
-            cp = ((uint32_t)(b & 0x0F) << 12) | ((uint32_t)((uint8_t)str[1] & 0x3F) << 6) | ((uint8_t)str[2] & 0x3F);
+            cp = ((uint32_t)(b & 0x0F) << 12) | ((uint32_t)((uint8_t)str[1] & 0x3F) << 6) |
+                 ((uint8_t)str[2] & 0x3F);
             n = 3;
         } else {
-            cp = '?'; n = 1;
+            cp = '?';
+            n = 1;
         }
         str += n;
         K_GlyphInfo *g = k_glyph_find(cp);
-        if (!g) { x += k_boot_font.line_height / 2; continue; }
-        if (g->w == 0) { x += g->advance; continue; }
+        if (!g) {
+            x += k_boot_font.line_height / 2;
+            continue;
+        }
+        if (g->w == 0) {
+            x += g->advance;
+            continue;
+        }
         for (int iy = 0; iy < (int)g->h; iy++) {
             for (int ix = 0; ix < (int)g->w; ix++) {
                 uint32_t px = k_boot_font.bitmap[(g->y + iy) * k_boot_font.tex_width + (g->x + ix)];
@@ -786,8 +876,7 @@ static int k_draw_string_atlas(int x, int y, const char *str, uint32_t color)
     }
     return x;
 }
-static void k_draw_boot_line(int x, int y, const char *str)
-{
+static void k_draw_boot_line(int x, int y, const char *str) {
     const char *bracket_end = str;
     while (*bracket_end && *bracket_end != ']')
         bracket_end++;
@@ -809,8 +898,7 @@ static void k_draw_boot_line(int x, int y, const char *str)
         k_draw_string_atlas(x, y, str, text_color);
     }
 }
-void draw_boot_splash()
-{
+void draw_boot_splash() {
     if (k_logo_phys_addr == 0 || !k_font_virt_addr)
         return;
     void *logo_data = map_module(k_logo_phys_addr, k_logo_size);
@@ -842,25 +930,25 @@ void draw_boot_splash()
         for (volatile int d = 0; d < 200000 * delay_multiplier; d++)
             __asm__(
 #if defined(__arm__) || defined(__aarch64__)
-            "" ::: "memory"
+                "" ::
+                    : "memory"
 #else
-            "pause"
+                "pause"
 #endif
-        );
+            );
     }
 }
 static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t *b, uint32_t *c,
-                         uint32_t *d)
-{
+                         uint32_t *d) {
 #if defined(__arm__) || defined(__aarch64__)
-    (void)leaf; (void)subleaf;
+    (void)leaf;
+    (void)subleaf;
     *a = *b = *c = *d = 0;
 #else
     asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(subleaf));
 #endif
 }
-static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t *max_ext)
-{
+static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t *max_ext) {
     uint32_t eax, ebx, ecx, edx;
     cpuid(0, 0, &eax, &ebx, &ecx, &edx);
     if (max_basic)

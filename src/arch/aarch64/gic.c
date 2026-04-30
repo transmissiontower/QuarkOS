@@ -10,10 +10,9 @@
 #define MAX_IRQ 128
 static void (*irq_handlers[MAX_IRQ])(struct InterruptRegisters *r);
 
-void arm_gic_init(void)
-{
+void arm_gic_init(void) {
     uint32_t dist = GIC_DIST_VIRT;
-    uint32_t cpu  = GIC_CPU_VIRT;
+    uint32_t cpu = GIC_CPU_VIRT;
 
     mmio_write32(dist + GICD_CTLR, 0);
 
@@ -43,44 +42,43 @@ void arm_gic_init(void)
     arm_uart_puts("  GIC: distributor + CPU interface ready\n");
 }
 
-void arm_gic_enable_irq(uint32_t irq)
-{
+void arm_gic_enable_irq(uint32_t irq) {
     uint32_t reg = irq / 32;
     uint32_t bit = irq % 32;
     mmio_write32(GIC_DIST_VIRT + GICD_ISENABLER + reg * 4, (1u << bit));
 }
 
-void arm_gic_disable_irq(uint32_t irq)
-{
+void arm_gic_disable_irq(uint32_t irq) {
     uint32_t reg = irq / 32;
     uint32_t bit = irq % 32;
     mmio_write32(GIC_DIST_VIRT + GICD_ICENABLER + reg * 4, (1u << bit));
 }
 
-uint32_t arm_gic_ack(void)
-{
+uint32_t arm_gic_ack(void) {
     return mmio_read32(GIC_CPU_VIRT + GICC_IAR) & 0x3FF;
 }
 
-void arm_gic_eoi(uint32_t irq)
-{
+void arm_gic_eoi(uint32_t irq) {
     mmio_write32(GIC_CPU_VIRT + GICC_EOIR, irq);
 }
 
-static int legacy_to_arm_irq(int legacy_irq)
-{
+static int legacy_to_arm_irq(int legacy_irq) {
     switch (legacy_irq) {
-    case 0:  return ARM_IRQ_TIMER;
-    case 1:  return 49;
-    case 12: return 50;
-    default: return -1;
+    case 0:
+        return ARM_IRQ_TIMER;
+    case 1:
+        return 49;
+    case 12:
+        return 50;
+    default:
+        return -1;
     }
 }
 
-void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r))
-{
+void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r)) {
     int arm_irq = legacy_to_arm_irq(irq);
-    if (arm_irq < 0 || arm_irq >= MAX_IRQ) return;
+    if (arm_irq < 0 || arm_irq >= MAX_IRQ)
+        return;
     irq_handlers[arm_irq] = handler;
     arm_gic_enable_irq(arm_irq);
 
@@ -90,18 +88,18 @@ void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r))
     }
 }
 
-void irq_uninstall_handler(int irq)
-{
+void irq_uninstall_handler(int irq) {
     int arm_irq = legacy_to_arm_irq(irq);
-    if (arm_irq < 0 || arm_irq >= MAX_IRQ) return;
+    if (arm_irq < 0 || arm_irq >= MAX_IRQ)
+        return;
     irq_handlers[arm_irq] = 0;
     arm_gic_disable_irq(arm_irq);
 }
 
-void arm_irq_dispatch(void)
-{
+void arm_irq_dispatch(void) {
     uint32_t irq = arm_gic_ack();
-    if (irq >= 1020) return;
+    if (irq >= 1020)
+        return;
 
     arm_gic_eoi(irq);
 
@@ -124,73 +122,72 @@ void arm_irq_dispatch(void)
         virtio_input_irq(irq);
 
     if (irq == ARM_IRQ_TIMER || irq == ARM_IRQ_VTIMER) {
-
         mmio_write32(UART0_VIRT + UART_DR, 0);
         virtio_input_poll();
         int have_kbd = virtio_input_kbd_has_data();
         int have_mouse = virtio_input_mouse_has_data();
         if (have_kbd || have_mouse) {
-
             process_wake_on_irq(1);
             process_wake_on_irq(12);
         }
     }
 
     int legacy_irq = -1;
-    if (irq == ARM_IRQ_TIMER || irq == ARM_IRQ_VTIMER) legacy_irq = 0;
-    else if ((int)irq == ki) legacy_irq = 1;
-    else if ((int)irq == mi) legacy_irq = 12;
+    if (irq == ARM_IRQ_TIMER || irq == ARM_IRQ_VTIMER)
+        legacy_irq = 0;
+    else if ((int)irq == ki)
+        legacy_irq = 1;
+    else if ((int)irq == mi)
+        legacy_irq = 12;
     if (legacy_irq >= 0)
         process_wake_on_irq(legacy_irq);
 }
 
-static void print_hex(uint32_t val)
-{
+static void print_hex(uint32_t val) {
     for (int s = 28; s >= 0; s -= 4) {
         int n = (val >> s) & 0xF;
-        arm_uart_putc(n < 10 ? '0'+n : 'A'+n-10);
+        arm_uart_putc(n < 10 ? '0' + n : 'A' + n - 10);
     }
 }
 
-void arm_el0_unknown_exception(uint64_t esr, uint64_t elr)
-{
-    extern process_t * volatile current_process;
+void arm_el0_unknown_exception(uint64_t esr, uint64_t elr) {
+    extern process_t *volatile current_process;
     KLOG_PROC(LOG_CRIT, "UNKNOWN_EL0 pid=%d name='%s' ESR=%x ELR=%x EC=%x — terminating",
               current_process ? current_process->pid : -1,
-              current_process ? current_process->name : "?",
-              (uint32_t)esr, (uint32_t)elr, (uint32_t)(esr >> 26) & 0x3F);
+              current_process ? current_process->name : "?", (uint32_t)esr, (uint32_t)elr,
+              (uint32_t)(esr >> 26) & 0x3F);
 
     if (current_process && current_process->pid != 0) {
         extern void k_proc_terminate(int pid);
         k_proc_terminate(current_process->pid);
         arm_irq_enable();
-        for (;;) arm_wfi();
+        for (;;)
+            arm_wfi();
     } else {
         extern void kernel_panic(const char *msg);
         kernel_panic("Unknown EL0 exception in kernel process");
     }
 }
 
-void arm_dabt_handler_c(uint64_t fault_addr, uint32_t fault_status, uint64_t fault_pc)
-{
+void arm_dabt_handler_c(uint64_t fault_addr, uint32_t fault_status, uint64_t fault_pc) {
     uint32_t dfsc = fault_status & 0x3F;
-    uint32_t wnr  = (fault_status >> 6) & 1;
-    const char *fault_type =
-        dfsc == 0x21 ? "ALIGNMENT" :
-        dfsc == 0x04 ? "XLAT-L0" :
-        dfsc == 0x05 ? "XLAT-L1" :
-        dfsc == 0x06 ? "XLAT-L2" :
-        dfsc == 0x07 ? "XLAT-L3" :
-        dfsc == 0x09 ? "ACCESS-L1" :
-        dfsc == 0x0B ? "ACCESS-L3" :
-        dfsc == 0x0D ? "PERM-L1" :
-        dfsc == 0x0F ? "PERM-L3" : "UNKNOWN";
+    uint32_t wnr = (fault_status >> 6) & 1;
+    const char *fault_type = dfsc == 0x21   ? "ALIGNMENT"
+                             : dfsc == 0x04 ? "XLAT-L0"
+                             : dfsc == 0x05 ? "XLAT-L1"
+                             : dfsc == 0x06 ? "XLAT-L2"
+                             : dfsc == 0x07 ? "XLAT-L3"
+                             : dfsc == 0x09 ? "ACCESS-L1"
+                             : dfsc == 0x0B ? "ACCESS-L3"
+                             : dfsc == 0x0D ? "PERM-L1"
+                             : dfsc == 0x0F ? "PERM-L3"
+                                            : "UNKNOWN";
 
     KLOG_GIC(LOG_CRIT, "===== %s ABORT =====", wnr ? "WRITE" : "READ");
     KLOG_GIC(LOG_CRIT, "FAR_EL1  = %lx (fault address)", (uint64_t)fault_addr);
     KLOG_GIC(LOG_CRIT, "ELR_EL1  = %lx (faulting PC)", (uint64_t)fault_pc);
-    KLOG_GIC(LOG_CRIT, "ESR_EL1  = %x  EC=%x  DFSC=%x (%s)",
-             fault_status, fault_status >> 26, dfsc, fault_type);
+    KLOG_GIC(LOG_CRIT, "ESR_EL1  = %x  EC=%x  DFSC=%x (%s)", fault_status, fault_status >> 26, dfsc,
+             fault_type);
 
     {
         extern void debug_dump_pt_walk(uint64_t va);
@@ -201,7 +198,6 @@ void arm_dabt_handler_c(uint64_t fault_addr, uint32_t fault_status, uint64_t fau
     asm volatile("mov %0, x29" : "=r"(fp));
     KLOG_GIC(LOG_CRIT, "--- Stack trace (FP chain) ---");
     for (int depth = 0; depth < 16 && fp != 0; depth++) {
-
         if (fp < 0xC0000000 || fp > 0xFFFFFFFF)
             break;
         uint64_t *frame = (uint64_t *)fp;
@@ -215,24 +211,24 @@ void arm_dabt_handler_c(uint64_t fault_addr, uint32_t fault_status, uint64_t fau
     asm volatile("mov %0, sp" : "=r"(sp_val));
     KLOG_GIC(LOG_CRIT, "SP=%lx", sp_val);
 
-    extern process_t * volatile current_process;
+    extern process_t *volatile current_process;
     if (current_process) {
-        KLOG_GIC(LOG_CRIT, "Process: pid=%d name='%s' pd=%x",
-                 current_process->pid, current_process->name,
-                 (uint32_t)current_process->pd_phys);
+        KLOG_GIC(LOG_CRIT, "Process: pid=%d name='%s' pd=%x", current_process->pid,
+                 current_process->name, (uint32_t)current_process->pd_phys);
     }
 
     {
         uintptr_t cp = (uintptr_t)current_process;
         int cp_valid = cp >= 0xD0000000UL && cp < 0xE0000000UL;
         if (cp_valid && current_process->pid > 0 && current_process->pid < 64) {
-            KLOG_PROC(LOG_CRIT, "CRASH pid=%d name='%s' FAR=%x ELR=%x ESR=%x",
-                      current_process->pid, current_process->name,
-                      (uint32_t)fault_addr, (uint32_t)fault_pc, fault_status);
+            KLOG_PROC(LOG_CRIT, "CRASH pid=%d name='%s' FAR=%x ELR=%x ESR=%x", current_process->pid,
+                      current_process->name, (uint32_t)fault_addr, (uint32_t)fault_pc,
+                      fault_status);
             extern void k_proc_terminate(int pid);
             k_proc_terminate(current_process->pid);
             arm_irq_enable();
-            for (;;) arm_wfi();
+            for (;;)
+                arm_wfi();
         } else {
             extern void kernel_panic(const char *msg);
             kernel_panic("Data Abort (no valid process)");

@@ -48,12 +48,11 @@ static int current_disk_idx = 0;
 static int is_fat32 = 0;
 static uint32_t root_cluster = 0;
 #define MAX_DISKS 8
-static int disk_mounted[MAX_DISKS] = {1,1,1,1,1,1,1,1};
-#define FAT_EOC_VAL   (is_fat32 ? 0x0FFFFFFFu : 0xFFFFu)
+static int disk_mounted[MAX_DISKS] = {1, 1, 1, 1, 1, 1, 1, 1};
+#define FAT_EOC_VAL (is_fat32 ? 0x0FFFFFFFu : 0xFFFFu)
 #define FAT_IS_EOC(c) (is_fat32 ? ((c) >= 0x0FFFFFF8u) : ((c) >= 0xFFF8u))
 #define FAT_BAD_CLUSTER 0xFFFFFFFFu
-static inline uint32_t entry_cluster(const fat_dir_entry_t *e)
-{
+static inline uint32_t entry_cluster(const fat_dir_entry_t *e) {
     if (is_fat32)
         return ((uint32_t)e->first_cluster_high << 16) | e->first_cluster_low;
     return e->first_cluster_low;
@@ -68,8 +67,7 @@ typedef struct {
     uint8_t *buffer;
 } save_session_t;
 static save_session_t save_session;
-static void reset_save_session(void)
-{
+static void reset_save_session(void) {
     if (save_session.buffer) {
         free(save_session.buffer);
     }
@@ -77,60 +75,56 @@ static void reset_save_session(void)
 }
 #define PCI_ADDR_PORT 0xCF8
 #define PCI_DATA_PORT 0xCFC
-#define BM_CMD    0x00
+#define BM_CMD 0x00
 #define BM_STATUS 0x02
-#define BM_PRDT   0x04
+#define BM_PRDT 0x04
 #define BM_CMD_START 0x01
-#define BM_CMD_READ  0x08
+#define BM_CMD_READ 0x08
 #define BM_ST_ERROR 0x02
-#define BM_ST_IRQ   0x04
+#define BM_ST_IRQ 0x04
 typedef struct {
     uint32_t phys_addr;
     uint16_t byte_count;
     uint16_t flags;
 } __attribute__((packed)) prd_t;
-static uint16_t bm_base       = 0;
-static uint8_t *prdt_buf      = 0;
-static uint32_t prdt_phys     = 0;
-static uint32_t pci_read32(uint8_t dev, uint8_t func, uint8_t off)
-{
+static uint16_t bm_base = 0;
+static uint8_t *prdt_buf = 0;
+static uint32_t prdt_phys = 0;
+static uint32_t pci_read32(uint8_t dev, uint8_t func, uint8_t off) {
     uint32_t addr = (1u << 31) | ((uint32_t)dev << 11) | ((uint32_t)func << 8) | (off & 0xFC);
     qk_hw_outl(PCI_ADDR_PORT, addr);
     return qk_hw_inl(PCI_DATA_PORT);
 }
-static void pci_write32(uint8_t dev, uint8_t func, uint8_t off, uint32_t val)
-{
+static void pci_write32(uint8_t dev, uint8_t func, uint8_t off, uint32_t val) {
     uint32_t addr = (1u << 31) | ((uint32_t)dev << 11) | ((uint32_t)func << 8) | (off & 0xFC);
     qk_hw_outl(PCI_ADDR_PORT, addr);
     qk_hw_outl(PCI_DATA_PORT, val);
 }
-static void bm_dma_init(void)
-{
+static void bm_dma_init(void) {
     return;
 }
-static int ata_dma_read_sectors(uint32_t lba, uint32_t count, uint8_t *buffer)
-{
+static int ata_dma_read_sectors(uint32_t lba, uint32_t count, uint8_t *buffer) {
     uint32_t done = 0;
     while (done < count) {
         uint32_t chunk = count - done;
-        if (chunk > 128) chunk = 128;
+        if (chunk > 128)
+            chunk = 128;
         int r = qk_blk_read(lba + done, chunk, buffer + done * 512);
-        if (r != 0) return r;
+        if (r != 0)
+            return r;
         done += chunk;
     }
     return 0;
 }
 static int ata_error = 0;
-void ata_wait_bsy()
-{
+void ata_wait_bsy() {
     for (uint32_t i = 0; i < 100000; i++) {
         if (!(qk_hw_inb(ATA_STATUS) & ATA_STATUS_BSY))
             return;
     }
     ata_error = 1;
 }
-void ata_wait_drq()
-{
+void ata_wait_drq() {
     for (uint32_t i = 0; i < 100000; i++) {
         uint8_t st = qk_hw_inb(ATA_STATUS);
         if (st & ATA_STATUS_DRQ)
@@ -142,16 +136,13 @@ void ata_wait_drq()
     }
     ata_error = 1;
 }
-int drv_stor_ata_read(uint32_t lba, uint8_t *buffer)
-{
+int drv_stor_ata_read(uint32_t lba, uint8_t *buffer) {
     return qk_blk_read(lba, 1, buffer);
 }
-int drv_stor_ata_write(uint32_t lba, uint8_t *buffer)
-{
+int drv_stor_ata_write(uint32_t lba, uint8_t *buffer) {
     return qk_blk_write(lba, 1, buffer);
 }
-static int drv_stor_ata_write_sectors(uint32_t lba, uint8_t count, const uint8_t *buffer)
-{
+static int drv_stor_ata_write_sectors(uint32_t lba, uint8_t count, const uint8_t *buffer) {
     if (count == 0)
         return 0;
     return qk_blk_write(lba, count, buffer);
@@ -160,23 +151,22 @@ static int drv_stor_ata_write_sectors(uint32_t lba, uint8_t count, const uint8_t
 static int fat_find_entry_in_dir(uint32_t dir_cluster, const char *fat_name,
                                  fat_dir_entry_t *out_entry);
 
-static uint8_t lfn_checksum(const char *short_name_11)
-{
+static uint8_t lfn_checksum(const char *short_name_11) {
     uint8_t sum = 0;
     for (int i = 0; i < 11; i++)
         sum = ((sum & 1) ? 0x80 : 0) + (sum >> 1) + (uint8_t)short_name_11[i];
     return sum;
 }
 
-static void lfn_extract_chars(const fat_lfn_entry_t *lfn, int seq_index, char *out_name, int max_len)
-{
+static void lfn_extract_chars(const fat_lfn_entry_t *lfn, int seq_index, char *out_name,
+                              int max_len) {
     int base = seq_index * 13;
-    const uint8_t *parts[] = { lfn->name1, lfn->name2, lfn->name3 };
-    const int lens[]       = { 5, 6, 2 };
+    const uint8_t *parts[] = {lfn->name1, lfn->name2, lfn->name3};
+    const int lens[] = {5, 6, 2};
     int pos = base;
     for (int p = 0; p < 3; p++) {
         for (int i = 0; i < lens[p]; i++) {
-            uint16_t ch = parts[p][i*2] | (parts[p][i*2+1] << 8);
+            uint16_t ch = parts[p][i * 2] | (parts[p][i * 2 + 1] << 8);
             if (pos < max_len - 1) {
                 if (ch == 0x0000 || ch == 0xFFFF)
                     out_name[pos] = 0;
@@ -188,20 +178,20 @@ static void lfn_extract_chars(const fat_lfn_entry_t *lfn, int seq_index, char *o
     }
 }
 
-static void lfn_build_entry(fat_lfn_entry_t *lfn, int seq_num, int is_last,
-                            const char *long_name, int name_len, uint8_t chksum)
-{
+static void lfn_build_entry(fat_lfn_entry_t *lfn, int seq_num, int is_last, const char *long_name,
+                            int name_len, uint8_t chksum) {
     memset(lfn, 0xFF, 32);
     lfn->sequence = (uint8_t)seq_num;
-    if (is_last) lfn->sequence |= 0x40;
+    if (is_last)
+        lfn->sequence |= 0x40;
     lfn->attributes = 0x0F;
     lfn->type = 0x00;
     lfn->checksum = chksum;
     lfn->first_cluster = 0x0000;
 
     int base = (seq_num - 1) * 13;
-    uint8_t *parts[] = { lfn->name1, lfn->name2, lfn->name3 };
-    const int lens[] = { 5, 6, 2 };
+    uint8_t *parts[] = {lfn->name1, lfn->name2, lfn->name3};
+    const int lens[] = {5, 6, 2};
     int pos = base;
     for (int p = 0; p < 3; p++) {
         for (int i = 0; i < lens[p]; i++) {
@@ -212,51 +202,59 @@ static void lfn_build_entry(fat_lfn_entry_t *lfn, int seq_num, int is_last,
                 ch = 0x0000;
             else
                 ch = 0xFFFF;
-            parts[p][i*2]   = (uint8_t)(ch & 0xFF);
-            parts[p][i*2+1] = (uint8_t)(ch >> 8);
+            parts[p][i * 2] = (uint8_t)(ch & 0xFF);
+            parts[p][i * 2 + 1] = (uint8_t)(ch >> 8);
             pos++;
         }
     }
 }
 
-static int needs_lfn(const char *name)
-{
+static int needs_lfn(const char *name) {
     int len = strlen(name);
     int dot_pos = -1;
     for (int i = 0; i < len; i++) {
-        if (name[i] == '.') dot_pos = i;
-        if (name[i] >= 'a' && name[i] <= 'z') return 1;
-        if (name[i] == ' ') return 1;
+        if (name[i] == '.')
+            dot_pos = i;
+        if (name[i] >= 'a' && name[i] <= 'z')
+            return 1;
+        if (name[i] == ' ')
+            return 1;
     }
     int base_len = (dot_pos >= 0) ? dot_pos : len;
-    int ext_len  = (dot_pos >= 0) ? len - dot_pos - 1 : 0;
-    if (base_len > 8 || ext_len > 3) return 1;
+    int ext_len = (dot_pos >= 0) ? len - dot_pos - 1 : 0;
+    if (base_len > 8 || ext_len > 3)
+        return 1;
     return 0;
 }
 
-static void generate_short_name(const char *long_name, uint32_t dir_cluster, char *out_11)
-{
+static void generate_short_name(const char *long_name, uint32_t dir_cluster, char *out_11) {
     memset(out_11, ' ', 11);
     int len = strlen(long_name);
     int dot_pos = -1;
     for (int i = len - 1; i >= 0; i--)
-        if (long_name[i] == '.') { dot_pos = i; break; }
+        if (long_name[i] == '.') {
+            dot_pos = i;
+            break;
+        }
 
     int base_end = (dot_pos >= 0) ? dot_pos : len;
     int bi = 0;
     for (int i = 0; i < base_end && bi < 6; i++) {
         char c = long_name[i];
-        if (c >= 'a' && c <= 'z') c -= 32;
-        if (c == ' ' || c == '+' || c == ',' || c == ';' || c == '='
-            || c == '[' || c == ']') c = '_';
-        if (c != '.') out_11[bi++] = c;
+        if (c >= 'a' && c <= 'z')
+            c -= 32;
+        if (c == ' ' || c == '+' || c == ',' || c == ';' || c == '=' || c == '[' || c == ']')
+            c = '_';
+        if (c != '.')
+            out_11[bi++] = c;
     }
 
     if (dot_pos >= 0) {
         int ei = 0;
         for (int i = dot_pos + 1; i < len && ei < 3; i++) {
             char c = long_name[i];
-            if (c >= 'a' && c <= 'z') c -= 32;
+            if (c >= 'a' && c <= 'z')
+                c -= 32;
             out_11[8 + ei++] = c;
         }
     }
@@ -268,11 +266,9 @@ static void generate_short_name(const char *long_name, uint32_t dir_cluster, cha
         if (fat_find_entry_in_dir(dir_cluster, out_11, &tmp) != 0)
             return;
     }
-
 }
 
-void to_fat_name(const char *src, char *dest)
-{
+void to_fat_name(const char *src, char *dest) {
     memset(dest, ' ', 11);
     int i = 0, j = 0;
     while (src[i] && src[i] != '.') {
@@ -298,23 +294,20 @@ void to_fat_name(const char *src, char *dest)
         }
     }
 }
-static void fat_cache_flush(void)
-{
+static void fat_cache_flush(void) {
     if (fat_cache_dirty && fat_cached_sector != 0xFFFFFFFFu) {
         drv_stor_ata_write(fat_cached_sector, fat_cache_buf);
         fat_cache_dirty = 0;
     }
 }
-static void fat_cache_load(uint32_t sector)
-{
+static void fat_cache_load(uint32_t sector) {
     if (fat_cached_sector != sector) {
         fat_cache_flush();
         drv_stor_ata_read(sector, fat_cache_buf);
         fat_cached_sector = sector;
     }
 }
-uint32_t fat_get_entry(uint32_t cluster)
-{
+uint32_t fat_get_entry(uint32_t cluster) {
     if (is_fat32) {
         uint32_t byte_off = cluster * 4;
         uint32_t sector = fat_start_lba + (byte_off / fat.bytes_per_sector);
@@ -327,8 +320,7 @@ uint32_t fat_get_entry(uint32_t cluster)
     uint32_t offset = (cluster * 2) % fat.bytes_per_sector;
     return *(uint16_t *)&fat_cache_buf[offset];
 }
-uint8_t *fat_read_file_server(uint32_t cluster, uint32_t size)
-{
+uint8_t *fat_read_file_server(uint32_t cluster, uint32_t size) {
     if (size == 0)
         return 0;
     uint8_t *data = malloc(size + fat.bytes_per_cluster + 512);
@@ -356,14 +348,14 @@ uint8_t *fat_read_file_server(uint32_t cluster, uint32_t size)
         while (sectors > 0) {
             uint32_t batch = (sectors > 255) ? 255 : sectors;
             ata_dma_read_sectors(lba, batch, rptr);
-            lba    += batch;
-            rptr   += batch * 512;
+            lba += batch;
+            rptr += batch * 512;
             sectors -= batch;
         }
         uint32_t run_bytes = run_clusters * fat.bytes_per_cluster;
         uint32_t left = size - total_read;
         uint32_t chunk = (left < run_bytes) ? left : run_bytes;
-        ptr        += chunk;
+        ptr += chunk;
         total_read += chunk;
     }
     return data;
@@ -371,14 +363,15 @@ uint8_t *fat_read_file_server(uint32_t cluster, uint32_t size)
 #define DIR_BULK_MAX_SECTORS 32
 static uint8_t dir_bulk_buf[DIR_BULK_MAX_SECTORS * 512];
 static int fat_find_entry_in_dir(uint32_t dir_cluster, const char *fat_name,
-                                 fat_dir_entry_t *out_entry)
-{
-    if (is_fat32 && dir_cluster == 0) dir_cluster = root_cluster;
+                                 fat_dir_entry_t *out_entry) {
+    if (is_fat32 && dir_cluster == 0)
+        dir_cluster = root_cluster;
     uint32_t lba = (!is_fat32 && dir_cluster == 0)
                        ? root_dir_lba
                        : (data_start_lba + (dir_cluster - 2) * fat.sectors_per_cluster);
     uint32_t scnt = (!is_fat32 && dir_cluster == 0) ? root_sectors : fat.sectors_per_cluster;
-    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    if (scnt > DIR_BULK_MAX_SECTORS)
+        scnt = DIR_BULK_MAX_SECTORS;
     ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
@@ -396,15 +389,15 @@ static int fat_find_entry_in_dir(uint32_t dir_cluster, const char *fat_name,
     return -1;
 }
 
-static int fat_find_entry_lfn(uint32_t dir_cluster, const char *name,
-                              fat_dir_entry_t *out_entry)
-{
-    if (is_fat32 && dir_cluster == 0) dir_cluster = root_cluster;
+static int fat_find_entry_lfn(uint32_t dir_cluster, const char *name, fat_dir_entry_t *out_entry) {
+    if (is_fat32 && dir_cluster == 0)
+        dir_cluster = root_cluster;
     uint32_t lba = (!is_fat32 && dir_cluster == 0)
                        ? root_dir_lba
                        : (data_start_lba + (dir_cluster - 2) * fat.sectors_per_cluster);
     uint32_t scnt = (!is_fat32 && dir_cluster == 0) ? root_sectors : fat.sectors_per_cluster;
-    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    if (scnt > DIR_BULK_MAX_SECTORS)
+        scnt = DIR_BULK_MAX_SECTORS;
     ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
@@ -414,56 +407,74 @@ static int fat_find_entry_lfn(uint32_t dir_cluster, const char *name,
 
     for (uint32_t i = 0; i < total_entries; i++) {
         uint8_t fc = (uint8_t)e[i].filename[0];
-        if (fc == 0) return -1;
-        if (fc == 0xE5) { lfn_valid = 0; memset(lfn_buf, 0, 64); continue; }
+        if (fc == 0)
+            return -1;
+        if (fc == 0xE5) {
+            lfn_valid = 0;
+            memset(lfn_buf, 0, 64);
+            continue;
+        }
         if ((e[i].attributes & 0x0F) == 0x0F) {
             fat_lfn_entry_t *lfn = (fat_lfn_entry_t *)&e[i];
             int seq = lfn->sequence & 0x3F;
-            if (lfn->sequence & 0x40) { memset(lfn_buf, 0, 64); lfn_valid = 1; }
+            if (lfn->sequence & 0x40) {
+                memset(lfn_buf, 0, 64);
+                lfn_valid = 1;
+            }
             if (lfn_valid && seq >= 1 && seq <= 4)
                 lfn_extract_chars(lfn, seq - 1, lfn_buf, 64);
             continue;
         }
 
         if (lfn_valid && lfn_buf[0]) {
-
             int match = 1;
             const char *a = name, *b = lfn_buf;
             while (*a && *b) {
                 char ca = *a, cb = *b;
-                if (ca >= 'a' && ca <= 'z') ca -= 32;
-                if (cb >= 'a' && cb <= 'z') cb -= 32;
-                if (ca != cb) { match = 0; break; }
-                a++; b++;
+                if (ca >= 'a' && ca <= 'z')
+                    ca -= 32;
+                if (cb >= 'a' && cb <= 'z')
+                    cb -= 32;
+                if (ca != cb) {
+                    match = 0;
+                    break;
+                }
+                a++;
+                b++;
             }
-            if (*a || *b) match = 0;
+            if (*a || *b)
+                match = 0;
             if (match) {
-                if (out_entry) memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
+                if (out_entry)
+                    memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
                 return 0;
             }
         }
-        lfn_valid = 0; memset(lfn_buf, 0, 64);
+        lfn_valid = 0;
+        memset(lfn_buf, 0, 64);
 
         char fat_n[11];
         to_fat_name(name, fat_n);
         if (memcmp(e[i].filename, fat_n, 11) == 0) {
-            if (out_entry) memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
+            if (out_entry)
+                memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
             return 0;
         }
     }
     return -1;
 }
 
-static int fat_resolve_path(const char *path, uint32_t *out_dir_cluster, char *out_fat_name)
-{
+static int fat_resolve_path(const char *path, uint32_t *out_dir_cluster, char *out_fat_name) {
     uint32_t cluster = 0;
     const char *p = path;
-    if (*p == '/') p++;
+    if (*p == '/')
+        p++;
     char seg[64];
     while (*p) {
         int si = 0;
         while (*p && *p != '/') {
-            if (si < 63) seg[si++] = *p;
+            if (si < 63)
+                seg[si++] = *p;
             p++;
         }
         seg[si] = 0;
@@ -476,21 +487,21 @@ static int fat_resolve_path(const char *path, uint32_t *out_dir_cluster, char *o
             cluster = entry_cluster(&entry);
             p++;
         } else {
-            if (out_dir_cluster) *out_dir_cluster = cluster;
-            if (out_fat_name)    to_fat_name(seg, out_fat_name);
+            if (out_dir_cluster)
+                *out_dir_cluster = cluster;
+            if (out_fat_name)
+                to_fat_name(seg, out_fat_name);
             return 0;
         }
     }
     return -1;
 }
-static uint32_t cluster_to_lba(uint32_t cluster)
-{
+static uint32_t cluster_to_lba(uint32_t cluster) {
     if (cluster < 2)
         return data_start_lba;
     return data_start_lba + (cluster - 2) * fat.sectors_per_cluster;
 }
-static void fat_set_entry(uint32_t cluster, uint32_t value)
-{
+static void fat_set_entry(uint32_t cluster, uint32_t value) {
     if (is_fat32) {
         uint32_t byte_off = cluster * 4;
         uint32_t sector = fat_start_lba + (byte_off / fat.bytes_per_sector);
@@ -507,8 +518,7 @@ static void fat_set_entry(uint32_t cluster, uint32_t value)
     *(uint16_t *)&fat_cache_buf[offset] = (uint16_t)value;
     fat_cache_dirty = 1;
 }
-static uint32_t fat_find_free_cluster(void)
-{
+static uint32_t fat_find_free_cluster(void) {
     uint32_t entry_size = is_fat32 ? 4u : 2u;
     uint32_t total_entries = (fat.sectors_per_fat * fat.bytes_per_sector) / entry_size;
     if (total_entries < 2)
@@ -531,8 +541,7 @@ static uint32_t fat_find_free_cluster(void)
     }
     return FAT_BAD_CLUSTER;
 }
-static void fat_free_chain(uint32_t start_cluster)
-{
+static void fat_free_chain(uint32_t start_cluster) {
     uint32_t cur = start_cluster;
     while (cur >= 2 && !FAT_IS_EOC(cur)) {
         uint32_t next = fat_get_entry(cur);
@@ -543,8 +552,7 @@ static void fat_free_chain(uint32_t start_cluster)
     }
     fat_cache_flush();
 }
-static int fat_allocate_chain(uint32_t size, uint32_t *out_first_cluster)
-{
+static int fat_allocate_chain(uint32_t size, uint32_t *out_first_cluster) {
     if (!out_first_cluster)
         return -1;
     uint32_t clusters_needed = (size + fat.bytes_per_cluster - 1) / fat.bytes_per_cluster;
@@ -570,8 +578,7 @@ static int fat_allocate_chain(uint32_t size, uint32_t *out_first_cluster)
     *out_first_cluster = first;
     return 0;
 }
-static void fat_zero_cluster(uint32_t cluster)
-{
+static void fat_zero_cluster(uint32_t cluster) {
     uint32_t lba = cluster_to_lba(cluster);
     uint32_t spc = fat.sectors_per_cluster;
     uint8_t *buf = malloc(spc * 512);
@@ -586,8 +593,7 @@ static void fat_zero_cluster(uint32_t cluster)
             drv_stor_ata_write(lba + i, zero);
     }
 }
-static void fat_write_chain(uint32_t start_cluster, const uint8_t *data, uint32_t size)
-{
+static void fat_write_chain(uint32_t start_cluster, const uint8_t *data, uint32_t size) {
     if (start_cluster < 2)
         return;
     uint32_t bytes_per_cluster = fat.bytes_per_cluster;
@@ -618,23 +624,23 @@ static void fat_write_chain(uint32_t start_cluster, const uint8_t *data, uint32_
     }
     free(cbuf);
 }
-static uint32_t dir_first_lba(uint32_t dir_cluster)
-{
-    if (is_fat32 && dir_cluster == 0) dir_cluster = root_cluster;
+static uint32_t dir_first_lba(uint32_t dir_cluster) {
+    if (is_fat32 && dir_cluster == 0)
+        dir_cluster = root_cluster;
     return (!is_fat32 && dir_cluster == 0) ? root_dir_lba : cluster_to_lba(dir_cluster);
 }
-static uint32_t dir_sector_count(uint32_t dir_cluster)
-{
-    if (is_fat32 && dir_cluster == 0) dir_cluster = root_cluster;
+static uint32_t dir_sector_count(uint32_t dir_cluster) {
+    if (is_fat32 && dir_cluster == 0)
+        dir_cluster = root_cluster;
     return (!is_fat32 && dir_cluster == 0) ? root_sectors : fat.sectors_per_cluster;
 }
 static int fat_lookup_entry_with_location(uint32_t dir_cluster, const char *fat_name,
                                           fat_dir_entry_t *out_entry, uint32_t *out_lba,
-                                          int *out_index)
-{
+                                          int *out_index) {
     uint32_t lba = dir_first_lba(dir_cluster);
     uint32_t scnt = dir_sector_count(dir_cluster);
-    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    if (scnt > DIR_BULK_MAX_SECTORS)
+        scnt = DIR_BULK_MAX_SECTORS;
     ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
@@ -656,11 +662,11 @@ static int fat_lookup_entry_with_location(uint32_t dir_cluster, const char *fat_
     }
     return -1;
 }
-static int fat_find_free_entry_slot(uint32_t dir_cluster, uint32_t *out_lba, int *out_index)
-{
+static int fat_find_free_entry_slot(uint32_t dir_cluster, uint32_t *out_lba, int *out_index) {
     uint32_t lba = dir_first_lba(dir_cluster);
     uint32_t scnt = dir_sector_count(dir_cluster);
-    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    if (scnt > DIR_BULK_MAX_SECTORS)
+        scnt = DIR_BULK_MAX_SECTORS;
     ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
@@ -677,14 +683,14 @@ static int fat_find_free_entry_slot(uint32_t dir_cluster, uint32_t *out_lba, int
     return -1;
 }
 
-static int fat_find_free_entry_slots(uint32_t dir_cluster, int count,
-                                     uint32_t *out_lba, int *out_index)
-{
+static int fat_find_free_entry_slots(uint32_t dir_cluster, int count, uint32_t *out_lba,
+                                     int *out_index) {
     if (count <= 1)
         return fat_find_free_entry_slot(dir_cluster, out_lba, out_index);
     uint32_t lba = dir_first_lba(dir_cluster);
     uint32_t scnt = dir_sector_count(dir_cluster);
-    if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+    if (scnt > DIR_BULK_MAX_SECTORS)
+        scnt = DIR_BULK_MAX_SECTORS;
     ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total = scnt * 16;
@@ -692,11 +698,14 @@ static int fat_find_free_entry_slots(uint32_t dir_cluster, int count,
     for (uint32_t i = 0; i < total; i++) {
         uint8_t fc = (uint8_t)entries[i].filename[0];
         if (fc == 0 || fc == 0xE5) {
-            if (run == 0) run_start = (int)i;
+            if (run == 0)
+                run_start = (int)i;
             run++;
             if (run >= count) {
-                if (out_lba)   *out_lba   = lba + (run_start / 16);
-                if (out_index) *out_index = run_start % 16;
+                if (out_lba)
+                    *out_lba = lba + (run_start / 16);
+                if (out_index)
+                    *out_index = run_start % 16;
                 return 0;
             }
         } else {
@@ -706,8 +715,7 @@ static int fat_find_free_entry_slots(uint32_t dir_cluster, int count,
     return -1;
 }
 
-static int fat_write_entry_at(uint32_t lba, int entry_index, const fat_dir_entry_t *entry)
-{
+static int fat_write_entry_at(uint32_t lba, int entry_index, const fat_dir_entry_t *entry) {
     uint8_t buf[512];
     drv_stor_ata_read(lba, buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)buf;
@@ -715,14 +723,12 @@ static int fat_write_entry_at(uint32_t lba, int entry_index, const fat_dir_entry
     drv_stor_ata_write(lba, buf);
     return 0;
 }
-static void fat_fill_entry_name(fat_dir_entry_t *entry, const char *fat_name)
-{
+static void fat_fill_entry_name(fat_dir_entry_t *entry, const char *fat_name) {
     memcpy(entry->filename, fat_name, 8);
     memcpy(entry->ext, fat_name + 8, 3);
 }
 static int fat_save_file_to_dir(uint32_t dir_cluster, const char *filename, const uint8_t *data,
-                                uint32_t size)
-{
+                                uint32_t size) {
     int use_lfn = needs_lfn(filename);
     char fat_name[11];
     if (use_lfn)
@@ -764,8 +770,7 @@ static int fat_save_file_to_dir(uint32_t dir_cluster, const char *filename, cons
         int total_slots = num_lfn + 1;
         uint32_t slot_lba = 0;
         int slot_index = 0;
-        if (fat_find_free_entry_slots(dir_cluster, total_slots,
-                                      &slot_lba, &slot_index) != 0)
+        if (fat_find_free_entry_slots(dir_cluster, total_slots, &slot_lba, &slot_index) != 0)
             return -1;
         uint8_t chk = lfn_checksum(fat_name);
 
@@ -773,8 +778,7 @@ static int fat_save_file_to_dir(uint32_t dir_cluster, const char *filename, cons
         for (int s = 0; s < num_lfn; s++) {
             int seq = num_lfn - s;
             fat_lfn_entry_t lfn;
-            lfn_build_entry(&lfn, seq, (s == 0) ? 1 : 0,
-                            filename, name_len, chk);
+            lfn_build_entry(&lfn, seq, (s == 0) ? 1 : 0, filename, name_len, chk);
             int abs_idx = slot_index + s;
             uint32_t lba2 = base_lba + (abs_idx / 16);
             int idx2 = abs_idx % 16;
@@ -794,8 +798,7 @@ static int fat_save_file_to_dir(uint32_t dir_cluster, const char *filename, cons
     }
     return 0;
 }
-static void prepare_special_entry(fat_dir_entry_t *entry, const char *name, uint32_t cluster)
-{
+static void prepare_special_entry(fat_dir_entry_t *entry, const char *name, uint32_t cluster) {
     memset(entry, 0, sizeof(*entry));
     memset(entry->filename, ' ', 8);
     memset(entry->ext, ' ', 3);
@@ -805,8 +808,7 @@ static void prepare_special_entry(fat_dir_entry_t *entry, const char *name, uint
     entry->first_cluster_low = cluster & 0xFFFF;
     entry->first_cluster_high = (cluster >> 16) & 0xFFFF;
 }
-static int fat_create_directory_entry(uint32_t parent_cluster, const char *name)
-{
+static int fat_create_directory_entry(uint32_t parent_cluster, const char *name) {
     char fat_name[11];
     to_fat_name(name, fat_name);
     if (fat_lookup_entry_with_location(parent_cluster, fat_name, 0, 0, 0) == 0)
@@ -840,15 +842,19 @@ static int fat_create_directory_entry(uint32_t parent_cluster, const char *name)
     fat_write_entry_at(entry_lba, entry_index, &new_entry);
     return 0;
 }
-static int switch_to_disk(int idx)
-{
-    if (idx == current_disk_idx) return 0;
+static int switch_to_disk(int idx) {
+    if (idx == current_disk_idx)
+        return 0;
     int ndisks = qk_disk_count();
-    if (idx < 0 || idx >= ndisks) return -1;
+    if (idx < 0 || idx >= ndisks)
+        return -1;
 
     fat_cache_flush();
 
-    if (current_file_data) { free(current_file_data); current_file_data = 0; }
+    if (current_file_data) {
+        free(current_file_data);
+        current_file_data = 0;
+    }
     current_file_size = 0;
     current_file_page_count = 0;
     current_file_page_offset = 0;
@@ -865,7 +871,6 @@ static int switch_to_disk(int idx)
     fat_boot_sector_t *bs = (fat_boot_sector_t *)boot_buf;
 
     if (bs->bytes_per_sector == 0 || bs->sectors_per_cluster == 0) {
-
         fat.bytes_per_sector = 512;
         fat.sectors_per_cluster = 1;
         fat.sectors_per_fat = 0;
@@ -916,24 +921,22 @@ static int switch_to_disk(int idx)
 static int disk_subscribers[MAX_DISK_SUBSCRIBERS];
 static int disk_sub_count = 0;
 
-static void notify_disk_changed(int disk_idx, int mounted)
-{
+static void notify_disk_changed(int disk_idx, int mounted) {
     for (int i = 0; i < disk_sub_count; i++) {
-        message_t m; memset(&m, 0, sizeof(m));
+        message_t m;
+        memset(&m, 0, sizeof(m));
         m.type = MSG_DISK_CHANGED;
         m.data1 = (uint32_t)disk_idx;
         m.data2 = (uint32_t)mounted;
         qk_sys_ipc_send(disk_subscribers[i], &m);
     }
 }
-void main()
-{
+void main() {
     qk_set_proc_name(-1, "storage");
     qk_register_as_server(QK_SERVER_STORAGE);
     uint8_t boot_buf[512];
     int rd = drv_stor_ata_read(0, boot_buf);
     if (rd != 0) {
-
         message_t msg;
         while (1) {
             qk_ipc_recv(&msg);
@@ -984,7 +987,8 @@ void main()
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_DISK_EJECT) {
             int idx = (int)msg.data1;
-            message_t r; memset(&r, 0, sizeof(r));
+            message_t r;
+            memset(&r, 0, sizeof(r));
             if (idx <= 0 || idx >= MAX_DISKS) {
                 r.type = MSG_ERROR;
             } else {
@@ -997,7 +1001,8 @@ void main()
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_DISK_MOUNT) {
             int idx = (int)msg.data1;
-            message_t r; memset(&r, 0, sizeof(r));
+            message_t r;
+            memset(&r, 0, sizeof(r));
             if (idx < 0 || idx >= MAX_DISKS) {
                 r.type = MSG_ERROR;
             } else {
@@ -1012,31 +1017,33 @@ void main()
 
             for (int i = 0; i < MAX_DISKS; i++) {
                 if (!disk_mounted[i]) {
-                    message_t n2; memset(&n2, 0, sizeof(n2));
+                    message_t n2;
+                    memset(&n2, 0, sizeof(n2));
                     n2.type = MSG_DISK_CHANGED;
                     n2.data1 = (uint32_t)i;
                     n2.data2 = 0;
                     qk_sys_ipc_send(msg.sender_pid, &n2);
                 }
             }
-            message_t r; memset(&r, 0, sizeof(r));
+            message_t r;
+            memset(&r, 0, sizeof(r));
             r.type = MSG_OK;
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_DISK_STATUS) {
-            message_t r; memset(&r, 0, sizeof(r));
+            message_t r;
+            memset(&r, 0, sizeof(r));
             r.type = MSG_OK;
             uint32_t bits = 0;
             for (int i = 0; i < MAX_DISKS; i++)
-                if (disk_mounted[i]) bits |= (1u << i);
+                if (disk_mounted[i])
+                    bits |= (1u << i);
             r.data1 = bits;
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_FILE_OPEN) {
-
             int req_disk2 = (int)msg.data3;
             if (req_disk2 != current_disk_idx)
                 switch_to_disk(req_disk2);
             if (req_disk2 >= 0 && req_disk2 < MAX_DISKS && !disk_mounted[req_disk2]) {
-
                 message_t r;
                 memset(&r, 0, sizeof(r));
                 r.type = MSG_ERROR;
@@ -1062,12 +1069,14 @@ void main()
                 if (msg.data1 == 0xFFFFu) {
                     const char *sl = leaf;
                     for (const char *s = leaf; *s; s++)
-                        if (*s == '/') sl = s + 1;
+                        if (*s == '/')
+                            sl = s + 1;
                     leaf = sl;
                 }
                 fat_dir_entry_t entry;
                 bool found = false;
-                if (dir_cluster != 0xFFFFFFFEu && fat_find_entry_lfn(dir_cluster, leaf, &entry) == 0) {
+                if (dir_cluster != 0xFFFFFFFEu &&
+                    fat_find_entry_lfn(dir_cluster, leaf, &entry) == 0) {
                     if (!(entry.attributes & 0x10)) {
                         current_file_size = entry.file_size;
                         current_file_data =
@@ -1077,23 +1086,21 @@ void main()
                 }
                 message_t r;
                 memset(&r, 0, sizeof(r));
-                r.type  = found ? MSG_FILE_SIZE : MSG_ERROR;
+                r.type = found ? MSG_FILE_SIZE : MSG_ERROR;
                 r.data1 = current_file_size;
                 uint32_t pages_needed = (current_file_size + 4095) / 4096;
-                if (found && current_file_data && current_file_size > 0
-                        && pages_needed <= SHARED_MAX_PAGES) {
-                    int cnt = qk_virt_to_phys_list((uint32_t)current_file_data,
-                                                   current_file_size,
+                if (found && current_file_data && current_file_size > 0 &&
+                    pages_needed <= SHARED_MAX_PAGES) {
+                    int cnt = qk_virt_to_phys_list((uint32_t)current_file_data, current_file_size,
                                                    current_file_pages);
                     if (cnt > 0 && cnt <= SHARED_MAX_PAGES) {
-                        current_file_page_count  = (uint32_t)cnt;
+                        current_file_page_count = (uint32_t)cnt;
                         current_file_page_offset = (uint32_t)current_file_data & 0xFFF;
                         r.data2 = current_file_page_count;
                         r.data3 = current_file_page_offset;
-                        uint32_t first_batch = current_file_page_count < 128
-                                              ? current_file_page_count : 128;
-                        memcpy(r.payload, current_file_pages,
-                               first_batch * sizeof(uint32_t));
+                        uint32_t first_batch =
+                            current_file_page_count < 128 ? current_file_page_count : 128;
+                        memcpy(r.payload, current_file_pages, first_batch * sizeof(uint32_t));
                     }
                 }
                 qk_sys_ipc_send(msg.sender_pid, &r);
@@ -1104,13 +1111,12 @@ void main()
             uint32_t pg_off = msg.data1;
             if (pg_off < current_file_page_count) {
                 uint32_t avail = current_file_page_count - pg_off;
-                uint32_t send  = avail < 128 ? avail : 128;
-                memcpy(r.payload, current_file_pages + pg_off,
-                       send * sizeof(uint32_t));
-                r.type  = MSG_FILE_SIZE;
+                uint32_t send = avail < 128 ? avail : 128;
+                memcpy(r.payload, current_file_pages + pg_off, send * sizeof(uint32_t));
+                r.type = MSG_FILE_SIZE;
                 r.data1 = send;
             } else {
-                r.type  = MSG_ERROR;
+                r.type = MSG_ERROR;
             }
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_REQ_DATA) {
@@ -1128,22 +1134,23 @@ void main()
                 r.data1 = 0;
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_DIR_REQ) {
-
             int req_disk = (int)msg.data3;
             if (req_disk != current_disk_idx)
                 switch_to_disk(req_disk);
             if (req_disk >= 0 && req_disk < MAX_DISKS && !disk_mounted[req_disk]) {
-
                 message_t r = {.type = MSG_DIR_REPLY, .data1 = 0};
                 qk_sys_ipc_send(msg.sender_pid, &r);
             } else {
                 uint32_t cluster = msg.data1;
-                if (is_fat32 && cluster == 0) cluster = root_cluster;
+                if (is_fat32 && cluster == 0)
+                    cluster = root_cluster;
                 uint32_t lba = (!is_fat32 && cluster == 0)
                                    ? root_dir_lba
                                    : (data_start_lba + (cluster - 2) * fat.sectors_per_cluster);
-                uint32_t scnt = (!is_fat32 && cluster == 0) ? root_sectors : fat.sectors_per_cluster;
-                if (scnt > DIR_BULK_MAX_SECTORS) scnt = DIR_BULK_MAX_SECTORS;
+                uint32_t scnt =
+                    (!is_fat32 && cluster == 0) ? root_sectors : fat.sectors_per_cluster;
+                if (scnt > DIR_BULK_MAX_SECTORS)
+                    scnt = DIR_BULK_MAX_SECTORS;
                 ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
                 message_t r = {.type = MSG_DIR_REPLY};
                 int lp = 0;
@@ -1155,71 +1162,74 @@ void main()
                 int lfn_valid = 0;
                 memset(lfn_buf, 0, 64);
                 for (uint32_t di = 0; di < total_dir_entries; di++) {
-                        uint8_t first_char = (uint8_t)e[di].filename[0];
-                        if (first_char == 0)
-                            goto end_d;
-                        if (first_char == 0xE5) {
-                            lfn_valid = 0; memset(lfn_buf, 0, 64);
-                            continue;
+                    uint8_t first_char = (uint8_t)e[di].filename[0];
+                    if (first_char == 0)
+                        goto end_d;
+                    if (first_char == 0xE5) {
+                        lfn_valid = 0;
+                        memset(lfn_buf, 0, 64);
+                        continue;
+                    }
+                    if (e[di].attributes & 0x08)
+                        continue;
+
+                    if ((e[di].attributes & 0x0F) == 0x0F) {
+                        fat_lfn_entry_t *lfn = (fat_lfn_entry_t *)&e[di];
+                        int seq = lfn->sequence & 0x3F;
+                        if (lfn->sequence & 0x40) {
+                            memset(lfn_buf, 0, 64);
+                            lfn_valid = 1;
                         }
-                        if (e[di].attributes & 0x08) continue;
+                        if (lfn_valid && seq >= 1 && seq <= 4)
+                            lfn_extract_chars(lfn, seq - 1, lfn_buf, 64);
+                        continue;
+                    }
 
-                        if ((e[di].attributes & 0x0F) == 0x0F) {
-                            fat_lfn_entry_t *lfn = (fat_lfn_entry_t *)&e[di];
-                            int seq = lfn->sequence & 0x3F;
-                            if (lfn->sequence & 0x40) {
-
-                                memset(lfn_buf, 0, 64);
-                                lfn_valid = 1;
-                            }
-                            if (lfn_valid && seq >= 1 && seq <= 4)
-                                lfn_extract_chars(lfn, seq - 1, lfn_buf, 64);
-                            continue;
+                    char name[64];
+                    if (lfn_valid && lfn_buf[0]) {
+                        strncpy(name, lfn_buf, 63);
+                        name[63] = 0;
+                    } else {
+                        int j = 0;
+                        for (int k = 0; k < 8 && e[di].filename[k] != ' '; k++) {
+                            char c = e[di].filename[k];
+                            if (k == 0) {
+                            } else if (c >= 'A' && c <= 'Z')
+                                c += 32;
+                            name[j++] = c;
                         }
-
-                        char name[64];
-                        if (lfn_valid && lfn_buf[0]) {
-                            strncpy(name, lfn_buf, 63);
-                            name[63] = 0;
-                        } else {
-
-                            int j = 0;
-                            for (int k = 0; k < 8 && e[di].filename[k] != ' '; k++) {
-                                char c = e[di].filename[k];
-                                if (k == 0) {  }
-                                else if (c >= 'A' && c <= 'Z') c += 32;
+                        if (e[di].ext[0] != ' ') {
+                            name[j++] = '.';
+                            for (int k = 0; k < 3 && e[di].ext[k] != ' '; k++) {
+                                char c = e[di].ext[k];
+                                if (c >= 'A' && c <= 'Z')
+                                    c += 32;
                                 name[j++] = c;
                             }
-                            if (e[di].ext[0] != ' ') {
-                                name[j++] = '.';
-                                for (int k = 0; k < 3 && e[di].ext[k] != ' '; k++) {
-                                    char c = e[di].ext[k];
-                                    if (c >= 'A' && c <= 'Z') c += 32;
-                                    name[j++] = c;
-                                }
-                            }
-                            name[j] = 0;
                         }
-                        lfn_valid = 0; memset(lfn_buf, 0, 64);
-                        char info[80];
-                        bzero(info, 80);
-                        int is_d = (e[di].attributes & 0x10) ? 1 : 0;
-                        int n = int_to_str(is_d, info, 0);
-                        info[n++] = '|';
-                        n += int_to_str(entry_cluster(&e[di]), info + n, 0);
-                        info[n++] = '|';
-                        strncpy(info + n, name, 63);
-                        int ilen = strlen(info);
-                        if (lp + ilen + 2 > 127) {
-                            memcpy(r.payload, lb, 128);
-                            r.data1 = 1;
-                            qk_sys_ipc_send(msg.sender_pid, &r);
-                            lp = 0;
-                            bzero(lb, 128);
-                        }
-                        memcpy(lb + lp, info, ilen);
-                        lp += ilen;
-                        lb[lp++] = '\n';
+                        name[j] = 0;
+                    }
+                    lfn_valid = 0;
+                    memset(lfn_buf, 0, 64);
+                    char info[80];
+                    bzero(info, 80);
+                    int is_d = (e[di].attributes & 0x10) ? 1 : 0;
+                    int n = int_to_str(is_d, info, 0);
+                    info[n++] = '|';
+                    n += int_to_str(entry_cluster(&e[di]), info + n, 0);
+                    info[n++] = '|';
+                    strncpy(info + n, name, 63);
+                    int ilen = strlen(info);
+                    if (lp + ilen + 2 > 127) {
+                        memcpy(r.payload, lb, 128);
+                        r.data1 = 1;
+                        qk_sys_ipc_send(msg.sender_pid, &r);
+                        lp = 0;
+                        bzero(lb, 128);
+                    }
+                    memcpy(lb + lp, info, ilen);
+                    lp += ilen;
+                    lb[lp++] = '\n';
                 }
             end_d:
                 memcpy(r.payload, lb, 128);
@@ -1234,7 +1244,6 @@ void main()
             r.type = (res == 0) ? MSG_OK : MSG_ERROR;
             qk_sys_ipc_send(msg.sender_pid, &r);
         } else if (msg.type == MSG_FILE_SAVE_BEGIN) {
-
             int save_disk = (int)msg.data3;
             if (save_disk != current_disk_idx)
                 switch_to_disk(save_disk);

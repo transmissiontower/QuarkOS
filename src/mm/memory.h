@@ -4,7 +4,7 @@
  */
 #ifndef MEMORY_H
 #define MEMORY_H
-#include "arch/x86/multiboot.h"
+#include "kernel/multiboot.h"
 #include "lib/stdint.h"
 #define KERNEL_START 0xC0000000
 #define KERNEL_MALLOC 0xD0000000
@@ -15,8 +15,8 @@
 #define PAGE_FLAG_PRESENT (1 << 0)
 #define PAGE_FLAG_WRITE (1 << 1)
 #define PAGE_FLAG_USER (1 << 2)
-#define PAGE_FLAG_OWNER    (1 << 9)
-#define PAGE_FLAG_SHARED   (1 << 10)
+#define PAGE_FLAG_OWNER (1 << 9)
+#define PAGE_FLAG_SHARED (1 << 10)
 #define PAGE_FLAG_UNCACHED (1 << 11)
 #define MAX_PHYS_PAGES 1048576
 #define BITMAP_SIZE (MAX_PHYS_PAGES / 8)
@@ -35,7 +35,7 @@ void mem_free_identity_map();
 uint32_t mm_virt_to_phys(uint32_t virt);
 
 void mm_page_ref_inc(uint32_t phys);
-int  mm_page_ref_dec(uint32_t phys);
+int mm_page_ref_dec(uint32_t phys);
 uint8_t mm_page_ref_get(uint32_t phys);
 
 void mm_vmm_unmap_page(uint32_t virt);

@@ -18,7 +18,7 @@ int drv_sb16_init(void);
 
 void drv_input_keyboard_init(void);
 void drv_input_mouse_init(void);
-#include "arch/x86/multiboot.h"
+#include "kernel/multiboot.h"
 #include "drivers/GUI/framebuffer.h"
 #include "drivers/ata.h"
 #include "fs/fat.h"
@@ -53,8 +53,7 @@ uint32_t cpu_usage_pct = 0;
 static volatile uint32_t busy_ticks = 0;
 static volatile uint32_t total_ticks_count = 0;
 extern void validate_current(const char *tag);
-void k_tick_handler()
-{
+void k_tick_handler() {
     validate_current("tick");
     total_ticks_count++;
     if (current_process && current_process->pid != 0)
@@ -69,11 +68,9 @@ void k_tick_handler()
         if (p) {
             int count = 0;
             do {
-
                 if (p->pid > 0 && p->pid < 16 && (int)p->state == 3 && !was_zombie[p->pid]) {
                     was_zombie[p->pid] = 1;
-                    KLOG_PROC(LOG_CRIT, "ZOMBIE pid=%d name='%s' in ready_queue!",
-                              p->pid, p->name);
+                    KLOG_PROC(LOG_CRIT, "ZOMBIE pid=%d name='%s' in ready_queue!", p->pid, p->name);
                 }
                 p = p->next;
                 count++;
@@ -90,10 +87,8 @@ void k_tick_handler()
                 do {
                     int st = (int)p->state;
                     char sc = (st >= 0 && st <= 6) ? state_ch[st] : '?';
-                    KLOG_SCHED(LOG_INFO, "ps %d:%c %s q=%d",
-                               p->pid, sc,
-                               p->name[0] ? p->name : "(anon)",
-                               p->ipc_queue.count);
+                    KLOG_SCHED(LOG_INFO, "ps %d:%c %s q=%d", p->pid, sc,
+                               p->name[0] ? p->name : "(anon)", p->ipc_queue.count);
                     p = p->next;
                     n++;
                 } while (p != ready_queue && n < 16);
@@ -120,8 +115,7 @@ void k_tick_handler()
     }
     k_scheduler_yield();
 }
-static int kernel_exec_internal(struct multiboot_info *boot_info)
-{
+static int kernel_exec_internal(struct multiboot_info *boot_info) {
     int launched = 0;
     if (boot_info->mods_count > 0) {
         multiboot_module_t *mods = (multiboot_module_t *)boot_info->mods_addr;
@@ -198,8 +192,7 @@ static int kernel_exec_internal(struct multiboot_info *boot_info)
     }
     return launched;
 }
-void kmain(uint32_t magic, struct multiboot_info *boot_info)
-{
+void kmain(uint32_t magic, struct multiboot_info *boot_info) {
     (void)magic;
     boot_log_record_boot_info(boot_info);
     arm_irq_disable();
@@ -218,8 +211,7 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info)
     }
     {
         uint32_t fb_phys = boot_info->framebuffer_addr;
-        uint32_t fb_bytes = boot_info->framebuffer_width *
-                            boot_info->framebuffer_height *
+        uint32_t fb_bytes = boot_info->framebuffer_width * boot_info->framebuffer_height *
                             (boot_info->framebuffer_bpp / 8);
         uint32_t fb_end = (fb_phys + fb_bytes + 0xFFF) & ~0xFFF;
         if (fb_end > phys_alloc_start)
@@ -265,19 +257,19 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info)
 #define DBG_SQ_SIZE 60
 #define DBG_SQ_STEP 64
 
-#define DBG_SQUARE(col, color, label) \
-    do { \
-        arm_uart_puts("DBG: " label "\n"); \
-        if (fb_ptr && fb_width && fb_height) { \
-            uint32_t _x0 = fb_width > (uint32_t)((col)*DBG_SQ_STEP + DBG_SQ_SIZE) \
-                           ? fb_width - (uint32_t)((col)*DBG_SQ_STEP + DBG_SQ_SIZE) : 0; \
-            for (int _y = 0; _y < DBG_SQ_SIZE; _y++) \
-                for (int _x = 0; _x < DBG_SQ_SIZE; _x++) \
-                    ((uint32_t *)((uint8_t *)fb_ptr + \
-                        ((uint32_t)_y * fb_pitch) + \
-                        ((_x0 + (uint32_t)_x) * 4)))[0] = (color); \
-            virtio_gpu_flush(); \
-        } \
+#define DBG_SQUARE(col, color, label)                                                     \
+    do {                                                                                  \
+        arm_uart_puts("DBG: " label "\n");                                                \
+        if (fb_ptr && fb_width && fb_height) {                                            \
+            uint32_t _x0 = fb_width > (uint32_t)((col) * DBG_SQ_STEP + DBG_SQ_SIZE)       \
+                               ? fb_width - (uint32_t)((col) * DBG_SQ_STEP + DBG_SQ_SIZE) \
+                               : 0;                                                       \
+            for (int _y = 0; _y < DBG_SQ_SIZE; _y++)                                      \
+                for (int _x = 0; _x < DBG_SQ_SIZE; _x++)                                  \
+                    ((uint32_t *)((uint8_t *)fb_ptr + ((uint32_t)_y * fb_pitch) +         \
+                                  ((_x0 + (uint32_t)_x) * 4)))[0] = (color);              \
+            virtio_gpu_flush();                                                           \
+        }                                                                                 \
     } while (0)
     extern void virtio_gpu_flush(void);
 
@@ -314,12 +306,10 @@ void kmain(uint32_t magic, struct multiboot_info *boot_info)
     arm_uart_puts("  IRQs enabled, entering idle loop\n");
     boot_log_add("Boot complete. Entering idle loop");
     {
-
         DBG_SQUARE(5, 0x00FFFFFF, "5 entering idle loop");
         {
             static const uint32_t hb_colors[] = {
-                0x00FF0000, 0x0000FF00, 0x000000FF,
-                0x00FFFF00, 0x00FF00FF, 0x0000FFFF,
+                0x00FF0000, 0x0000FF00, 0x000000FF, 0x00FFFF00, 0x00FF00FF, 0x0000FFFF,
             };
             int hb_idx = 0;
             int hb_tick = 0;

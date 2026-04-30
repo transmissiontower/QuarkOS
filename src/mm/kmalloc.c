@@ -8,14 +8,12 @@
 #include "util/util.h"
 static Header *head = 0;
 static uint32_t heap_end_virt = HEAP_START;
-void mm_heap_init(uint32_t initialHeapSize)
-{
+void mm_heap_init(uint32_t initialHeapSize) {
     heap_end_virt = HEAP_START;
     head = 0;
     mm_heap_expand(initialHeapSize);
 }
-void mm_heap_expand(int new_bytes)
-{
+void mm_heap_expand(int new_bytes) {
     if (new_bytes % 4096 != 0) {
         new_bytes = (new_bytes & ~0xFFF) + 0x1000;
     }
@@ -45,8 +43,7 @@ void mm_heap_expand(int new_bytes)
         current->next = new_block;
     }
 }
-void *mm_heap_alloc(uint32_t size)
-{
+void *mm_heap_alloc(uint32_t size) {
     if (size == 0)
         return 0;
 #if defined(__aarch64__)
@@ -79,8 +76,7 @@ void *mm_heap_alloc(uint32_t size)
     mm_heap_expand(chunk_size);
     return mm_heap_alloc(size);
 }
-void mm_heap_free(void *ptr)
-{
+void mm_heap_free(void *ptr) {
     if (!ptr)
         return;
     Header *block = (Header *)((uint32_t)ptr - HEADER_SIZE);

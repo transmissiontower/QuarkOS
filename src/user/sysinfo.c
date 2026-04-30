@@ -15,8 +15,7 @@ static int comp_pid = -1;
 static int selected_pid = -1;
 static process_info_t last_procs[14];
 static int last_count = 0;
-void draw_rect_rpc(int x, int y, int w, int h, uint32_t color)
-{
+void draw_rect_rpc(int x, int y, int w, int h, uint32_t color) {
     message_t msg;
     msg.type = MSG_WIN_DRAW_RECT;
     msg.data1 = y;
@@ -26,8 +25,7 @@ void draw_rect_rpc(int x, int y, int w, int h, uint32_t color)
     *(uint32_t *)&msg.payload[4] = color;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-void draw_icon_rpc(int x, int y, int icon_id, uint32_t color)
-{
+void draw_icon_rpc(int x, int y, int icon_id, uint32_t color) {
     message_t msg;
     msg.type = MSG_WIN_PRINT_AT;
     msg.data1 = x;
@@ -37,8 +35,7 @@ void draw_icon_rpc(int x, int y, int icon_id, uint32_t color)
     msg.payload[1] = 0;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-void render_ui()
-{
+void render_ui() {
     uint32_t used_mem, total_mem, cpu_load;
     qk_get_stats(&used_mem, &total_mem, &cpu_load);
     uint32_t uptime = qk_get_uptime() / 1000;
@@ -119,8 +116,7 @@ void render_ui()
     draw_rect_rpc(0, WIN_H - 30, WIN_W, 30, 0xFF21252B);
     qk_print_at(10, WIN_H - 20, 0xFF5C6370, "Click a row to select. Press [X] to Kill.");
 }
-int main()
-{
+int main() {
     comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
     if (comp_pid < 0)
         return 1;

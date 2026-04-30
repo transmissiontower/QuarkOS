@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/drivers/GUI/framebuffer.h - Framebuffer interface, color constants, and drawing function declarations
+ * src/drivers/GUI/framebuffer.h - Framebuffer interface, color constants, and drawing function
+ * declarations
  */
 #ifndef FRAMEBUFFER_H
 #define FRAMEBUFFER_H
-#include "arch/x86/multiboot.h"
+#include "kernel/multiboot.h"
 #include "lib/stdint.h"
 #define COLOR_BLACK 0x00000000
 #define COLOR_WHITE 0x00FFFFFF

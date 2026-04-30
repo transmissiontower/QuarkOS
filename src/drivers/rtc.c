@@ -7,18 +7,15 @@
 #define TIMEZONE_OFFSET 2
 #define CMOS_ADDRESS 0x70
 #define CMOS_DATA 0x71
-int get_update_in_progress_flag()
-{
+int get_update_in_progress_flag() {
     outb(CMOS_ADDRESS, 0x0A);
     return (inb(CMOS_DATA) & 0x80);
 }
-uint8_t get_rtc_register(int reg)
-{
+uint8_t get_rtc_register(int reg) {
     outb(CMOS_ADDRESS, reg);
     return inb(CMOS_DATA);
 }
-void drv_rtc_read_datetime(Time *t)
-{
+void drv_rtc_read_datetime(Time *t) {
     uint8_t last_second;
     uint8_t last_minute;
     uint8_t last_hour;

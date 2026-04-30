@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/video/compositor.c - Desktop compositor with dirty-rect tracking, wallpaper, clock, and FPS overlay
+ * src/video/compositor.c - Desktop compositor with dirty-rect tracking, wallpaper, clock, and FPS
+ * overlay
  */
 #include "video/compositor.h"
 #include "drivers/GUI/framebuffer.h"
@@ -34,29 +35,24 @@ static int dirty_win_y = 0;
 static int dirty_win_w = 0;
 static int dirty_win_h = 0;
 static int has_dirty_win = 0;
-static inline int min_i(int a, int b)
-{
+static inline int min_i(int a, int b) {
     return (a < b) ? a : b;
 }
-static inline int max_i(int a, int b)
-{
+static inline int max_i(int a, int b) {
     return (a > b) ? a : b;
 }
-static inline int clamp(int val, int min, int max)
-{
+static inline int clamp(int val, int min, int max) {
     if (val < min)
         return min;
     if (val > max)
         return max;
     return val;
 }
-void set_background(Texture *tex)
-{
+void set_background(Texture *tex) {
     current_wallpaper = tex;
     force_redraw = 1;
 }
-void compositor_init()
-{
+void compositor_init() {
     prev_mx = mouse_x;
     prev_my = mouse_y;
     prev_counter = counter;
@@ -64,13 +60,11 @@ void compositor_init()
     last_time = get_uptime_ms();
     prev_time.second = 99;
 }
-void invalidate_screen()
-{
+void invalidate_screen() {
     force_redraw = 1;
     needs_redraw = 1;
 }
-void invalidate_window(int x, int y, int w, int h)
-{
+void invalidate_window(int x, int y, int w, int h) {
     if (!has_dirty_win) {
         dirty_win_x = x;
         dirty_win_y = y;
@@ -93,8 +87,7 @@ void invalidate_window(int x, int y, int w, int h)
     }
     needs_redraw = 1;
 }
-void safe_swap(int x, int y, int w, int h)
-{
+void safe_swap(int x, int y, int w, int h) {
     int pad = 4;
     int x1 = clamp(x - pad, 0, fb_width);
     int y1 = clamp(y - pad, 0, fb_height);
@@ -106,8 +99,7 @@ void safe_swap(int x, int y, int w, int h)
         swap_rect(x1, y1, new_w, new_h);
     }
 }
-void compositor_paint()
-{
+void compositor_paint() {
     uint64_t now = get_uptime_ms();
     if (now >= last_time + 1000) {
         fps = frames;
