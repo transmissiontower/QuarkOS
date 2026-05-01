@@ -27,6 +27,7 @@ uint32_t mm_pmm_alloc_frame();
 uint32_t *mem_get_current_page_dir();
 void mm_pmm_free_frame(uint32_t phys);
 void mm_vmm_cleanup_current_dir();
+void mm_vmm_cleanup_dir_phys(uint32_t pd_phys);
 void mm_vmm_set_active_dir(uint32_t *pd);
 void mm_vmm_map_page(uint32_t virtualAddr, uint32_t physAddr, uint32_t flags);
 void kernel_panic(const char *msg);

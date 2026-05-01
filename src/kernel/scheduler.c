@@ -257,14 +257,9 @@ void k_scheduler_yield() {
             mm_pmm_free_frame(process_to_free->pd_phys);
 #endif
         }
-
-#if !defined(__aarch64__)
-        mm_heap_free((void *)(uintptr_t)process_to_free->kstack_alloc);
-#endif
-
-#if !defined(__aarch64__)
+        if (process_to_free->kstack_alloc)
+            mm_heap_free((void *)(uintptr_t)process_to_free->kstack_alloc);
         mm_heap_free(process_to_free);
-#endif
         process_to_free = 0;
     }
 }
@@ -596,10 +591,14 @@ void k_proc_terminate(int pid) {
                 process_to_free = curr;
                 k_scheduler_yield();
             } else {
-#if !defined(__aarch64__)
-                mm_heap_free((void *)(uintptr_t)curr->kstack_alloc);
-                mm_heap_free(curr);
-#endif
+                if (curr->state != PROCESS_ZOMBIE) {
+                    mm_vmm_cleanup_dir_phys((uint32_t)curr->pd_phys);
+                    if (curr->pd_phys)
+                        mm_pmm_free_frame((uint32_t)curr->pd_phys);
+                    if (curr->kstack_alloc)
+                        mm_heap_free((void *)(uintptr_t)curr->kstack_alloc);
+                    mm_heap_free(curr);
+                }
             }
             return;
         }
@@ -659,13 +658,9 @@ void k_scheduler_direct_switch(process_t *dest) {
             mm_pmm_free_frame(process_to_free->pd_phys);
 #endif
         }
-#if !defined(__aarch64__)
-        mm_heap_free((void *)(uintptr_t)process_to_free->kstack_alloc);
-#endif
-
-#if !defined(__aarch64__)
+        if (process_to_free->kstack_alloc)
+            mm_heap_free((void *)(uintptr_t)process_to_free->kstack_alloc);
         mm_heap_free(process_to_free);
-#endif
         process_to_free = 0;
     }
 }

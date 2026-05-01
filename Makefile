@@ -20,7 +20,6 @@ FONT_ATLAS = build/font_atlas.bin
 ICONS_BIN = build/icons.bin
 WALLPAPER_BIN = build/wallpaper.bin
 
-# Auto-discovered assets — drop files in these folders, they appear on disk
 ASSETS_DESK := $(wildcard assets/desk/*)
 ASSETS_SYS  := $(wildcard assets/sys/*)
 
@@ -277,7 +276,7 @@ run-hvf-multi: kernel disk test-disks
 		-M virt \
 		-cpu host \
 		-accel hvf \
-		-m 512M \
+		-m 128M \
 		-rtc base=localtime \
 		-kernel kernel \
 		-drive if=none,file=disk.img,format=raw,id=vd0 \
