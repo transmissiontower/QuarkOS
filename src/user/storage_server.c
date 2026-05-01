@@ -392,73 +392,88 @@ static int fat_find_entry_in_dir(uint32_t dir_cluster, const char *fat_name,
 static int fat_find_entry_lfn(uint32_t dir_cluster, const char *name, fat_dir_entry_t *out_entry) {
     if (is_fat32 && dir_cluster == 0)
         dir_cluster = root_cluster;
-    uint32_t lba = (!is_fat32 && dir_cluster == 0)
-                       ? root_dir_lba
-                       : (data_start_lba + (dir_cluster - 2) * fat.sectors_per_cluster);
-    uint32_t scnt = (!is_fat32 && dir_cluster == 0) ? root_sectors : fat.sectors_per_cluster;
-    if (scnt > DIR_BULK_MAX_SECTORS)
-        scnt = DIR_BULK_MAX_SECTORS;
-    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
-    fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
-    uint32_t total_entries = scnt * 16;
+    int fat16_root = (!is_fat32 && dir_cluster == 0);
     char lfn_buf[64];
     int lfn_valid = 0;
     memset(lfn_buf, 0, 64);
+    uint32_t cur_cluster = dir_cluster;
+    int done = 0;
+    while (!done) {
+        uint32_t lba = fat16_root ? root_dir_lba
+                                  : (data_start_lba + (cur_cluster - 2) * fat.sectors_per_cluster);
+        uint32_t scnt = fat16_root ? root_sectors : fat.sectors_per_cluster;
+        if (scnt > DIR_BULK_MAX_SECTORS)
+            scnt = DIR_BULK_MAX_SECTORS;
+        ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+        fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
+        uint32_t total_entries = scnt * 16;
 
-    for (uint32_t i = 0; i < total_entries; i++) {
-        uint8_t fc = (uint8_t)e[i].filename[0];
-        if (fc == 0)
-            return -1;
-        if (fc == 0xE5) {
+        for (uint32_t i = 0; i < total_entries; i++) {
+            uint8_t fc = (uint8_t)e[i].filename[0];
+            if (fc == 0)
+                return -1;
+            if (fc == 0xE5) {
+                lfn_valid = 0;
+                memset(lfn_buf, 0, 64);
+                continue;
+            }
+            if ((e[i].attributes & 0x0F) == 0x0F) {
+                fat_lfn_entry_t *lfn = (fat_lfn_entry_t *)&e[i];
+                int seq = lfn->sequence & 0x3F;
+                if (lfn->sequence & 0x40) {
+                    memset(lfn_buf, 0, 64);
+                    lfn_valid = 1;
+                }
+                if (lfn_valid && seq >= 1 && seq <= 4)
+                    lfn_extract_chars(lfn, seq - 1, lfn_buf, 64);
+                continue;
+            }
+
+            if (lfn_valid && lfn_buf[0]) {
+                int match = 1;
+                const char *a = name, *b = lfn_buf;
+                while (*a && *b) {
+                    char ca = *a, cb = *b;
+                    if (ca >= 'a' && ca <= 'z')
+                        ca -= 32;
+                    if (cb >= 'a' && cb <= 'z')
+                        cb -= 32;
+                    if (ca != cb) {
+                        match = 0;
+                        break;
+                    }
+                    a++;
+                    b++;
+                }
+                if (*a || *b)
+                    match = 0;
+                if (match) {
+                    if (out_entry)
+                        memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
+                    return 0;
+                }
+            }
             lfn_valid = 0;
             memset(lfn_buf, 0, 64);
-            continue;
-        }
-        if ((e[i].attributes & 0x0F) == 0x0F) {
-            fat_lfn_entry_t *lfn = (fat_lfn_entry_t *)&e[i];
-            int seq = lfn->sequence & 0x3F;
-            if (lfn->sequence & 0x40) {
-                memset(lfn_buf, 0, 64);
-                lfn_valid = 1;
-            }
-            if (lfn_valid && seq >= 1 && seq <= 4)
-                lfn_extract_chars(lfn, seq - 1, lfn_buf, 64);
-            continue;
-        }
 
-        if (lfn_valid && lfn_buf[0]) {
-            int match = 1;
-            const char *a = name, *b = lfn_buf;
-            while (*a && *b) {
-                char ca = *a, cb = *b;
-                if (ca >= 'a' && ca <= 'z')
-                    ca -= 32;
-                if (cb >= 'a' && cb <= 'z')
-                    cb -= 32;
-                if (ca != cb) {
-                    match = 0;
-                    break;
-                }
-                a++;
-                b++;
-            }
-            if (*a || *b)
-                match = 0;
-            if (match) {
+            char fat_n[11];
+            to_fat_name(name, fat_n);
+            if (memcmp(e[i].filename, fat_n, 11) == 0) {
                 if (out_entry)
                     memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
                 return 0;
             }
         }
-        lfn_valid = 0;
-        memset(lfn_buf, 0, 64);
 
-        char fat_n[11];
-        to_fat_name(name, fat_n);
-        if (memcmp(e[i].filename, fat_n, 11) == 0) {
-            if (out_entry)
-                memcpy(out_entry, &e[i], sizeof(fat_dir_entry_t));
-            return 0;
+        if (!fat16_root) {
+            uint32_t next = fat_get_entry(cur_cluster);
+            uint32_t eof = is_fat32 ? 0x0FFFFFF8u : 0xFFF8u;
+            if (next >= eof)
+                done = 1;
+            else
+                cur_cluster = next;
+        } else {
+            done = 1;
         }
     }
     return -1;
@@ -1362,96 +1377,113 @@ void main() {
                 qk_sys_ipc_send(msg.sender_pid, &r);
             } else {
                 uint32_t cluster = msg.data1;
+                int fat16_root = (!is_fat32 && cluster == 0);
                 if (is_fat32 && cluster == 0)
                     cluster = root_cluster;
-                uint32_t lba = (!is_fat32 && cluster == 0)
-                                   ? root_dir_lba
-                                   : (data_start_lba + (cluster - 2) * fat.sectors_per_cluster);
-                uint32_t scnt =
-                    (!is_fat32 && cluster == 0) ? root_sectors : fat.sectors_per_cluster;
-                if (scnt > DIR_BULK_MAX_SECTORS)
-                    scnt = DIR_BULK_MAX_SECTORS;
-                ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
                 message_t r = {.type = MSG_DIR_REPLY};
                 int lp = 0;
                 char lb[128];
                 bzero(lb, 128);
-                fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
-                uint32_t total_dir_entries = scnt * 16;
                 char lfn_buf[64];
                 int lfn_valid = 0;
                 memset(lfn_buf, 0, 64);
-                for (uint32_t di = 0; di < total_dir_entries; di++) {
-                    uint8_t first_char = (uint8_t)e[di].filename[0];
-                    if (first_char == 0)
-                        goto end_d;
-                    if (first_char == 0xE5) {
-                        lfn_valid = 0;
-                        memset(lfn_buf, 0, 64);
-                        continue;
-                    }
-                    if (e[di].attributes & 0x08)
-                        continue;
-
-                    if ((e[di].attributes & 0x0F) == 0x0F) {
-                        fat_lfn_entry_t *lfn = (fat_lfn_entry_t *)&e[di];
-                        int seq = lfn->sequence & 0x3F;
-                        if (lfn->sequence & 0x40) {
+                int done = 0;
+                /* Follow the FAT chain across all clusters of the directory */
+                uint32_t cur_cluster = cluster;
+                while (!done) {
+                    uint32_t lba = fat16_root
+                                       ? root_dir_lba
+                                       : (data_start_lba + (cur_cluster - 2) * fat.sectors_per_cluster);
+                    uint32_t scnt = fat16_root ? root_sectors : fat.sectors_per_cluster;
+                    if (scnt > DIR_BULK_MAX_SECTORS)
+                        scnt = DIR_BULK_MAX_SECTORS;
+                    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+                    fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
+                    uint32_t total_dir_entries = scnt * 16;
+                    for (uint32_t di = 0; di < total_dir_entries; di++) {
+                        uint8_t first_char = (uint8_t)e[di].filename[0];
+                        if (first_char == 0) {
+                            done = 1;
+                            break;
+                        }
+                        if (first_char == 0xE5) {
+                            lfn_valid = 0;
                             memset(lfn_buf, 0, 64);
-                            lfn_valid = 1;
+                            continue;
                         }
-                        if (lfn_valid && seq >= 1 && seq <= 4)
-                            lfn_extract_chars(lfn, seq - 1, lfn_buf, 64);
-                        continue;
-                    }
+                        if (e[di].attributes & 0x08)
+                            continue;
 
-                    char name[64];
-                    if (lfn_valid && lfn_buf[0]) {
-                        strncpy(name, lfn_buf, 63);
-                        name[63] = 0;
-                    } else {
-                        int j = 0;
-                        for (int k = 0; k < 8 && e[di].filename[k] != ' '; k++) {
-                            char c = e[di].filename[k];
-                            if (k == 0) {
-                            } else if (c >= 'A' && c <= 'Z')
-                                c += 32;
-                            name[j++] = c;
+                        if ((e[di].attributes & 0x0F) == 0x0F) {
+                            fat_lfn_entry_t *lfn = (fat_lfn_entry_t *)&e[di];
+                            int seq = lfn->sequence & 0x3F;
+                            if (lfn->sequence & 0x40) {
+                                memset(lfn_buf, 0, 64);
+                                lfn_valid = 1;
+                            }
+                            if (lfn_valid && seq >= 1 && seq <= 4)
+                                lfn_extract_chars(lfn, seq - 1, lfn_buf, 64);
+                            continue;
                         }
-                        if (e[di].ext[0] != ' ') {
-                            name[j++] = '.';
-                            for (int k = 0; k < 3 && e[di].ext[k] != ' '; k++) {
-                                char c = e[di].ext[k];
-                                if (c >= 'A' && c <= 'Z')
+
+                        char name[64];
+                        if (lfn_valid && lfn_buf[0]) {
+                            strncpy(name, lfn_buf, 63);
+                            name[63] = 0;
+                        } else {
+                            int j = 0;
+                            for (int k = 0; k < 8 && e[di].filename[k] != ' '; k++) {
+                                char c = e[di].filename[k];
+                                if (k == 0) {
+                                } else if (c >= 'A' && c <= 'Z')
                                     c += 32;
                                 name[j++] = c;
                             }
+                            if (e[di].ext[0] != ' ') {
+                                name[j++] = '.';
+                                for (int k = 0; k < 3 && e[di].ext[k] != ' '; k++) {
+                                    char c = e[di].ext[k];
+                                    if (c >= 'A' && c <= 'Z')
+                                        c += 32;
+                                    name[j++] = c;
+                                }
+                            }
+                            name[j] = 0;
                         }
-                        name[j] = 0;
+                        lfn_valid = 0;
+                        memset(lfn_buf, 0, 64);
+                        char info[80];
+                        bzero(info, 80);
+                        int is_d = (e[di].attributes & 0x10) ? 1 : 0;
+                        int n = int_to_str(is_d, info, 0);
+                        info[n++] = '|';
+                        n += int_to_str(entry_cluster(&e[di]), info + n, 0);
+                        info[n++] = '|';
+                        strncpy(info + n, name, 63);
+                        int ilen = strlen(info);
+                        if (lp + ilen + 2 > 127) {
+                            memcpy(r.payload, lb, 128);
+                            r.data1 = 1;
+                            qk_sys_ipc_send(msg.sender_pid, &r);
+                            lp = 0;
+                            bzero(lb, 128);
+                        }
+                        memcpy(lb + lp, info, ilen);
+                        lp += ilen;
+                        lb[lp++] = '\n';
                     }
-                    lfn_valid = 0;
-                    memset(lfn_buf, 0, 64);
-                    char info[80];
-                    bzero(info, 80);
-                    int is_d = (e[di].attributes & 0x10) ? 1 : 0;
-                    int n = int_to_str(is_d, info, 0);
-                    info[n++] = '|';
-                    n += int_to_str(entry_cluster(&e[di]), info + n, 0);
-                    info[n++] = '|';
-                    strncpy(info + n, name, 63);
-                    int ilen = strlen(info);
-                    if (lp + ilen + 2 > 127) {
-                        memcpy(r.payload, lb, 128);
-                        r.data1 = 1;
-                        qk_sys_ipc_send(msg.sender_pid, &r);
-                        lp = 0;
-                        bzero(lb, 128);
+                    /* Advance to next cluster in chain (skip for FAT16 fixed root) */
+                    if (!done && !fat16_root) {
+                        uint32_t next = fat_get_entry(cur_cluster);
+                        uint32_t eof = is_fat32 ? 0x0FFFFFF8u : 0xFFF8u;
+                        if (next >= eof)
+                            done = 1;
+                        else
+                            cur_cluster = next;
+                    } else {
+                        done = 1;
                     }
-                    memcpy(lb + lp, info, ilen);
-                    lp += ilen;
-                    lb[lp++] = '\n';
                 }
-            end_d:
                 memcpy(r.payload, lb, 128);
                 r.data1 = 0;
                 qk_sys_ipc_send(msg.sender_pid, &r);

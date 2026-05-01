@@ -150,6 +150,10 @@ void mm_vmm_cleanup_current_dir() {
         }
     }
 }
+
+void mm_vmm_cleanup_dir_phys(uint32_t pd_phys) {
+    (void)pd_phys;
+}
 void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start) {
     mem_num_vpages = 0;
     uint32_t pd_phys = (uint32_t)initial_page_dir - KERNEL_START;

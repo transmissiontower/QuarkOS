@@ -506,10 +506,7 @@ void mm_vmm_unmap_page(uint32_t virt) {
         mem_num_vpages--;
 }
 
-void mm_vmm_cleanup_current_dir(void) {
-    uint32_t ttbr0 = arm_get_ttbr0();
-    uint64_t *l1 = (uint64_t *)((uintptr_t)PHYS_TO_VIRT(ttbr0));
-
+static void cleanup_l1(uint64_t *l1) {
     for (uint32_t i = 0; i < 3; i++) {
         if ((l1[i] & 0x3) != DESC_TABLE)
             continue;
@@ -530,13 +527,27 @@ void mm_vmm_cleanup_current_dir(void) {
                 mm_pmm_free_frame(l3_phys);
                 l2[j] = 0;
             } else if ((l2[j] & 0x3) == DESC_BLOCK) {
+                uint32_t block_phys = (uint32_t)(l2[j] & 0xFFE00000ULL);
+                for (int p = 0; p < 512; p++)
+                    mm_pmm_free_frame(block_phys + p * 4096);
                 l2[j] = 0;
             }
         }
         mm_pmm_free_frame(l2_phys);
         l1[i] = DESC_FAULT;
     }
+}
+
+void mm_vmm_cleanup_current_dir(void) {
+    uint32_t ttbr0 = arm_get_ttbr0();
+    uint64_t *l1 = (uint64_t *)((uintptr_t)PHYS_TO_VIRT(ttbr0));
+    cleanup_l1(l1);
     arm_tlb_flush_all();
+}
+
+void mm_vmm_cleanup_dir_phys(uint32_t pd_phys) {
+    uint64_t *l1 = (uint64_t *)((uintptr_t)PHYS_TO_VIRT(pd_phys));
+    cleanup_l1(l1);
 }
 
 void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start) {
