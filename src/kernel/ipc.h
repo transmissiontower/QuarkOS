@@ -45,6 +45,7 @@ typedef struct {
 #define MSG_WIN_BUFFER_INFO 64
 #define MSG_WIN_DIRTY 65
 #define MSG_WIN_RESIZED 66
+#define MSG_WIN_RESIZE  67
 #define MSG_COMPOSITOR_SUSPEND 70
 #define MSG_COMPOSITOR_RESUME 71
 #define MSG_INPUT_REDIRECT 72
@@ -76,6 +77,7 @@ typedef struct {
 #define MSG_DRAG_LEFT   802
 #define MSG_DROP        803
 #define MSG_DRAG_CANCEL 804
+#define MSG_FILEMGR_NAVIGATE 810
 #define IPC_QUEUE_SIZE 128
 typedef struct {
     message_t messages[IPC_QUEUE_SIZE];

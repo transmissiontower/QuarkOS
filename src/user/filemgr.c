@@ -99,6 +99,7 @@ static int search_cache_count = 0;
 
 static int picker_mode = 0;
 static int requester_pid = -1;
+static char initial_nav_path[96] = {0};
 static char picker_filename[64];
 static int picker_fn_len = 0;
 static int picker_fn_editing = 0;
@@ -1230,6 +1231,11 @@ int main(void) {
                     picker_fn_editing = 1;
                 break;
             }
+            if (probe.type == MSG_FILEMGR_NAVIGATE && probe.payload[0]) {
+                strncpy(initial_nav_path, (char *)probe.payload, 95);
+                initial_nav_path[95] = 0;
+                break;
+            }
             if (stash_count < STASH_SIZE)
                 stash_buf[stash_count++] = probe;
         }
@@ -1257,6 +1263,8 @@ int main(void) {
     cur_cluster = 0;
     rebuild_path();
     load_dir();
+    if (initial_nav_path[0] && navigate_to_path(initial_nav_path))
+        load_dir();
     render();
     while (1) {
         if (stash_count > 0) {
