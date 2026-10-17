@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/virtio_input.c - VirtIO input driver for keyboard and mouse events
- */
 #include "arch/aarch64/platform.h"
 #include "kernel/klog.h"
 #include "util/util.h"
@@ -148,7 +145,7 @@ static input_dev_kind_t detect_input_dev_kind(uint32_t base) {
 }
 
 static inline uint32_t va_to_pa(void *va) {
-    return (uint32_t)va - 0xC0000000 + 0x40000000;
+    return (uint32_t)(uintptr_t)va - 0xC0000000 + 0x40000000;
 }
 
 static const uint8_t linux_to_ps2[128] = {
@@ -493,7 +490,7 @@ static void input_dev_poll(struct input_dev *dev) {
         return;
 
     static volatile int polling_in_progress;
-    uint32_t irq_flags = arm_irq_save();
+    uint64_t irq_flags = arm_irq_save();
     if (polling_in_progress) {
         arm_irq_restore(irq_flags);
         return;

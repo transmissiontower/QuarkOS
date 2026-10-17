@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/util/util.c - Low-level utilities: memset, memcpy, port I/O, color blending, and integer sqrt
+ * src/util/util.c - Memory and color utilities plus VirtIO input compatibility
  */
 #include "lib/stdint.h"
 
@@ -29,11 +29,7 @@ void memset32(void *dest, uint32_t val, uint32_t count) {
     while (count--)
         *d++ = val;
 }
-void outb(uint16_t port, uint8_t val) {
-    (void)port;
-    (void)val;
-}
-uint8_t inb(uint16_t port) {
+uint8_t virtio_input_compat_read(uint16_t port) {
     extern void virtio_input_poll(void);
     extern int virtio_input_kbd_has_data(void);
     extern uint8_t virtio_input_kbd_read(void);
@@ -122,20 +118,4 @@ int memcmp(const void *s1, const void *s2, uint32_t n) {
         p2++;
     }
     return 0;
-}
-uint16_t inw(uint16_t port) {
-    (void)port;
-    return 0;
-}
-void outw(uint16_t port, uint16_t value) {
-    (void)port;
-    (void)value;
-}
-uint32_t inl(uint16_t port) {
-    (void)port;
-    return 0;
-}
-void outl(uint16_t port, uint32_t value) {
-    (void)port;
-    (void)value;
 }

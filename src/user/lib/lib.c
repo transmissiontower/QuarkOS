@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/lib/lib.c - Userspace C runtime (malloc, memcpy, string functions)
- */
 #include "lib/stdint.h"
 #include "user/lib/libapi.h"
 static void *_last_alloc_ptr = 0;
@@ -16,9 +13,9 @@ void *malloc(uint32_t size) {
     int res = qk_sbrk(aligned);
     if (res == -1)
         return 0;
-    _last_alloc_ptr = (void *)res;
+    _last_alloc_ptr = (void *)(uintptr_t)res;
     _last_alloc_size = aligned;
-    return (void *)res;
+    return (void *)(uintptr_t)res;
 }
 void *realloc(void *ptr, uint32_t new_size) {
     if (!ptr)

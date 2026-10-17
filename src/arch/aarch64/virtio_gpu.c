@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/virtio_gpu.c - VirtIO GPU driver for framebuffer display output
- */
 #include "arch/aarch64/platform.h"
 #include "util/util.h"
 
@@ -142,7 +139,7 @@ static uint32_t gpu_version;
 static uint32_t saved_fb_phys;
 
 static inline uint32_t va_to_pa(void *va) {
-    return (uint32_t)va - 0xC0000000 + 0x40000000;
+    return (uint32_t)(uintptr_t)va - 0xC0000000 + 0x40000000;
 }
 
 static void vq_init(void) {
@@ -201,7 +198,7 @@ static void gpu_poll_completion(void) {
 }
 
 static void virtio_gpu_send_cmd(void *req, uint32_t req_len, void *rsp, uint32_t rsp_len) {
-    uint32_t saved = arm_irq_save();
+    uint64_t saved = arm_irq_save();
 
     if (__atomic_exchange_n(&gpu_cmd_lock, 1, __ATOMIC_ACQUIRE)) {
         arm_irq_restore(saved);
@@ -255,81 +252,6 @@ static void virtio_gpu_send_cmd(void *req, uint32_t req_len, void *rsp, uint32_t
 
     free_desc(d0);
     free_desc(d1);
-
-    __atomic_store_n(&gpu_cmd_lock, 0, __ATOMIC_RELEASE);
-    arm_irq_restore(saved);
-}
-
-static void virtio_gpu_send_cmd3(void *hdr, uint32_t hdr_len, void *data, uint32_t data_len,
-                                 void *rsp, uint32_t rsp_len) {
-    uint32_t saved = arm_irq_save();
-    if (__atomic_exchange_n(&gpu_cmd_lock, 1, __ATOMIC_ACQUIRE)) {
-        arm_irq_restore(saved);
-        return;
-    }
-
-    uint16_t d0 = alloc_desc();
-    uint16_t d1 = alloc_desc();
-    uint16_t d2 = alloc_desc();
-
-    vq_desc[d0].addr = (uint64_t)va_to_pa(hdr);
-    vq_desc[d0].len = hdr_len;
-    vq_desc[d0].flags = VIRTQ_DESC_F_NEXT;
-    vq_desc[d0].next = d1;
-
-    vq_desc[d1].addr = (uint64_t)va_to_pa(data);
-    vq_desc[d1].len = data_len;
-    vq_desc[d1].flags = VIRTQ_DESC_F_NEXT;
-    vq_desc[d1].next = d2;
-
-    vq_desc[d2].addr = (uint64_t)va_to_pa(rsp);
-    vq_desc[d2].len = rsp_len;
-    vq_desc[d2].flags = VIRTQ_DESC_F_WRITE;
-    vq_desc[d2].next = 0;
-
-    for (uint32_t off = 0; off < hdr_len; off += 64)
-        asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)hdr + off) : "memory");
-    for (uint32_t off = 0; off < data_len; off += 64)
-        asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)data + off) : "memory");
-
-    if (!vq_avail || !vq_used) {
-        arm_uart_puts("virtio-gpu: BUG vq_avail/used NULL (cmd3)\n");
-        free_desc(d0);
-        free_desc(d1);
-        free_desc(d2);
-        return;
-    }
-
-    uint16_t avail_idx = vq_avail->idx;
-    vq_avail->ring[avail_idx % QUEUE_SIZE] = d0;
-    arm_dsb();
-    vq_avail->idx = avail_idx + 1;
-    asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)&vq_avail->idx) : "memory");
-    asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)&vq_avail->ring[avail_idx % QUEUE_SIZE])
-                 : "memory");
-    asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)&vq_desc[d0]) : "memory");
-    asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)&vq_desc[d1]) : "memory");
-    asm volatile("dc cvac, %0" ::"r"((uint64_t)(uintptr_t)&vq_desc[d2]) : "memory");
-    arm_dsb();
-
-    mmio_write32(gpu_base + VIRTIO_MMIO_QUEUE_NOTIFY, 0);
-
-    if (!gpu_init_done) {
-        gpu_poll_completion();
-    } else {
-        for (volatile int j = 0; j < 100000; j++) {
-            asm volatile("dc ivac, %0" ::"r"((uint64_t)(uintptr_t)&vq_used->idx) : "memory");
-            arm_dmb();
-            if (vq_used->idx != vq_last_used) {
-                vq_last_used++;
-                break;
-            }
-        }
-    }
-
-    free_desc(d0);
-    free_desc(d1);
-    free_desc(d2);
 
     __atomic_store_n(&gpu_cmd_lock, 0, __ATOMIC_RELEASE);
     arm_irq_restore(saved);

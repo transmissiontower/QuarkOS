@@ -37,6 +37,54 @@
 
 _start:
 
+    // U-Boot enters AArch64 kernels at EL2 on QEMU virt. Drop to EL1 before
+    // touching EL1-only system registers. QEMU's direct loader already enters
+    // at EL1 and skips this path.
+    mrs     x0, CurrentEL
+    cmp     x0, #0x8
+    b.ne    7f
+
+    msr     daifset, #0xF
+    mov     x0, #(1 << 31)       // HCR_EL2.RW: EL1 runs AArch64
+    msr     hcr_el2, x0
+    mov     x0, #3               // Permit EL1 physical and virtual timers
+    msr     cnthctl_el2, x0
+    msr     cntvoff_el2, xzr
+    msr     cptr_el2, xzr
+    ldr     x0, =7f
+    ldr     x1, =(KERN_VIRT - PHYS_OFFSET)
+    sub     x0, x0, x1           // EL2 may have MMU disabled at handoff
+    msr     elr_el2, x0
+    mov     x0, #0x3C5           // EL1h, mask debug/SError/IRQ/FIQ
+    msr     spsr_el2, x0
+    dsb     sy
+    mrs     x1, sctlr_el1
+    bic     x1, x1, #(1 << 0)    // Disable inherited EL1 MMU
+    bic     x1, x1, #(1 << 2)    // Disable inherited EL1 data cache
+    bic     x1, x1, #(1 << 12)   // Disable inherited EL1 instruction cache
+    msr     sctlr_el1, x1
+    mrs     x1, sctlr_el2
+    bic     x1, x1, #(1 << 0)    // Disable EL2 MMU for EL1 physical entry
+    bic     x1, x1, #(1 << 2)    // Disable EL2 data cache
+    bic     x1, x1, #(1 << 12)   // Disable EL2 instruction cache
+    msr     sctlr_el2, x1
+    isb
+    eret
+
+7:
+    // Some U-Boot builds enter applications at EL1 with their MMU still on.
+    mrs     x0, CurrentEL
+    cmp     x0, #0x4
+    b.ne    8f
+    dsb     sy
+    mrs     x0, sctlr_el1
+    bic     x0, x0, #(1 << 0)
+    bic     x0, x0, #(1 << 2)
+    bic     x0, x0, #(1 << 12)
+    msr     sctlr_el1, x0
+    isb
+8:
+
     msr     daifset, #0xF
 
     ldr     x4, =aarch64_kernel_l1

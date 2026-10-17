@@ -12,7 +12,7 @@ typedef struct Header {
     bool is_free;
     uint32_t magic;
 } Header;
-#define HEAP_START KERNEL_MALLOC
+#define HEAP_START 0xD0000000
 #define HEADER_SIZE sizeof(Header)
 #define MAGIC_NUM 0x12345678
 void mm_heap_init(uint32_t initialHeapSize);

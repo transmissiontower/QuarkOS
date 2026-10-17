@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/filemgr.c - Graphical file manager with sidebar navigation and grid view
- */
 #include "kernel/ipc.h"
 #include "lib/stdbool.h"
 #include "lib/stdlib.h"
@@ -247,37 +244,6 @@ static void init_disk_sidebar(void) {
         sb[sb_count].disk_idx = i;
         sb_count++;
     }
-}
-static void eject_disk(int disk_idx) {
-    if (disk_idx <= 0 || disk_idx >= SB_MAX_DISKS)
-        return;
-    message_t m;
-    memset(&m, 0, sizeof(m));
-    m.type = MSG_DISK_EJECT;
-    m.data1 = (uint32_t)disk_idx;
-    qk_sys_ipc_send(storage_pid, &m);
-    message_t r;
-    qk_ipc_recv(&r);
-    disk_ejected[disk_idx] = 1;
-    if (fm_disk_idx == disk_idx) {
-        fm_disk_idx = 0;
-        dir_depth = 0;
-        cur_cluster = 0;
-        rebuild_path();
-        load_dir();
-    }
-}
-static void mount_disk(int disk_idx) {
-    if (disk_idx < 0 || disk_idx >= SB_MAX_DISKS)
-        return;
-    message_t m;
-    memset(&m, 0, sizeof(m));
-    m.type = MSG_DISK_MOUNT;
-    m.data1 = (uint32_t)disk_idx;
-    qk_sys_ipc_send(storage_pid, &m);
-    message_t r;
-    qk_ipc_recv(&r);
-    disk_ejected[disk_idx] = 0;
 }
 static void fill(int x, int y, int w, int h, uint32_t c) {
     if (w <= 0 || h <= 0)

@@ -59,8 +59,4 @@ typedef struct {
     uint8_t name3[4];
 } __attribute__((packed)) fat_lfn_entry_t;
 
-void fat_init();
-void fat_list_root();
-uint8_t *fat_read_file(const char *filename, uint32_t *out_size);
-uint8_t *fat_read_file_path(const char *path, uint32_t *out_size);
 #endif

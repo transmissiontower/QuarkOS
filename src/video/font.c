@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/video/font.c - 8x16 bitmap font glyph data for VGA text rendering
+ * src/video/font.c - 8x16 bitmap font glyph data for framebuffer text rendering
  */
 #include "video/font.h"
 const uint8_t font[4096] = {[0 ... 511] = 0x00,

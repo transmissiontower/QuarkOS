@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/mm/kmalloc.c - Kernel heap allocator with block splitting, coalescing, and auto-expansion
- */
 #include "mm/kmalloc.h"
 #include "lib/stdint.h"
 #include "mm/memory.h"
@@ -28,7 +25,7 @@ void mm_heap_expand(int new_bytes) {
         mm_vmm_map_page(old_end + i * 4096, phys, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
     }
     heap_end_virt += new_bytes;
-    Header *new_block = (Header *)old_end;
+    Header *new_block = (Header *)(uintptr_t)old_end;
     new_block->size = new_bytes - HEADER_SIZE;
     new_block->is_free = true;
     new_block->next = 0;
@@ -46,17 +43,12 @@ void mm_heap_expand(int new_bytes) {
 void *mm_heap_alloc(uint32_t size) {
     if (size == 0)
         return 0;
-#if defined(__aarch64__)
-
     uint32_t aligned_size = size = (size + 7) & ~7;
-#else
-    uint32_t aligned_size = size = (size + 3) & ~3;
-#endif
     Header *current = head;
     while (current != 0) {
         if (current->is_free && current->size >= aligned_size) {
             if (current->size > aligned_size + HEADER_SIZE + 16) {
-                Header *next_block = (Header *)((uint32_t)current + HEADER_SIZE + aligned_size);
+                Header *next_block = (Header *)((uintptr_t)current + HEADER_SIZE + aligned_size);
                 next_block->size = current->size - aligned_size - HEADER_SIZE;
                 next_block->is_free = true;
                 next_block->next = current->next;
@@ -65,7 +57,7 @@ void *mm_heap_alloc(uint32_t size) {
                 current->next = next_block;
             }
             current->is_free = false;
-            return (void *)((uint32_t)current + HEADER_SIZE);
+            return (void *)((uintptr_t)current + HEADER_SIZE);
         }
         current = current->next;
     }
@@ -79,7 +71,7 @@ void *mm_heap_alloc(uint32_t size) {
 void mm_heap_free(void *ptr) {
     if (!ptr)
         return;
-    Header *block = (Header *)((uint32_t)ptr - HEADER_SIZE);
+    Header *block = (Header *)((uintptr_t)ptr - HEADER_SIZE);
     if (block->magic != MAGIC_NUM) {
         return;
     }
@@ -87,7 +79,7 @@ void mm_heap_free(void *ptr) {
     Header *current = head;
     while (current != 0 && current->next != 0) {
         if (current->is_free && current->next->is_free) {
-            if ((uint32_t)current + HEADER_SIZE + current->size == (uint32_t)current->next) {
+            if ((uintptr_t)current + HEADER_SIZE + current->size == (uintptr_t)current->next) {
                 current->size += HEADER_SIZE + current->next->size;
                 current->next = current->next->next;
             } else {

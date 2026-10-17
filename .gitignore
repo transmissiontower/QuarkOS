@@ -5,12 +5,13 @@
 *.iso
 *.tmp
 
-kernel
+sodium.*
+u-boot.bin
 build/
 build_aarch64_user/
 
 # Disk images
-disk.img
+sodium.img
 floppy.img
 cdrom.img
 usb.img
@@ -19,3 +20,4 @@ usb.img
 src/user/lib/icons_def.h
 boot.log
 empty.tmp
+.aider*

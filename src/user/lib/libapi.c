@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/lib/libapi.c - Syscall wrappers and kernel API for userspace processes
- */
 #include "libapi.h"
 #include "lib/stdlib.h"
 static inline long syscall(long a, long b, long c, long d) {
@@ -27,9 +24,6 @@ void qk_sleep(uint32_t ms) {
 }
 void qk_yield(void) {
     syscall(48, 0, 0, 0);
-}
-void qk_wait_irq(int irq) {
-    syscall(16, irq, 0, 0);
 }
 int qk_spawn(void *buffer, uint32_t size) {
     return syscall(9, (long)buffer, (long)size, 0);
@@ -96,36 +90,8 @@ int qk_sys_kill(int pid) {
 void sys_window_close(int id) {
     syscall(24, id, 0, 0);
 }
-uint8_t qk_hw_inb(uint16_t p) {
+uint8_t qk_input_compat_read(uint16_t p) {
     return (uint8_t)syscall(20, p, 0, 0);
-}
-void qk_hw_outb(uint16_t p, uint8_t v) {
-    syscall(21, p, v, 0);
-}
-uint32_t qk_hw_inl(uint16_t p) {
-    return (uint32_t)syscall(59, p, 0, 0);
-}
-void qk_hw_outl(uint16_t p, uint32_t v) {
-    syscall(60, p, (long)v, 0);
-}
-int qk_sb16_init(void) {
-    return syscall(61, 0, 0, 0);
-}
-int qk_sb16_play(const void *buf, uint32_t len, uint32_t rate, uint8_t channels, uint8_t bits) {
-    uint32_t packed = (rate & 0xFFFF) | ((uint32_t)channels << 16) | ((uint32_t)bits << 24);
-    return syscall(62, (long)buf, (long)len, (long)packed);
-}
-int qk_sb16_ready(void) {
-    return syscall(63, 0, 0, 0);
-}
-uint16_t qk_inw(uint16_t p) {
-    return (uint16_t)syscall(22, p, 0, 0);
-}
-void qk_outw(uint16_t p, uint16_t v) {
-    syscall(23, p, v, 0);
-}
-int qk_ata_read_sectors(uint32_t lba, uint32_t count, void *buf) {
-    return syscall(54, lba, count, (long)buf);
 }
 int qk_blk_read(uint32_t sector, uint32_t count, void *buf) {
     return (int)syscall(80, (long)sector, (long)count, (long)buf);
@@ -158,7 +124,7 @@ uint32_t qk_map_phys_list(uint32_t *phys_pages, uint32_t count) {
 }
 void *qk_map_foreign_mem(int src_pid, uint32_t src_virt, uint32_t size) {
     uint32_t mapped = (uint32_t)syscall(58, src_pid, (long)src_virt, (long)size);
-    return mapped ? (void *)mapped : 0;
+    return mapped ? (void *)(uintptr_t)mapped : 0;
 }
 void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out) {
     message_t msg, reply;
@@ -178,7 +144,7 @@ void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out) {
     uint32_t mapped = (uint32_t)syscall(58, comp_pid, (long)src_virt, (long)size);
     if (!mapped)
         return 0;
-    return (void *)mapped;
+    return (void *)(uintptr_t)mapped;
 }
 void qk_win_dirty(int comp_pid) {
     message_t msg;
@@ -257,18 +223,6 @@ void qk_power_reboot(void) {
 }
 void qk_trigger_panic(const char *msg) {
     syscall(47, (long)msg, 0, 0);
-}
-void qk_pcspk_play(uint32_t freq) {
-    syscall(50, (long)freq, 0, 0);
-}
-void qk_pcspk_stop(void) {
-    syscall(51, 0, 0, 0);
-}
-void qk_pcspk_pwm_play(const uint8_t *buf, uint32_t len, uint32_t rate) {
-    syscall(52, (long)buf, (long)len, (long)rate);
-}
-int qk_pcspk_pwm_ready(void) {
-    return syscall(53, 0, 0, 0);
 }
 int qk_waitpid(int pid) {
     return syscall(64, pid, 0, 0);

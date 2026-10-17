@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/drivers/GUI/framebuffer.c - Double-buffered framebuffer driver with 2D drawing primitives
- */
 #include "drivers/GUI/framebuffer.h"
-#include "kernel/multiboot.h"
 #include "lib/math.h"
 #include "lib/stdint.h"
 #include "lib/stdlib.h"
@@ -25,15 +21,15 @@ uint8_t *shadow_corner = 0;
 uint8_t *shadow_edge = 0;
 int shadow_radius = 0;
 int shadow_size = 0;
-void drv_fb_init(struct multiboot_info *mb_info) {
-    fb_width = mb_info->framebuffer_width;
-    fb_height = mb_info->framebuffer_height;
-    fb_pitch = mb_info->framebuffer_pitch;
-    fb_bpp = mb_info->framebuffer_bpp;
+void drv_fb_init(const boot_info_t *boot_info) {
+    fb_width = boot_info->framebuffer_width;
+    fb_height = boot_info->framebuffer_height;
+    fb_pitch = boot_info->framebuffer_pitch;
+    fb_bpp = boot_info->framebuffer_bpp;
     if (fb_pitch == 0) {
         fb_pitch = fb_width * (fb_bpp / 8);
     }
-    fb_phy_addr = (uint32_t)mb_info->framebuffer_addr;
+    fb_phy_addr = boot_info->framebuffer_addr;
     fb_size_bytes = fb_height * fb_pitch;
     uint32_t fb_phys_base = fb_phy_addr & ~0xFFF;
     uint32_t fb_offset = fb_phy_addr & 0xFFF;
@@ -44,7 +40,7 @@ void drv_fb_init(struct multiboot_info *mb_info) {
     for (uint32_t offset = 0; offset < map_bytes; offset += 4096) {
         mm_vmm_map_page(virt_addr_start + offset, fb_phys_base + offset, fb_map_flags);
     }
-    fb_ptr = (uint32_t *)(virt_addr_start + fb_offset);
+    fb_ptr = (uint32_t *)(uintptr_t)(virt_addr_start + fb_offset);
     if (back_buffer == 0) {
         back_buffer = (uint8_t *)fb_ptr;
         memset(back_buffer, 0, fb_size_bytes);
@@ -86,6 +82,8 @@ void plot_pixel(int x, int y, uint8_t alpha) {
     *(uint32_t *)(back_buffer + offset) = 0xFF000000 | (r << 16) | (g << 8) | b;
 }
 void rect_fill(int x, int y, int w, int h, uint32_t color) {
+    if (w <= 0 || h <= 0)
+        return;
     if (x < 0) {
         w += x;
         x = 0;
@@ -94,10 +92,14 @@ void rect_fill(int x, int y, int w, int h, uint32_t color) {
         h += y;
         y = 0;
     }
-    if (x + w > fb_width)
-        w = fb_width - x;
-    if (y + h > fb_height)
-        h = fb_height - y;
+    if (w <= 0 || h <= 0)
+        return;
+    if (x >= (int)fb_width || y >= (int)fb_height)
+        return;
+    if ((int64_t)x + w > fb_width)
+        w = (int)fb_width - x;
+    if ((int64_t)y + h > fb_height)
+        h = (int)fb_height - y;
     for (int i = 0; i < h; i++) {
         uint32_t offset = ((y + i) * fb_pitch) + (x * 4);
         memset32(back_buffer + offset, color, w);

@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/gic.c - ARM Generic Interrupt Controller (GIC) driver
- */
 #include "arch/aarch64/platform.h"
 #include "kernel/klog.h"
 #include "kernel/process.h"
@@ -12,94 +9,110 @@ static void (*irq_handlers[MAX_IRQ])(struct InterruptRegisters *r);
 
 void arm_gic_init(void) {
     uint32_t dist = GIC_DIST_VIRT;
-    uint32_t cpu = GIC_CPU_VIRT;
+    uint32_t redist = GIC_REDIST_VIRT;
+    uint32_t sgi = redist + GICR_SGI_BASE;
 
     mmio_write32(dist + GICD_CTLR, 0);
+    mmio_write32(dist + GICD_CTLR, 1u << 5);
 
-    for (int i = 0; i < 4; i++)
+    uint32_t waker = mmio_read32(redist + GICR_WAKER);
+    mmio_write32(redist + GICR_WAKER, waker & ~GICR_WAKER_PROCESSOR_SLEEP);
+    while (mmio_read32(redist + GICR_WAKER) & GICR_WAKER_CHILDREN_ASLEEP)
+        arm_dsb();
+
+    for (int i = 0; i < 4; i++) {
         mmio_write32(dist + GICD_ICENABLER + i * 4, 0xFFFFFFFF);
-
-    for (int i = 0; i < 4; i++)
         mmio_write32(dist + GICD_ICPENDR + i * 4, 0xFFFFFFFF);
-
-    for (int i = 0; i < 32; i++)
         mmio_write32(dist + GICD_IPRIORITYR + i * 4, 0xA0A0A0A0);
+    }
 
-    for (int i = 8; i < 32; i++)
-        mmio_write32(dist + GICD_ITARGETSR + i * 4, 0x01010101);
+    for (int i = 1; i < 4; i++)
+        mmio_write32(dist + GICD_IGROUPR + i * 4, 0xFFFFFFFF);
+
+    for (uint32_t irq = 32; irq < MAX_IRQ; irq++) {
+        uint32_t route = dist + GICD_IROUTER + irq * 8;
+        mmio_write32(route, 0);
+        mmio_write32(route + 4, 0);
+    }
 
     for (int i = 0; i < 8; i++)
-        mmio_write32(dist + GICD_ICFGR + i * 4, 0x00000000);
+        mmio_write32(sgi + GICR_IPRIORITYR + i * 4, 0xA0A0A0A0);
 
-    mmio_write32(dist + GICD_CTLR, 1);
+    mmio_write32(sgi + GICR_IGROUPR0, 0xFFFFFFFF);
+    mmio_write32(sgi + GICR_ICENABLER0, 0xFFFFFFFF);
+    mmio_write32(sgi + GICR_ICPENDR0, 0xFFFFFFFF);
 
-    mmio_write32(cpu + GICC_PMR, 0xFF);
-    mmio_write32(cpu + GICC_CTLR, 1);
+    uint64_t sre = 1;
+    asm volatile("msr ICC_SRE_EL1, %0" ::"r"(sre) : "memory");
+    arm_isb();
+    uint64_t priority_mask = 0xFF;
+    asm volatile("msr ICC_PMR_EL1, %0" ::"r"(priority_mask) : "memory");
+    uint64_t binary_point = 0;
+    asm volatile("msr ICC_BPR1_EL1, %0" ::"r"(binary_point) : "memory");
+    uint64_t group1_enable = 1;
+    asm volatile("msr ICC_IGRPEN1_EL1, %0" ::"r"(group1_enable) : "memory");
+    arm_isb();
+
+    mmio_write32(dist + GICD_CTLR, (1u << 5) | (1u << 1));
 
     for (int i = 0; i < MAX_IRQ; i++)
         irq_handlers[i] = 0;
 
-    arm_uart_puts("  GIC: distributor + CPU interface ready\n");
+    arm_uart_puts("  GICv3 distributor, redistributor, and CPU interface ready\n");
 }
 
 void arm_gic_enable_irq(uint32_t irq) {
     uint32_t reg = irq / 32;
     uint32_t bit = irq % 32;
-    mmio_write32(GIC_DIST_VIRT + GICD_ISENABLER + reg * 4, (1u << bit));
+    if (irq < 32) {
+        mmio_write32(GIC_REDIST_VIRT + GICR_SGI_BASE + GICR_ISENABLER0, 1u << bit);
+        return;
+    }
+    if (irq < MAX_IRQ)
+        mmio_write32(GIC_DIST_VIRT + GICD_ISENABLER + reg * 4, 1u << bit);
 }
 
 void arm_gic_disable_irq(uint32_t irq) {
     uint32_t reg = irq / 32;
     uint32_t bit = irq % 32;
-    mmio_write32(GIC_DIST_VIRT + GICD_ICENABLER + reg * 4, (1u << bit));
+    if (irq < 32) {
+        mmio_write32(GIC_REDIST_VIRT + GICR_SGI_BASE + GICR_ICENABLER0, 1u << bit);
+        return;
+    }
+    if (irq < MAX_IRQ)
+        mmio_write32(GIC_DIST_VIRT + GICD_ICENABLER + reg * 4, 1u << bit);
 }
 
 uint32_t arm_gic_ack(void) {
-    return mmio_read32(GIC_CPU_VIRT + GICC_IAR) & 0x3FF;
+    uint64_t iar;
+    asm volatile("mrs %0, ICC_IAR1_EL1" : "=r"(iar));
+    return (uint32_t)iar & 0x3FF;
 }
 
 void arm_gic_eoi(uint32_t irq) {
-    mmio_write32(GIC_CPU_VIRT + GICC_EOIR, irq);
+    uint64_t iar = irq;
+    asm volatile("msr ICC_EOIR1_EL1, %0" ::"r"(iar) : "memory");
 }
 
-static int legacy_to_arm_irq(int legacy_irq) {
-    switch (legacy_irq) {
-    case 0:
-        return ARM_IRQ_TIMER;
-    case 1:
-        return 49;
-    case 12:
-        return 50;
-    default:
-        return -1;
-    }
-}
-
-void irq_install_handler(int irq, void (*handler)(struct InterruptRegisters *r)) {
-    int arm_irq = legacy_to_arm_irq(irq);
-    if (arm_irq < 0 || arm_irq >= MAX_IRQ)
+void arm_gic_install_irq_handler(uint32_t irq, void (*handler)(struct InterruptRegisters *r)) {
+    if (irq >= MAX_IRQ)
         return;
-    irq_handlers[arm_irq] = handler;
-    arm_gic_enable_irq(arm_irq);
-
-    if (irq == 0 && ARM_IRQ_VTIMER < MAX_IRQ) {
-        irq_handlers[ARM_IRQ_VTIMER] = handler;
-        arm_gic_enable_irq(ARM_IRQ_VTIMER);
-    }
-}
-
-void irq_uninstall_handler(int irq) {
-    int arm_irq = legacy_to_arm_irq(irq);
-    if (arm_irq < 0 || arm_irq >= MAX_IRQ)
-        return;
-    irq_handlers[arm_irq] = 0;
-    arm_gic_disable_irq(arm_irq);
+    irq_handlers[irq] = handler;
+    arm_gic_enable_irq(irq);
 }
 
 void arm_irq_dispatch(void) {
     uint32_t irq = arm_gic_ack();
     if (irq >= 1020)
         return;
+
+    if (irq == ARM_IRQ_TIMER) {
+        static int timer_trace = 1;
+        if (timer_trace) {
+            timer_trace = 0;
+            arm_uart_puts("HVF trace: physical timer IRQ\n");
+        }
+    }
 
     arm_gic_eoi(irq);
 
@@ -113,40 +126,13 @@ void arm_irq_dispatch(void) {
     extern int virtio_input_get_mouse_irq(void);
     extern void virtio_input_irq(uint32_t irq);
     extern void virtio_input_poll(void);
-    extern void process_wake_on_irq(int irq);
-    extern int virtio_input_kbd_has_data(void);
-    extern int virtio_input_mouse_has_data(void);
     int ki = virtio_input_get_kbd_irq();
     int mi = virtio_input_get_mouse_irq();
     if ((int)irq == ki || (int)irq == mi)
         virtio_input_irq(irq);
 
     if (irq == ARM_IRQ_TIMER || irq == ARM_IRQ_VTIMER) {
-        mmio_write32(UART0_VIRT + UART_DR, 0);
         virtio_input_poll();
-        int have_kbd = virtio_input_kbd_has_data();
-        int have_mouse = virtio_input_mouse_has_data();
-        if (have_kbd || have_mouse) {
-            process_wake_on_irq(1);
-            process_wake_on_irq(12);
-        }
-    }
-
-    int legacy_irq = -1;
-    if (irq == ARM_IRQ_TIMER || irq == ARM_IRQ_VTIMER)
-        legacy_irq = 0;
-    else if ((int)irq == ki)
-        legacy_irq = 1;
-    else if ((int)irq == mi)
-        legacy_irq = 12;
-    if (legacy_irq >= 0)
-        process_wake_on_irq(legacy_irq);
-}
-
-static void print_hex(uint32_t val) {
-    for (int s = 28; s >= 0; s -= 4) {
-        int n = (val >> s) & 0xF;
-        arm_uart_putc(n < 10 ? '0' + n : 'A' + n - 10);
     }
 }
 

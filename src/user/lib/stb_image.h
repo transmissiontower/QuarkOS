@@ -510,8 +510,8 @@ static int stbi__mul2shorts_valid(int a, int b) {
 #else
 #define stbi__err(x, y) stbi__err(x)
 #endif
-#define stbi__errpf(x, y) ((float *)(size_t)(stbi__err(x, y) ? NULL : NULL))
-#define stbi__errpuc(x, y) ((unsigned char *)(size_t)(stbi__err(x, y) ? NULL : NULL))
+#define stbi__errpf(x, y) ((float *)(stbi__err(x, y) ? NULL : NULL))
+#define stbi__errpuc(x, y) ((unsigned char *)(stbi__err(x, y) ? NULL : NULL))
 STBIDEF void stbi_image_free(void *retval_from_stbi_load) {
     STBI_FREE(retval_from_stbi_load);
 }
@@ -2521,7 +2521,8 @@ static int stbi__process_frame_header(stbi__jpeg *z, int scan) {
         z->img_comp[i].raw_data = stbi__malloc_mad2(z->img_comp[i].w2, z->img_comp[i].h2, 15);
         if (z->img_comp[i].raw_data == NULL)
             return stbi__free_jpeg_components(z, i + 1, stbi__err("outofmem", "Out of memory"));
-        z->img_comp[i].data = (stbi_uc *)(((size_t)z->img_comp[i].raw_data + 15) & ~15);
+        z->img_comp[i].data =
+            (stbi_uc *)(((uintptr_t)z->img_comp[i].raw_data + 15) & ~(uintptr_t)15);
         if (z->progressive) {
             z->img_comp[i].coeff_w = z->img_comp[i].w2 / 8;
             z->img_comp[i].coeff_h = z->img_comp[i].h2 / 8;
@@ -2529,7 +2530,8 @@ static int stbi__process_frame_header(stbi__jpeg *z, int scan) {
                 stbi__malloc_mad3(z->img_comp[i].w2, z->img_comp[i].h2, sizeof(short), 15);
             if (z->img_comp[i].raw_coeff == NULL)
                 return stbi__free_jpeg_components(z, i + 1, stbi__err("outofmem", "Out of memory"));
-            z->img_comp[i].coeff = (short *)(((size_t)z->img_comp[i].raw_coeff + 15) & ~15);
+            z->img_comp[i].coeff =
+                (short *)(((uintptr_t)z->img_comp[i].raw_coeff + 15) & ~(uintptr_t)15);
         }
     }
     return 1;

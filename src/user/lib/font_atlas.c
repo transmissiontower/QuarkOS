@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/lib/font_atlas.c - TrueType font rasterization and glyph atlas cache
- */
 #include "user/lib/font_atlas.h"
 #include "user/lib/libapi.h"
 #include "lib/stdlib.h"
@@ -47,15 +44,6 @@ typedef struct {
 } CGlyph;
 static CGlyph g_cache[CACHE_SZ];
 static int g_cache_sz_used = DEFAULT_SIZE;
-
-static void cache_flush(void) {
-    for (int i = 0; i < CACHE_SZ; i++) {
-        if (g_cache[i].bm) {
-            free(g_cache[i].bm);
-            g_cache[i].bm = 0;
-        }
-    }
-}
 
 static CGlyph *glyph_get(uint32_t cp, int size) {
     float sc = stbtt_ScaleForPixelHeight(&g_ttf, (float)size);
@@ -324,11 +312,10 @@ void draw_string_ex(gfx_context_t *ctx, int x, int y, const char *str, uint32_t 
     if (!str)
         return;
     float sc = g_ttf_ready ? stbtt_ScaleForPixelHeight(&g_ttf, (float)size) : 0;
-    int asc_px = 0, lh = size + 2;
+    int lh = size + 2;
     if (g_ttf_ready) {
         int asc, desc, lg;
         stbtt_GetFontVMetrics(&g_ttf, &asc, &desc, &lg);
-        asc_px = (int)(asc * sc + 0.5f);
         lh = (int)((asc - desc + lg) * sc + 0.5f);
     }
     int start_x = x;

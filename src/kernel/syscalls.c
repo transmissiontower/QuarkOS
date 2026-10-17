@@ -1,23 +1,15 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/kernel/syscalls.c - System call dispatcher and handler implementations
- */
 #include "kernel/syscalls.h"
 #include "kernel/klog.h"
 #include "drivers/GUI/framebuffer.h"
-#include "drivers/acpi.h"
-#include "drivers/pcspk.h"
 #include "drivers/rtc.h"
-#include "drivers/sb16.h"
 #include "drivers/timer.h"
 #include "kernel/ipc.h"
 #include "kernel/process.h"
 #include "lib/stdlib.h"
 #include "mm/memory.h"
 #include "util/util.h"
-#if defined(__aarch64__)
 #include "arch/aarch64/platform.h"
-#endif
 extern uint32_t total_alloc;
 extern uint32_t total_phys_pages;
 extern uint32_t k_font_phys_addr;
@@ -52,14 +44,6 @@ static int is_ptr_safe(const void *ptr, uint32_t size) {
     if (addr >= KERNEL_START || (addr + size) > KERNEL_START || (addr + size) < addr)
         return 0;
     return 1;
-}
-int sys_grant_io_privilege(int pid, uint32_t mask) {
-    process_t *p = k_proc_find_by_id(pid);
-    if (p) {
-        p->io_privilege_mask |= mask;
-        return 0;
-    }
-    return -1;
 }
 int sys_set_server_pid(int type, int pid) {
     if (type == 0)
@@ -148,7 +132,7 @@ int sys_map_fb(fb_info_t *user_info) {
     user_info->height = fb_height;
     user_info->pitch = fb_pitch;
     user_info->bpp = fb_bpp;
-    user_info->buffer = (void *)(virt_start + offset);
+    user_info->buffer = (void *)(uintptr_t)(virt_start + offset);
     return 0;
 }
 static void ipc_enqueue(process_t *dest, message_t *msg) {
@@ -283,44 +267,13 @@ int sys_map_font_atlas(uint32_t *virt_addr_out) {
     for (uint32_t i = 0; i < font_pages; i++) {
         uint32_t addr = base + i * 4096;
         uint32_t phys;
-#if defined(__arm__) || defined(__aarch64__)
         phys = mm_virt_to_phys(addr) & ~0xFFFu;
-#else
-        {
-            uint32_t pd_idx = addr >> 22;
-            uint32_t pt_idx = (addr >> 12) & 0x3FF;
-            uint32_t *pt = (uint32_t *)(0xFFC00000 + pd_idx * 4096);
-            phys = pt[pt_idx] & ~0xFFFu;
-        }
-#endif
         if (!phys)
             continue;
         mm_vmm_map_page(virt_start + i * 4096, phys,
                         PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     }
     *virt_addr_out = virt_start + ((uint32_t)(uintptr_t)k_font_virt_addr & 0xFFFu);
-    return 0;
-}
-int sys_port_io(int port, int val, int type) {
-    if (!(current_process->io_privilege_mask & 0x03))
-        return -1;
-    switch (type) {
-    case 0:
-        return (int)inb(port);
-    case 1:
-        outb(port, (uint8_t)val);
-        break;
-    case 2:
-        return (int)inw(port);
-    case 3:
-        outw(port, (uint16_t)val);
-        break;
-    case 4:
-        return (int)inl((uint16_t)port);
-    case 5:
-        outl((uint16_t)port, (uint32_t)val);
-        break;
-    }
     return 0;
 }
 int sys_map_icons_atlas(uint32_t *virt_addr_out) {
@@ -420,11 +373,10 @@ int sys_get_time(Time *user_time) {
     return 0;
 }
 int sys_power_action(int action) {
-    if (action == 0) {
-        acpi_shutdown();
-    } else if (action == 1) {
-        acpi_reboot();
-    }
+    if (action == 0)
+        arm_psci_system_off();
+    if (action == 1)
+        arm_psci_system_reset();
     return -1;
 }
 int sys_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu) {
@@ -448,15 +400,10 @@ int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out) {
         return -1;
     for (uint32_t i = 0; i < pages; i++) {
         uint32_t addr = page_base + i * 4096;
-        uint32_t pd_idx = addr >> 22;
-        uint32_t pt_idx = (addr >> 12) & 0x3FF;
-        uint32_t *pd = REC_PAGEDIR;
-        if (!(pd[pd_idx] & PAGE_FLAG_PRESENT))
+        uint32_t phys = mm_virt_to_phys(addr);
+        if (!phys)
             return -1;
-        uint32_t *pt = Rec_PAGEDIR(pd_idx);
-        if (!(pt[pt_idx] & PAGE_FLAG_PRESENT))
-            return -1;
-        out[i] = pt[pt_idx] & 0xFFFFF000;
+        out[i] = phys & 0xFFFFF000;
     }
     return (int)pages;
 }
@@ -801,75 +748,61 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         regs->eax = sys_sleep(regs->ebx);
         break;
     case 9:
-        regs->eax = sys_spawn((void *)regs->ebx, regs->ecx);
+        regs->eax = sys_spawn((void *)(uintptr_t)regs->ebx, regs->ecx);
         break;
     case 11:
-        regs->eax = sys_map_fb((fb_info_t *)regs->ebx);
+        regs->eax = sys_map_fb((fb_info_t *)(uintptr_t)regs->ebx);
         break;
     case 12:
-        regs->eax = sys_ipc_recv_nb((message_t *)regs->ebx);
+        regs->eax = sys_ipc_recv_nb((message_t *)(uintptr_t)regs->ebx);
         break;
     case 13:
-        regs->eax = sys_ipc_send(regs->ebx, (message_t *)regs->ecx);
+        regs->eax = sys_ipc_send(regs->ebx, (message_t *)(uintptr_t)regs->ecx);
         break;
     case 14:
-        regs->eax = sys_ipc_recv((message_t *)regs->ebx);
+        regs->eax = sys_ipc_recv((message_t *)(uintptr_t)regs->ebx);
         break;
     case 15:
-        regs->eax = sys_ipc_send_recv(regs->ebx, (message_t *)regs->ecx, (message_t *)regs->edx);
-        break;
-    case 16:
-        k_proc_wait_irq(regs->ebx);
-        regs->eax = 0;
-        break;
-    case 18:
-        regs->eax = sys_grant_io_privilege(regs->ebx, regs->ecx);
+        regs->eax = sys_ipc_send_recv(regs->ebx, (message_t *)(uintptr_t)regs->ecx,
+                                      (message_t *)(uintptr_t)regs->edx);
         break;
     case 19:
         regs->eax = sys_set_server_pid(regs->ebx, regs->ecx);
         break;
     case 20:
-        regs->eax = sys_port_io(regs->ebx, 0, 0);
-        break;
-    case 21:
-        regs->eax = sys_port_io(regs->ebx, regs->ecx, 1);
-        break;
-    case 22:
-        regs->eax = sys_port_io(regs->ebx, 0, 2);
-        break;
-    case 23:
-        regs->eax = sys_port_io(regs->ebx, regs->ecx, 3);
+        regs->eax = virtio_input_compat_read((uint16_t)regs->ebx);
         break;
     case 24:
         regs->eax = sys_kill(regs->ebx);
         break;
     case 25:
-        regs->eax = sys_map_font_atlas((uint32_t *)regs->ebx);
+        regs->eax = sys_map_font_atlas((uint32_t *)(uintptr_t)regs->ebx);
         break;
     case 26:
         regs->eax = sys_sbrk(regs->ebx);
         break;
     case 32:
-        regs->eax = sys_map_icons_atlas((uint32_t *)regs->ebx);
+        regs->eax = sys_map_icons_atlas((uint32_t *)(uintptr_t)regs->ebx);
         break;
     case 33:
-        regs->eax = sys_map_wallpaper((uint32_t *)regs->ebx);
+        regs->eax = sys_map_wallpaper((uint32_t *)(uintptr_t)regs->ebx);
         break;
     case 35:
-        regs->eax = sys_get_vmap((vmap_region_t *)regs->ebx);
+        regs->eax = sys_get_vmap((vmap_region_t *)(uintptr_t)regs->ebx);
         break;
     case 36:
-        regs->eax = sys_get_time((Time *)regs->ebx);
+        regs->eax = sys_get_time((Time *)(uintptr_t)regs->ebx);
         break;
     case 37:
         regs->eax =
-            sys_get_stats((uint32_t *)regs->ebx, (uint32_t *)regs->ecx, (uint32_t *)regs->edx);
+            sys_get_stats((uint32_t *)(uintptr_t)regs->ebx, (uint32_t *)(uintptr_t)regs->ecx,
+                          (uint32_t *)(uintptr_t)regs->edx);
         break;
     case 40:
-        regs->eax = sys_get_procs((process_info_t *)regs->ebx, regs->ecx);
+        regs->eax = sys_get_procs((process_info_t *)(uintptr_t)regs->ebx, regs->ecx);
         break;
     case 41:
-        regs->eax = sys_set_proc_name(regs->ebx, (const char *)regs->ecx);
+        regs->eax = sys_set_proc_name(regs->ebx, (const char *)(uintptr_t)regs->ecx);
         break;
     case 45:
         regs->eax = sys_power_action(regs->ebx);
@@ -878,102 +811,21 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         regs->eax = sys_get_server_pid(regs->ebx);
         break;
     case 47:
-        regs->eax = sys_trigger_panic((const char *)regs->ebx);
+        regs->eax = sys_trigger_panic((const char *)(uintptr_t)regs->ebx);
         break;
     case 48:
         k_scheduler_yield();
         regs->eax = 0;
         break;
-    case 50:
-        drv_pcspk_play(regs->ebx);
-        regs->eax = 0;
-        break;
-    case 51:
-        drv_pcspk_stop();
-        regs->eax = 0;
-        break;
-    case 52:
-        drv_pcspk_pwm_start((const uint8_t *)regs->ebx, (uint32_t)regs->ecx, (uint32_t)regs->edx);
-        regs->eax = 0;
-        break;
-    case 53:
-        regs->eax = drv_pcspk_pwm_ready();
-        break;
-    case 54: {
-#if defined(__arm__) || defined(__aarch64__)
-
-        regs->eax = -1;
-        break;
-#else
-        if (!(current_process->io_privilege_mask & IO_PRIV_ATA)) {
-            regs->eax = -1;
-            break;
-        }
-        uint32_t lba = regs->ebx;
-        uint32_t count = regs->ecx;
-        uint16_t *buf = (uint16_t *)regs->edx;
-        if (!buf || count == 0 || count > 255) {
-            regs->eax = -1;
-            break;
-        }
-        if (!is_ptr_safe(buf, count * 512)) {
-            regs->eax = -1;
-            break;
-        }
-#define ATA_SR 0x1F7
-#define ATA_DH 0x1F6
-#define ATA_SC 0x1F2
-#define ATA_LB0 0x1F3
-#define ATA_LB1 0x1F4
-#define ATA_LB2 0x1F5
-#define ATA_CMD 0x1F7
-#define ATA_DAT 0x1F0
-        uint8_t slave_mask_saved = inb(0xA1);
-        outb(0xA1, slave_mask_saved | 0x40);
-        for (int t = 0; t < 100000; t++) {
-            if (!(inb(ATA_SR) & 0x80))
-                break;
-        }
-        outb(ATA_DH, 0xE0 | ((lba >> 24) & 0x0F));
-        outb(0x1F1, 0x00);
-        outb(ATA_SC, (uint8_t)count);
-        outb(ATA_LB0, (uint8_t)(lba & 0xFF));
-        outb(ATA_LB1, (uint8_t)((lba >> 8) & 0xFF));
-        outb(ATA_LB2, (uint8_t)((lba >> 16) & 0xFF));
-        outb(ATA_CMD, 0x20);
-        int ok = 1;
-        for (uint32_t s = 0; s < count; s++) {
-            for (int t = 0; t < 100000; t++) {
-                uint8_t st = inb(ATA_SR);
-                if (st & 0x08)
-                    break;
-                if (st & 0x01) {
-                    ok = 0;
-                    break;
-                }
-            }
-            if (!ok)
-                break;
-            uint16_t *dst = buf + s * 256;
-            asm volatile("rep insw" : "+D"(dst) : "c"(256), "d"(ATA_DAT) : "memory");
-            inb(ATA_SR);
-        }
-        outb(0xA1, slave_mask_saved);
-        asm volatile("sti");
-        k_scheduler_yield();
-        asm volatile("cli");
-        regs->eax = ok ? 0 : -1;
-        break;
-#endif
-    }
     case 55:
         regs->eax = current_process->pid;
         break;
     case 56:
-        regs->eax = (uint32_t)sys_virt_to_phys_list(regs->ebx, regs->ecx, (uint32_t *)regs->edx);
+        regs->eax = (uint32_t)sys_virt_to_phys_list(regs->ebx, regs->ecx,
+                                                    (uint32_t *)(uintptr_t)regs->edx);
         break;
     case 57:
-        regs->eax = sys_map_phys_list((uint32_t *)regs->ebx, regs->ecx);
+        regs->eax = sys_map_phys_list((uint32_t *)(uintptr_t)regs->ebx, regs->ecx);
         break;
     case 58: {
         int src_pid = (int)regs->ebx;
@@ -997,8 +849,6 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         }
         uint32_t virt_start = current_process->shared_virt_bump;
         int ok = 1;
-#if defined(__aarch64__)
-
         uint64_t *src_l1 = (uint64_t *)(uintptr_t)(src->pd_phys + 0x80000000U);
         for (uint32_t i = 0; i < page_count && ok; i++) {
             uint32_t addr = page_base + i * 4096;
@@ -1029,61 +879,6 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
                             PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER |
                                 PAGE_FLAG_SHARED);
         }
-#elif defined(__arm__)
-
-        uint32_t *src_l1 = (uint32_t *)(uintptr_t)(src->pd_phys + 0x80000000U);
-        for (uint32_t i = 0; i < page_count && ok; i++) {
-            uint32_t addr = page_base + i * 4096;
-            uint32_t l1_idx = addr >> 20;
-            uint32_t l2_idx = (addr >> 12) & 0xFF;
-            uint32_t l1e = src_l1[l1_idx];
-            if ((l1e & 0x3) != 0x01) {
-                ok = 0;
-                break;
-            }
-            uint32_t l2_phys = l1e & 0xFFFFFC00;
-            uint32_t *l2 = (uint32_t *)(uintptr_t)(l2_phys + 0x80000000U);
-            uint32_t l2e = l2[l2_idx];
-            if (!(l2e & 0x2)) {
-                ok = 0;
-                break;
-            }
-            uint32_t phys = l2e & 0xFFFFF000;
-            mm_vmm_map_page(virt_start + i * 4096, phys,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER |
-                                PAGE_FLAG_SHARED);
-        }
-#else
-        uint32_t saved_cr3 = current_process->pd_phys;
-        asm volatile("mov %0, %%cr3" ::"r"(src->pd_phys) : "memory");
-        asm volatile("mov %0, %%cr3" ::"r"(saved_cr3) : "memory");
-        uint32_t *src_pd_virt = 0;
-        uint32_t temp_pd_addr = 0xFF800000;
-        mm_vmm_map_page(temp_pd_addr, src->pd_phys, PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
-        src_pd_virt = (uint32_t *)temp_pd_addr;
-        for (uint32_t i = 0; i < page_count && ok; i++) {
-            uint32_t addr = page_base + i * 4096;
-            uint32_t pd_idx = addr >> 22;
-            uint32_t pt_idx = (addr >> 12) & 0x3FF;
-            uint32_t pde = src_pd_virt[pd_idx];
-            if (!(pde & PAGE_FLAG_PRESENT)) {
-                ok = 0;
-                break;
-            }
-            uint32_t temp_pt_addr = 0xFF801000;
-            mm_vmm_map_page(temp_pt_addr, pde & ~0xFFF, PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE);
-            uint32_t *src_pt_virt = (uint32_t *)temp_pt_addr;
-            uint32_t pte = src_pt_virt[pt_idx];
-            if (!(pte & PAGE_FLAG_PRESENT)) {
-                ok = 0;
-                break;
-            }
-            uint32_t phys = pte & ~0xFFFu;
-            mm_vmm_map_page(virt_start + i * 4096, phys,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER |
-                                PAGE_FLAG_SHARED);
-        }
-#endif
         if (ok) {
             current_process->shared_virt_bump += page_count * 4096;
             regs->eax = virt_start + offset;
@@ -1092,49 +887,22 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         }
         break;
     }
-    case 59:
-        regs->eax = sys_port_io(regs->ebx, 0, 4);
-        break;
-    case 60:
-        regs->eax = sys_port_io(regs->ebx, regs->ecx, 5);
-        break;
-    case 61:
-        regs->eax = (uint32_t)drv_sb16_init();
-        break;
-    case 62: {
-        void *buf = (void *)regs->ebx;
-        uint32_t len = regs->ecx;
-        uint32_t rate = regs->edx & 0xFFFF;
-        uint8_t ch = (uint8_t)((regs->edx >> 16) & 0xFF);
-        uint8_t bits = (uint8_t)((regs->edx >> 24) & 0xFF);
-        if (ch == 0)
-            ch = 1;
-        if (bits == 0)
-            bits = 16;
-        if (!is_ptr_safe(buf, len)) {
-            regs->eax = (uint32_t)-1;
-            break;
-        }
-        regs->eax = (uint32_t)drv_sb16_play(buf, len, rate, ch, bits);
-        break;
-    }
-    case 63:
-        regs->eax = (uint32_t)drv_sb16_ready();
-        break;
     case 64:
         regs->eax = (uint32_t)sys_waitpid((int)regs->ebx);
         break;
     case 65:
-        regs->eax = (uint32_t)sys_pipe_create((const char *)regs->ebx);
+        regs->eax = (uint32_t)sys_pipe_create((const char *)(uintptr_t)regs->ebx);
         break;
     case 66:
-        regs->eax = (uint32_t)sys_pipe_open((const char *)regs->ebx);
+        regs->eax = (uint32_t)sys_pipe_open((const char *)(uintptr_t)regs->ebx);
         break;
     case 67:
-        regs->eax = (uint32_t)sys_pipe_write((int)regs->ebx, (const uint8_t *)regs->ecx, regs->edx);
+        regs->eax = (uint32_t)sys_pipe_write((int)regs->ebx,
+                                             (const uint8_t *)(uintptr_t)regs->ecx, regs->edx);
         break;
     case 68:
-        regs->eax = (uint32_t)sys_pipe_read((int)regs->ebx, (uint8_t *)regs->ecx, regs->edx);
+        regs->eax = (uint32_t)sys_pipe_read((int)regs->ebx, (uint8_t *)(uintptr_t)regs->ecx,
+                                            regs->edx);
         break;
     case 69:
         regs->eax = (uint32_t)sys_pipe_close((int)regs->ebx);
@@ -1143,24 +911,22 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         regs->eax = (uint32_t)sys_set_alarm(regs->ebx);
         break;
     case 71:
-        regs->eax = (uint32_t)sys_setenv((const char *)regs->ebx);
+        regs->eax = (uint32_t)sys_setenv((const char *)(uintptr_t)regs->ebx);
         break;
     case 72:
-        regs->eax = (uint32_t)sys_getenv((const char *)regs->ebx, (char *)regs->ecx, regs->edx);
+        regs->eax = (uint32_t)sys_getenv((const char *)(uintptr_t)regs->ebx,
+                                         (char *)(uintptr_t)regs->ecx, regs->edx);
         break;
     case 73:
         regs->eax = (uint32_t)sys_signal_send((int)regs->ebx, (int)regs->ecx);
         break;
     case 74:
-#if defined(__arm__) || defined(__aarch64__)
     {
         extern void virtio_gpu_flush(void);
         virtio_gpu_flush();
     }
-#endif
         regs->eax = 0;
         break;
-#if defined(__aarch64__)
         static int blk_active_disk = 0;
     case 86: {
         blk_active_disk = (int)regs->ebx;
@@ -1323,7 +1089,6 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         regs->eax = ok ? 0 : (uint32_t)-1;
         break;
     }
-#endif
     case 90: {
         extern void arm_uart_puts(const char *);
         const char *msg = (const char *)(uintptr_t)regs->ebx;

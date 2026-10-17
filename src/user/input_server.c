@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/user/input_server.c - PS/2 keyboard and mouse input driver server
+ * src/user/input_server.c - Input event service using VirtIO-backed scan-code streams
  */
 #include "gfx/events.h"
 #include "kernel/ipc.h"
@@ -237,18 +237,18 @@ static int resolve_compositor_pid(void) {
 }
 void main() {
     init_mouse_state();
-    while (qk_hw_inb(PS2_STATUS) & ST_OUTPUT_FULL)
-        qk_hw_inb(PS2_DATA);
+    while (qk_input_compat_read(PS2_STATUS) & ST_OUTPUT_FULL)
+        qk_input_compat_read(PS2_DATA);
     int comp_pid = resolve_compositor_pid();
     int comp_check_counter = 0;
     int idle_polls = 0;
     while (1) {
-        uint8_t status = qk_hw_inb(PS2_STATUS);
+        uint8_t status = qk_input_compat_read(PS2_STATUS);
         if (status & ST_OUTPUT_FULL) {
             idle_polls = 0;
             int bytes_this_batch = 0;
             do {
-                uint8_t data = qk_hw_inb(PS2_DATA);
+                uint8_t data = qk_input_compat_read(PS2_DATA);
                 if (status & ST_FROM_MOUSE)
                     handle_mouse_byte(data);
                 else
@@ -259,7 +259,7 @@ void main() {
                     qk_yield();
                     break;
                 }
-                status = qk_hw_inb(PS2_STATUS);
+                status = qk_input_compat_read(PS2_STATUS);
             } while (status & ST_OUTPUT_FULL);
         } else {
             flush_mouse_events(comp_pid);

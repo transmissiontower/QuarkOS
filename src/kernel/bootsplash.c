@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/kernel/bootsplash.c - Boot log collection, CPU detection, and animated splash screen
- */
 #include "kernel/bootsplash.h"
 #include "drivers/GUI/framebuffer.h"
 #include "gfx/bmp.h"
@@ -36,113 +33,25 @@ static uint64_t boot_log_time_us = 0;
 static bool boot_time_ready = false;
 static uint64_t boot_time_tsc_start = 0;
 static uint64_t boot_time_ticks_per_us = 0;
-static bool boot_cpuid_cached = false;
-static uint32_t boot_cpuid_max_basic = 0;
-static uint32_t boot_cpuid_max_ext = 0;
+static bool boot_cpu_identified = false;
 static char boot_cpu_vendor[13];
 static char boot_cpu_brand[48];
 static bool boot_cpu_brand_valid = false;
 static K_AtlasFont k_boot_font;
 static void boot_log_line_append(char *dest, const char *text);
 static inline uint64_t boot_read_tsc(void);
-static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uint64_t multiplier);
-static uint64_t boot_extract_freq_value(const char *brand, const char *unit_pos,
-                                        uint64_t multiplier);
-static void boot_cpuid_cache(void);
-static uint64_t boot_brand_freq_from_string(const char *brand);
 static void boot_time_ensure_initialized(void);
 static uint64_t boot_time_now_us(void);
 static uint64_t boot_log_next_timestamp(void);
-static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t *max_ext);
-static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext);
-static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t *b, uint32_t *c,
-                         uint32_t *d);
 static inline uint64_t boot_read_tsc(void) {
-#if defined(__aarch64__)
-
     uint64_t val;
     asm volatile("mrs %0, cntvct_el0" : "=r"(val));
     return val;
-#elif defined(__arm__)
-    uint32_t val;
-    asm volatile("mrc p15, 0, %0, c14, c0, 0" : "=r"(val));
-    return (uint64_t)val;
-#else
-    uint32_t lo, hi;
-    asm volatile("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)hi << 32) | lo;
-#endif
 }
-static uint64_t boot_parse_decimal_to_hz(const char *start, const char *end, uint64_t multiplier) {
-    if (!start || !end || start >= end)
-        return 0;
-    while (start < end && *start == ' ')
-        start++;
-    bool saw_digit = false;
-    uint64_t integer = 0;
-    while (start < end && *start >= '0' && *start <= '9') {
-        saw_digit = true;
-        integer = integer * 10 + (uint64_t)(*start - '0');
-        start++;
-    }
-    uint64_t frac = 0;
-    uint64_t scale = 1;
-    if (start < end && *start == '.') {
-        start++;
-        while (start < end && *start >= '0' && *start <= '9' && scale < 1000000ULL) {
-            saw_digit = true;
-            frac = frac * 10 + (uint64_t)(*start - '0');
-            scale *= 10;
-            start++;
-        }
-    }
-    if (!saw_digit)
-        return 0;
-    uint64_t hz = integer * multiplier;
-    if (scale > 1)
-        hz += (frac * multiplier) / scale;
-    return hz;
-}
-static uint64_t boot_extract_freq_value(const char *brand, const char *unit_pos,
-                                        uint64_t multiplier) {
-    if (!brand || !unit_pos)
-        return 0;
-    const char *end = unit_pos;
-    while (end > brand && (*(end - 1) == ' ' || *(end - 1) == '@'))
-        end--;
-    const char *start = end;
-    while (start > brand) {
-        char c = *(start - 1);
-        if ((c >= '0' && c <= '9') || c == '.' || c == ' ') {
-            start--;
-        } else {
-            break;
-        }
-    }
-    return boot_parse_decimal_to_hz(start, end, multiplier);
-}
-static uint64_t boot_brand_freq_from_string(const char *brand) {
-    if (!brand)
-        return 0;
-    const char *unit = strstr(brand, "GHz");
-    if (unit) {
-        uint64_t hz = boot_extract_freq_value(brand, unit, 1000000000ULL);
-        if (hz)
-            return hz;
-    }
-    unit = strstr(brand, "MHz");
-    if (unit) {
-        uint64_t hz = boot_extract_freq_value(brand, unit, 1000000ULL);
-        if (hz)
-            return hz;
-    }
-    return 0;
-}
-static void boot_cpuid_cache(void) {
-    if (boot_cpuid_cached)
-        return;
-#if defined(__aarch64__)
 
+static void boot_cpu_identify(void) {
+    if (boot_cpu_identified)
+        return;
     {
         uint64_t midr;
         asm volatile("mrs %0, midr_el1" : "=r"(midr));
@@ -317,54 +226,19 @@ static void boot_cpuid_cache(void) {
         boot_cpu_brand[bi] = 0;
         boot_cpu_brand_valid = true;
 
-        boot_cpuid_max_basic = 0;
-        boot_cpuid_max_ext = 0;
     }
-#else
-    cpuid_get_vendor(boot_cpu_vendor, &boot_cpuid_max_basic, &boot_cpuid_max_ext);
-    boot_cpu_brand_valid =
-        boot_detect_cpu_brand(boot_cpu_brand, sizeof(boot_cpu_brand), boot_cpuid_max_ext);
-#endif
-    boot_cpuid_cached = true;
+    boot_cpu_identified = true;
 }
 static void boot_time_ensure_initialized(void) {
     if (boot_time_ready)
         return;
-    boot_cpuid_cache();
+    boot_cpu_identify();
     uint64_t freq_hz = 0;
-#if defined(__aarch64__)
-
     {
         uint64_t cntfrq;
         asm volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));
         freq_hz = cntfrq;
     }
-#elif defined(__arm__)
-    {
-        uint32_t cntfrq;
-        asm volatile("mrc p15, 0, %0, c14, c0, 0" : "=r"(cntfrq));
-        freq_hz = (uint64_t)cntfrq;
-    }
-#else
-    if (boot_cpuid_max_basic >= 0x15) {
-        uint32_t eax, ebx, ecx, edx;
-        cpuid(0x15u, 0, &eax, &ebx, &ecx, &edx);
-        if (eax != 0 && ebx != 0) {
-            uint64_t crystal = ecx ? (uint64_t)ecx : 24000000ULL;
-            freq_hz = (crystal * (uint64_t)ebx) / (uint64_t)eax;
-        }
-    }
-    if (freq_hz == 0 && boot_cpuid_max_basic >= 0x16) {
-        uint32_t eax, ebx, ecx, edx;
-        cpuid(0x16u, 0, &eax, &ebx, &ecx, &edx);
-        if (eax != 0) {
-            freq_hz = (uint64_t)eax * 1000000ULL;
-        }
-    }
-    if (freq_hz == 0 && boot_cpu_brand_valid) {
-        freq_hz = boot_brand_freq_from_string(boot_cpu_brand);
-    }
-#endif
     if (freq_hz == 0)
         freq_hz = 1000000000ULL;
     boot_time_ticks_per_us = freq_hz / 1000000ULL;
@@ -520,157 +394,10 @@ void boot_log_add_hex(const char *label, uint32_t value) {
     boot_log_line_append(line, hex);
     boot_log_add(line);
 }
-static bool boot_detect_cpu_brand(char *out, uint32_t len, uint32_t max_ext) {
-    if (max_ext < 0x80000004u || len < 48) {
-        if (len)
-            out[0] = '\0';
-        return false;
-    }
-    uint32_t eax, ebx, ecx, edx;
-    for (uint32_t i = 0; i < 3; i++) {
-        cpuid(0x80000002u + i, 0, &eax, &ebx, &ecx, &edx);
-        memcpy(out + i * 16 + 0, &eax, 4);
-        memcpy(out + i * 16 + 4, &ebx, 4);
-        memcpy(out + i * 16 + 8, &ecx, 4);
-        memcpy(out + i * 16 + 12, &edx, 4);
-    }
-    out[47] = '\0';
-    return true;
-}
-static void boot_log_add_cpu_signature(void) {
-    uint32_t eax, ebx, ecx, edx;
-    cpuid(1, 0, &eax, &ebx, &ecx, &edx);
-    uint32_t family = (eax >> 8) & 0xF;
-    uint32_t model = (eax >> 4) & 0xF;
-    uint32_t stepping = eax & 0xF;
-    uint32_t ext_family = (eax >> 20) & 0xFF;
-    uint32_t ext_model = (eax >> 16) & 0xF;
-    if (family == 0xF)
-        family += ext_family;
-    if (family == 0x6 || family == 0xF)
-        model |= (ext_model << 4);
-    char line[BOOT_LOG_LINE_LEN];
-    char number[16];
-    line[0] = '\0';
-    boot_log_line_append(line, "CPU ID: family ");
-    int_to_str((int)family, number, 0);
-    boot_log_line_append(line, number);
-    boot_log_line_append(line, ", model ");
-    int_to_str((int)model, number, 0);
-    boot_log_line_append(line, number);
-    boot_log_line_append(line, ", stepping ");
-    int_to_str((int)stepping, number, 0);
-    boot_log_line_append(line, number);
-    boot_log_add(line);
-}
-static void boot_log_add_memory_info(struct multiboot_info *boot_info) {
-    if (!boot_info || !(boot_info->flags & 0x1))
+static void boot_log_add_memory_info(const boot_info_t *boot_info) {
+    if (!boot_info)
         return;
-    char line[BOOT_LOG_LINE_LEN];
-    char number[16];
-    line[0] = '\0';
-    boot_log_line_append(line, "Memory: lower ");
-    int_to_str((int)boot_info->mem_lower, number, 0);
-    boot_log_line_append(line, number);
-    boot_log_line_append(line, " KB, upper ");
-    int_to_str((int)boot_info->mem_upper, number, 0);
-    boot_log_line_append(line, number);
-    boot_log_line_append(line, " KB");
-    boot_log_add(line);
-}
-static void boot_log_add_cpu_features(uint32_t max_basic, uint32_t max_ext) {
-    if (max_basic < 1)
-        return;
-    uint32_t eax1, ebx1, ecx1, edx1;
-    cpuid(1, 0, &eax1, &ebx1, &ecx1, &edx1);
-    uint32_t ecx8 = 0, edx8 = 0;
-    if (max_ext >= 0x80000001u) {
-        uint32_t eax8, ebx8;
-        cpuid(0x80000001u, 0, &eax8, &ebx8, &ecx8, &edx8);
-    }
-    typedef struct {
-        const char *name;
-        uint8_t reg;
-        uint8_t bit;
-    } feature_bit_t;
-    enum { REG_ECX1, REG_EDX1, REG_ECX8, REG_EDX8 };
-    static const feature_bit_t feature_bits[] = {
-        {"MMX", REG_EDX1, 23},  {"SSE", REG_EDX1, 25},    {"SSE2", REG_EDX1, 26},
-        {"PAE", REG_EDX1, 6},   {"APIC", REG_EDX1, 9},    {"SSE3", REG_ECX1, 0},
-        {"SSSE3", REG_ECX1, 9}, {"SSE4.1", REG_ECX1, 19}, {"SSE4.2", REG_ECX1, 20},
-        {"AVX", REG_ECX1, 28},  {"RDRAND", REG_ECX1, 30}, {"VMX", REG_ECX1, 5},
-        {"NX", REG_EDX8, 20},   {"SVM", REG_ECX8, 2},
-    };
-    char line[BOOT_LOG_LINE_LEN];
-    line[0] = '\0';
-    boot_log_line_append(line, "CPU Features:");
-    int count = 0;
-    for (uint32_t i = 0; i < sizeof(feature_bits) / sizeof(feature_bits[0]); i++) {
-        const feature_bit_t *fb = &feature_bits[i];
-        bool present = false;
-        switch (fb->reg) {
-        case REG_ECX1:
-            present = (ecx1 & (1u << fb->bit)) != 0;
-            break;
-        case REG_EDX1:
-            present = (edx1 & (1u << fb->bit)) != 0;
-            break;
-        case REG_ECX8:
-            present = (ecx8 & (1u << fb->bit)) != 0;
-            break;
-        case REG_EDX8:
-            present = (edx8 & (1u << fb->bit)) != 0;
-            break;
-        }
-        if (present) {
-            boot_log_line_append(line, " ");
-            boot_log_line_append(line, fb->name);
-            count++;
-        }
-    }
-    if (count == 0)
-        boot_log_line_append(line, " none");
-    boot_log_add(line);
-    char virt_line[BOOT_LOG_LINE_LEN];
-    virt_line[0] = '\0';
-    boot_log_line_append(virt_line, "Virtualization: ");
-    bool virt_flag = false;
-    if (ecx1 & (1u << 5)) {
-        boot_log_line_append(virt_line, "VMX");
-        virt_flag = true;
-    }
-    if (max_ext >= 0x80000001u && ((ecx8 & (1u << 2)) != 0)) {
-        if (virt_flag)
-            boot_log_line_append(virt_line, " ");
-        boot_log_line_append(virt_line, "SVM");
-        virt_flag = true;
-    }
-    if (!virt_flag)
-        boot_log_line_append(virt_line, "none");
-    boot_log_add(virt_line);
-    if (ecx1 & (1u << 31)) {
-        char hv[13];
-        if (max_basic >= 0x40000000u) {
-            uint32_t eaxh, ebxh, ecxh, edxh;
-            cpuid(0x40000000u, 0, &eaxh, &ebxh, &ecxh, &edxh);
-            memcpy(hv + 0, &ebxh, 4);
-            memcpy(hv + 4, &ecxh, 4);
-            memcpy(hv + 8, &edxh, 4);
-            hv[12] = '\0';
-        } else {
-            hv[0] = '\0';
-        }
-        char hv_line[BOOT_LOG_LINE_LEN];
-        hv_line[0] = '\0';
-        boot_log_line_append(hv_line, "Hypervisor: ");
-        if (hv[0])
-            boot_log_line_append(hv_line, hv);
-        else
-            boot_log_line_append(hv_line, "present");
-        boot_log_add(hv_line);
-    } else {
-        boot_log_add("Hypervisor: none detected");
-    }
+    boot_log_add_dec("RAM: ", boot_info->ram_size / (1024 * 1024), " MB");
 }
 void boot_log_add_framebuffer_info(void) {
     if (fb_width == 0 || fb_height == 0)
@@ -715,28 +442,10 @@ void boot_log_add_rtc_line(const Time *t) {
     boot_log_line_append(line, day);
     boot_log_add(line);
 }
-void boot_log_add_acpi_capabilities(bool power_button, bool reset_capable_flag) {
-    char line[BOOT_LOG_LINE_LEN];
-    line[0] = '\0';
-    boot_log_line_append(line, "ACPI S5 poweroff: ");
-    boot_log_line_append(line, power_button ? "available" : "missing");
-    boot_log_add(line);
-    char reset_line[BOOT_LOG_LINE_LEN];
-    reset_line[0] = '\0';
-    boot_log_line_append(reset_line, "ACPI reset register: ");
-    boot_log_line_append(reset_line, reset_capable_flag ? "available" : "missing");
-    boot_log_add(reset_line);
-}
-void boot_log_record_boot_info(struct multiboot_info *boot_info) {
+void boot_log_record_boot_info(boot_info_t *boot_info) {
     boot_log_reset();
-    boot_cpuid_cache();
-#if defined(__aarch64__)
-    boot_log_add("QuarkOS 2.0 (aarch64) booting...");
-#elif defined(__arm__)
-    boot_log_add("QuarkOS 2.0 (arm32) booting...");
-#else
-    boot_log_add("Blanket core 0.3.1 (x86_32) booting...");
-#endif
+    boot_cpu_identify();
+    boot_log_add("Sodium (AArch64) booting...");
     boot_log_add_pair("CPU Vendor: ", boot_cpu_vendor);
     if (boot_cpu_brand_valid) {
         boot_log_add_pair("Detected CPU: ", boot_cpu_brand);
@@ -748,8 +457,6 @@ void boot_log_record_boot_info(struct multiboot_info *boot_info) {
         boot_log_line_append(fallback, " (brand string unavailable)");
         boot_log_add(fallback);
     }
-#if defined(__aarch64__)
-
     {
         uint64_t midr;
         asm volatile("mrs %0, midr_el1" : "=r"(midr));
@@ -797,13 +504,9 @@ void boot_log_record_boot_info(struct multiboot_info *boot_info) {
         boot_log_line_append(line, " MHz");
         boot_log_add(line);
     }
-#else
-    boot_log_add_cpu_signature();
-    boot_log_add_cpu_features(boot_cpuid_max_basic, boot_cpuid_max_ext);
-#endif
     boot_log_add_memory_info(boot_info);
     if (boot_info) {
-        boot_log_add_dec("Boot modules: ", boot_info->mods_count, " loaded");
+        boot_log_add_dec("Boot modules: ", boot_info->module_count, " loaded");
     }
 }
 static void k_font_init(void *data) {
@@ -928,36 +631,6 @@ void draw_boot_splash() {
             last_line = current_line_limit;
         }
         for (volatile int d = 0; d < 200000 * delay_multiplier; d++)
-            __asm__(
-#if defined(__arm__) || defined(__aarch64__)
-                "" ::
-                    : "memory"
-#else
-                "pause"
-#endif
-            );
+            asm volatile("nop" ::: "memory");
     }
-}
-static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *a, uint32_t *b, uint32_t *c,
-                         uint32_t *d) {
-#if defined(__arm__) || defined(__aarch64__)
-    (void)leaf;
-    (void)subleaf;
-    *a = *b = *c = *d = 0;
-#else
-    asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(subleaf));
-#endif
-}
-static void cpuid_get_vendor(char vendor_out[13], uint32_t *max_basic, uint32_t *max_ext) {
-    uint32_t eax, ebx, ecx, edx;
-    cpuid(0, 0, &eax, &ebx, &ecx, &edx);
-    if (max_basic)
-        *max_basic = eax;
-    memcpy(vendor_out + 0, &ebx, 4);
-    memcpy(vendor_out + 4, &edx, 4);
-    memcpy(vendor_out + 8, &ecx, 4);
-    vendor_out[12] = '\0';
-    cpuid(0x80000000u, 0, &eax, &ebx, &ecx, &edx);
-    if (max_ext)
-        *max_ext = eax;
 }
