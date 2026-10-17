@@ -14,9 +14,9 @@ MKIMAGE ?= $(if $(wildcard build/uboot-src/tools/mkimage),build/uboot-src/tools/
 BOOT_SCRIPT = build/boot.scr
 MKFS_FAT ?= $(shell command -v mkfs.fat 2>/dev/null || { prefix=$$(brew --prefix dosfstools 2>/dev/null); if [ -n "$$prefix" ] && [ -x "$$prefix/sbin/mkfs.fat" ]; then printf '%s' "$$prefix/sbin/mkfs.fat"; else printf '%s' mkfs.fat; fi; })
 
-CFLAGS  = -ffreestanding -Wall -Wextra -O2 -g -mcpu=cortex-a57 -Isrc -MMD -MP \
+CFLAGS  = -mno-outline-atomics -ffreestanding -Wall -Wextra -O2 -g -mcpu=cortex-a57 -Isrc -MMD -MP \
            -fno-stack-protector
-USER_CFLAGS = -ffreestanding -Wall -Wextra -O2 -mcpu=cortex-a57 -mstrict-align -Isrc -MMD -MP \
+USER_CFLAGS = -mno-outline-atomics -ffreestanding -Wall -Wextra -O2 -mcpu=cortex-a57 -mstrict-align -Isrc -MMD -MP \
               -fno-stack-protector
 LIBGCC  = $(shell $(CC) -mcpu=cortex-a57 -print-libgcc-file-name)
 LDFLAGS = -T linker_aarch64.ld -nostdlib
@@ -63,6 +63,7 @@ KERNEL_OBJ = $(KERNEL_C:.c=.o) \
 
 DEPS := $(patsubst %.c,%.d,$(KERNEL_C)) $(patsubst %.c,%.d,$(wildcard src/user/*.c src/user/lib/*.c src/lib/*.c src/kernel/init.c))
 -include $(DEPS)
+
 
 all: image
 

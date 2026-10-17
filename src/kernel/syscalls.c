@@ -19,7 +19,10 @@ extern uint32_t k_icons_phys_start;
 extern uint32_t k_icons_size;
 extern uint32_t k_wallpaper_phys_addr;
 extern uint32_t k_wallpaper_size;
+static int is_ptr_safe(const void *ptr, uint32_t size);
 int sys_map_wallpaper(uint32_t *virt_addr_out) {
+    if (!is_ptr_safe(virt_addr_out, 4))
+        return -1;
     if (k_wallpaper_phys_addr == 0)
         return -1;
     uint32_t virt_start = 0x93000000;
@@ -37,13 +40,41 @@ static int storage_server_pid = -1;
 static int compositor_server_pid = -1;
 static int input_server_pid = -1;
 static int ttysh_server_pid = -1;
+#define SHARED_VIRT_LIMIT 0x90000000U
+static uint32_t kphys_list[4096];
+
 static int is_ptr_safe(const void *ptr, uint32_t size) {
     uintptr_t addr = (uintptr_t)ptr;
     if (addr < 0x1000)
         return 0;
     if (addr >= KERNEL_START || (addr + size) > KERNEL_START || (addr + size) < addr)
         return 0;
-    return 1;
+    return mm_user_range_ok((uint32_t)addr, size);
+}
+
+static int user_str_copy(char *dst, const char *src, uint32_t cap, int truncate) {
+    if (cap == 0)
+        return -1;
+    uintptr_t base = (uintptr_t)src;
+    if (base < 0x1000 || base >= KERNEL_START)
+        return -1;
+    for (uint32_t i = 0; i + 1 < cap; i++) {
+        uintptr_t a = base + i;
+        if (a >= KERNEL_START)
+            return -1;
+        if (i == 0 || (a & 0xFFF) == 0) {
+            if (!mm_user_range_ok((uint32_t)a, 1))
+                return -1;
+        }
+        char c = src[i];
+        dst[i] = c;
+        if (!c)
+            return (int)i;
+    }
+    if (!truncate)
+        return -1;
+    dst[cap - 1] = 0;
+    return (int)(cap - 1);
 }
 int sys_set_server_pid(int type, int pid) {
     if (type == 0)
@@ -66,6 +97,37 @@ int sys_get_server_pid(int type) {
     if (type == 3)
         return ttysh_server_pid;
     return -1;
+}
+static int is_server_pid(int pid) {
+    return pid >= 0 && (pid == storage_server_pid || pid == compositor_server_pid ||
+                        pid == input_server_pid || pid == ttysh_server_pid);
+}
+
+static int is_system_pid(int pid) {
+    return (pid >= 0 && pid <= 1) || is_server_pid(pid);
+}
+static int caller_is_system(void) {
+    return is_system_pid(current_process->pid);
+}
+
+static int sys_set_server_pid_user(int type, int pid) {
+    int *slot;
+    if (pid != current_process->pid)
+        return -1;
+    if (type == 0)
+        slot = &storage_server_pid;
+    else if (type == 1)
+        slot = &compositor_server_pid;
+    else if (type == 2)
+        slot = &input_server_pid;
+    else if (type == 3)
+        slot = &ttysh_server_pid;
+    else
+        return -1;
+    if (*slot >= 0 && *slot != pid && k_proc_find_by_id(*slot))
+        return -1;
+    *slot = pid;
+    return 0;
 }
 void k_notify_server_proc_exit(int pid) {
     if (compositor_server_pid < 0)
@@ -96,6 +158,8 @@ int sys_exit(int code) {
 int sys_kill(int pid) {
     if (pid <= 1)
         return -1;
+    if (is_server_pid(pid))
+        return -1; 
     KLOG_PROC(LOG_WARN, "KILL pid=%d by=%d name='%s'", pid, current_process->pid,
               current_process->name);
     k_proc_terminate(pid);
@@ -166,8 +230,6 @@ int sys_ipc_send(int dest_pid, message_t *user_msg) {
         k_scheduler_direct_switch(dest);
         return 0;
     }
-    if (dest->ipc_wait_from != -1)
-        return 0;
     if (dest->ipc_queue.count >= IPC_QUEUE_SIZE) {
         KLOG_IPC(LOG_WARN, "send: pid=%d→%d FULL (type=%d q=%d)", current_process->pid, dest_pid,
                  user_msg->type, dest->ipc_queue.count);
@@ -176,7 +238,8 @@ int sys_ipc_send(int dest_pid, message_t *user_msg) {
     KLOG_IPC(LOG_TRACE, "send: pid=%d→%d type=%d q=%d", current_process->pid, dest_pid,
              user_msg->type, dest->ipc_queue.count);
     ipc_enqueue(dest, user_msg);
-    if (dest->state == PROCESS_IPC_WAIT || dest->state == PROCESS_BLOCKED)
+    if (dest->ipc_wait_from == -1 &&
+        (dest->state == PROCESS_IPC_WAIT || dest->state == PROCESS_BLOCKED))
         dest->state = PROCESS_READY;
     return 0;
 }
@@ -193,8 +256,18 @@ int sys_ipc_send_recv(int dest_pid, message_t *send_msg, message_t *recv_msg) {
     if (dest->ipc_queue.count >= IPC_QUEUE_SIZE)
         KLOG_IPC(LOG_WARN, "sendrecv: pid=%d→%d FULL q=%d, spinning", current_process->pid,
                  dest_pid, dest->ipc_queue.count);
-    while (dest->ipc_queue.count >= IPC_QUEUE_SIZE)
+    if (dest->ipc_wait_from == current_process->pid) {
+        KLOG_IPC(LOG_WARN, "sendrecv: pid=%d→%d would deadlock", current_process->pid, dest_pid);
+        return -1;
+    }
+    for (int spins = 0; dest->ipc_queue.count >= IPC_QUEUE_SIZE; spins++) {
+        if (spins > 10000)
+            return -1;
         k_scheduler_yield();
+        dest = k_proc_find_by_id(dest_pid);
+        if (!dest)
+            return -1;
+    }
     KLOG_IPC(LOG_TRACE, "sendrecv: pid=%d→%d type=%d (wait reply)", current_process->pid, dest_pid,
              send_msg->type);
     ipc_enqueue(dest, send_msg);
@@ -212,6 +285,11 @@ int sys_ipc_send_recv(int dest_pid, message_t *send_msg, message_t *recv_msg) {
     while (!current_process->ipc_reply_ready) {
         current_process->state = PROCESS_IPC_WAIT;
         k_scheduler_yield();
+    }
+    if (current_process->ipc_reply_ready == 2) {
+        current_process->ipc_wait_from = -1;
+        current_process->ipc_reply_ready = 0;
+        return -1;
     }
     current_process->ipc_wait_from = -1;
     KLOG_IPC(LOG_TRACE, "sendrecv: pid=%d←%d reply type=%d", current_process->pid, dest_pid,
@@ -277,6 +355,8 @@ int sys_map_font_atlas(uint32_t *virt_addr_out) {
     return 0;
 }
 int sys_map_icons_atlas(uint32_t *virt_addr_out) {
+    if (!is_ptr_safe(virt_addr_out, 4))
+        return -1;
     if (k_icons_phys_start == 0)
         return -1;
     uint32_t virt_start = 0x91000000;
@@ -294,50 +374,64 @@ int sys_sbrk(uint32_t size) {
     uint32_t old_heap_end = current_process->heap_end;
     if (size == 0)
         return (int)old_heap_end;
-    if (old_heap_end + size > 0xA0000000 || old_heap_end + size < old_heap_end) {
+    uint64_t new_end64 = (uint64_t)old_heap_end + size;
+    if (new_end64 > USER_FB_VIRT_START)
         return -1;
-    }
-    uint32_t new_heap_end = old_heap_end + size;
-    uint32_t start_addr = (old_heap_end + 4095) & ~4095;
-    uint32_t end_addr = (new_heap_end + 4095) & ~4095;
-    for (uint32_t addr = start_addr; addr < end_addr; addr += 4096) {
+    uint32_t new_heap_end = (uint32_t)new_end64;
+    uint32_t start_addr = (old_heap_end + 4095) & ~4095U;
+    uint32_t end_addr = (new_heap_end + 4095) & ~4095U;
+    uint32_t addr;
+    for (addr = start_addr; addr < end_addr; addr += 4096) {
         uint32_t phys = mm_pmm_alloc_frame();
         if (!phys)
-            return -1;
+            goto fail;
+        memset((void *)(uintptr_t)(phys + 0x80000000U), 0, 4096);
         mm_vmm_map_page(addr, phys, PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER);
     }
     current_process->heap_end = new_heap_end;
     return (int)old_heap_end;
+fail:
+    for (uint32_t a = start_addr; a < addr; a += 4096) {
+        uint32_t ph = mm_user_virt_to_phys(a) & ~0xFFFU;
+        mm_vmm_unmap_page(a);
+        if (ph)
+            mm_pmm_free_frame(ph);
+    }
+    return -1;
+}
+static void vmap_set(vmap_region_t *r, uint32_t start, uint32_t end, uint32_t flags,
+                     const char *name) {
+    r->start = start;
+    r->end = end;
+    r->flags = flags;
+    uint32_t i = 0;
+    for (; i < sizeof(r->name) - 1 && name[i]; i++)
+        r->name[i] = name[i];
+    for (; i < sizeof(r->name); i++)
+        r->name[i] = 0;
 }
 int sys_get_vmap(vmap_region_t *out_regions) {
+    if (!is_ptr_safe(out_regions, 4 * sizeof(vmap_region_t)))
+        return -1;
     process_t *p = current_process;
     int i = 0;
-    out_regions[i].start = 0x400000;
-    out_regions[i].end = p->heap_end;
-    out_regions[i].flags = 0x07;
-    strncpy(out_regions[i].name, "Code/Data/Heap", 15);
-    i++;
-    out_regions[i].start = 0xAFF00000;
-    out_regions[i].end = 0xB0000000;
-    out_regions[i].flags = 0x07;
-    strncpy(out_regions[i].name, "User Stack", 15);
-    i++;
-    out_regions[i].start = 0x80000000;
-    out_regions[i].end = 0x80000000 + (fb_width * fb_height * 4);
-    out_regions[i].flags = 0x07;
-    strncpy(out_regions[i].name, "Framebuffer", 15);
-    i++;
-    out_regions[i].start = 0xC0000000;
-    out_regions[i].end = 0xFFFFFFFF;
-    out_regions[i].flags = 0x03;
-    strncpy(out_regions[i].name, "Kernel Space", 15);
-    i++;
+    vmap_set(&out_regions[i++], 0x400000, p->heap_end, 0x07, "Code/Data/Heap");
+    vmap_set(&out_regions[i++], 0xAFF00000, 0xB0000000, 0x07, "User Stack");
+    vmap_set(&out_regions[i++], 0x80000000, 0x80000000 + (fb_width * fb_height * 4), 0x07,
+             "Framebuffer");
+    vmap_set(&out_regions[i++], 0xC0000000, 0xFFFFFFFF, 0x03, "Kernel Space");
     return i;
 }
 int sys_get_procs(process_info_t *out, int max) {
-    if (!is_ptr_safe(out, sizeof(process_info_t) * max))
-        return -1;
     extern process_t *ready_queue;
+    if (max <= 0)
+        return -1;
+    if (max > 256)
+        max = 256;
+    if (!is_ptr_safe(out, (uint32_t)max * sizeof(process_info_t)))
+        return -1;
+    if (!ready_queue)
+        return 0;
     process_t *curr = ready_queue;
     int count = 0;
     do {
@@ -349,21 +443,26 @@ int sys_get_procs(process_info_t *out, int max) {
         curr = curr->next;
         if (count >= max)
             break;
-    } while (curr != ready_queue);
+    } while (curr && curr != ready_queue);
     return count;
 }
 int sys_set_proc_name(int pid, const char *name) {
-    if (!is_ptr_safe(name, 1))
+    char tmp[16];
+    if (user_str_copy(tmp, name, sizeof(tmp), 1) < 0)
         return -1;
     process_t *p = (pid == -1) ? current_process : k_proc_find_by_id(pid);
     if (!p)
         return -1;
-    strncpy(p->name, name, 15);
+    if (p != current_process && !caller_is_system() && p->name[0] != 0)
+        return -1;
+    memcpy(p->name, tmp, sizeof(tmp));
     p->name[15] = 0;
     return 0;
 }
 int sys_get_time(Time *user_time) {
     extern volatile Time sys_time;
+    if (!is_ptr_safe(user_time, sizeof(Time)))
+        return -1;
     user_time->second = sys_time.second;
     user_time->minute = sys_time.minute;
     user_time->hour = sys_time.hour;
@@ -390,50 +489,94 @@ int sys_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu) {
     *cpu = cpu_usage_pct;
     return 0;
 }
+
 int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out) {
     if (size == 0 || !out)
         return -1;
+    if ((uint64_t)virt + size > KERNEL_START)
+        return -1;
     uint32_t offset = virt & 0xFFF;
-    uint32_t page_base = virt & ~0xFFF;
-    uint32_t pages = (offset + size + 4095) / 4096;
+    uint32_t page_base = virt & ~0xFFFU;
+    uint64_t pages64 = ((uint64_t)offset + size + 4095) / 4096;
+    if (pages64 > 4096)
+        return -1;
+    uint32_t pages = (uint32_t)pages64;
     if (!is_ptr_safe(out, pages * 4))
         return -1;
     for (uint32_t i = 0; i < pages; i++) {
-        uint32_t addr = page_base + i * 4096;
-        uint32_t phys = mm_virt_to_phys(addr);
-        if (!phys)
+        if (!mm_user_virt_to_phys(page_base + i * 4096))
             return -1;
-        out[i] = phys & 0xFFFFF000;
+    }
+    for (uint32_t i = 0; i < pages; i++) {
+        uint32_t phys = mm_user_virt_to_phys(page_base + i * 4096) & 0xFFFFF000U;
+        mm_page_mark_exported(phys);
+        out[i] = phys;
     }
     return (int)pages;
 }
+
 uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count) {
     if (!phys_pages || count == 0 || count > 4096)
         return 0;
     if (!is_ptr_safe(phys_pages, count * 4))
         return 0;
+    memcpy(kphys_list, phys_pages, count * 4);
     uint32_t virt_start = current_process->shared_virt_bump;
+    if ((uint64_t)virt_start + (uint64_t)count * 4096 > SHARED_VIRT_LIMIT)
+        return 0;
     for (uint32_t i = 0; i < count; i++) {
-        uint32_t phys = phys_pages[i];
-        if (!phys)
+        uint32_t phys = kphys_list[i];
+        if (!phys || (phys & 0xFFF) || !mm_page_is_exported(phys))
             return 0;
-        mm_vmm_map_page(virt_start + i * 4096, phys,
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        mm_vmm_map_page(virt_start + i * 4096, kphys_list[i],
                         PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     }
     current_process->shared_virt_bump += count * 4096;
     return virt_start;
+}
+static uint32_t sys_map_foreign(int src_pid, uint32_t src_virt, uint32_t size) {
+    if (size == 0 || size > 16 * 1024 * 1024)
+        return 0;
+    if (src_pid == current_process->pid)
+        return 0;
+    process_t *src = k_proc_find_by_id(src_pid);
+    if (!src)
+        return 0;
+    if (!caller_is_system() && !is_system_pid(src_pid))
+        return 0;
+    if ((uint64_t)src_virt + size > KERNEL_START)
+        return 0;
+    uint32_t offset = src_virt & 0xFFFU;
+    uint32_t page_base = src_virt & ~0xFFFU;
+    uint32_t page_count = (offset + size + 4095) / 4096;
+    if (page_count > 4096)
+        return 0;
+    uint32_t virt_start = current_process->shared_virt_bump;
+    if ((uint64_t)virt_start + (uint64_t)page_count * 4096 > SHARED_VIRT_LIMIT)
+        return 0;
+    for (uint32_t i = 0; i < page_count; i++) {
+        uint32_t phys = mm_user_virt_to_phys_dir((uint32_t)src->pd_phys, page_base + i * 4096);
+        if (!phys)
+            return 0;
+        kphys_list[i] = phys & 0xFFFFF000U;
+    }
+    for (uint32_t i = 0; i < page_count; i++) {
+        mm_vmm_map_page(virt_start + i * 4096, kphys_list[i],
+                        PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
+    }
+    current_process->shared_virt_bump += page_count * 4096;
+    return virt_start + offset;
 }
 int sys_trigger_panic(const char *msg) {
     if (current_process->pid != 0)
         return -1;
     const char *default_msg = "User requested panic";
     const char *panic_msg = default_msg;
-    if (msg && is_ptr_safe(msg, 64)) {
-        static char buffer[64];
-        strncpy(buffer, msg, 63);
-        buffer[63] = 0;
+    static char buffer[64];
+    if (msg && user_str_copy(buffer, msg, sizeof(buffer), 1) >= 0)
         panic_msg = buffer;
-    }
     kernel_panic(panic_msg);
     return -1;
 }
@@ -475,8 +618,9 @@ static int pipe_name_eq(const char *a, const char *b) {
         i++;
     return (a[i] == 0 && b[i] == 0);
 }
-int sys_pipe_create(const char *name) {
-    if (!is_ptr_safe(name, 1))
+int sys_pipe_create(const char *uname) {
+    char name[16];
+    if (user_str_copy(name, uname, sizeof(name), 1) < 0)
         return -1;
     pipes_init();
     for (int i = 0; i < MAX_PIPES; i++) {
@@ -494,8 +638,9 @@ int sys_pipe_create(const char *name) {
     }
     return -1;
 }
-int sys_pipe_open(const char *name) {
-    if (!is_ptr_safe(name, 1))
+int sys_pipe_open(const char *uname) {
+    char name[16];
+    if (user_str_copy(name, uname, sizeof(name), 1) < 0)
         return -1;
     pipes_init();
     for (int i = 0; i < MAX_PIPES; i++) {
@@ -633,8 +778,9 @@ void sys_alarm_tick(uint64_t now_ms) {
         }
     }
 }
-int sys_setenv(const char *kv) {
-    if (!is_ptr_safe(kv, 1))
+int sys_setenv(const char *ukv) {
+    char kv[256];
+    if (user_str_copy(kv, ukv, sizeof(kv), 0) < 0)
         return -1;
     const char *eq = kv;
     while (*eq && *eq != '=')
@@ -683,8 +829,11 @@ int sys_setenv(const char *kv) {
     memcpy(current_process->env, tmp, out + 1);
     return 0;
 }
-int sys_getenv(const char *key, char *out, uint32_t maxlen) {
-    if (!is_ptr_safe(key, 1))
+int sys_getenv(const char *ukey, char *out, uint32_t maxlen) {
+    char key[64];
+    if (maxlen == 0)
+        return -1;
+    if (user_str_copy(key, ukey, sizeof(key), 0) < 0)
         return -1;
     if (!is_ptr_safe(out, maxlen))
         return -1;
@@ -736,6 +885,10 @@ int sys_signal_send(int pid, int signum) {
         target->state = PROCESS_READY;
     return 0;
 }
+static int blk_allowed(void) {
+    int pid = current_process->pid;
+    return pid <= 1 || pid == storage_server_pid;
+}
 void k_syscall_entry(struct InterruptRegisters *regs) {
     switch (regs->eax) {
     case 0:
@@ -767,7 +920,7 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
                                       (message_t *)(uintptr_t)regs->edx);
         break;
     case 19:
-        regs->eax = sys_set_server_pid(regs->ebx, regs->ecx);
+        regs->eax = sys_set_server_pid_user((int)regs->ebx, (int)regs->ecx);
         break;
     case 20:
         regs->eax = virtio_input_compat_read((uint16_t)regs->ebx);
@@ -827,66 +980,9 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
     case 57:
         regs->eax = sys_map_phys_list((uint32_t *)(uintptr_t)regs->ebx, regs->ecx);
         break;
-    case 58: {
-        int src_pid = (int)regs->ebx;
-        uint32_t src_virt = (uint32_t)regs->ecx;
-        uint32_t size = (uint32_t)regs->edx;
-        if (size == 0 || size > 16 * 1024 * 1024) {
-            regs->eax = 0;
-            break;
-        }
-        process_t *src = k_proc_find_by_id(src_pid);
-        if (!src) {
-            regs->eax = 0;
-            break;
-        }
-        uint32_t offset = src_virt & 0xFFFu;
-        uint32_t page_base = src_virt & ~0xFFFu;
-        uint32_t page_count = (offset + size + 4095) / 4096;
-        if (page_count > 4096) {
-            regs->eax = 0;
-            break;
-        }
-        uint32_t virt_start = current_process->shared_virt_bump;
-        int ok = 1;
-        uint64_t *src_l1 = (uint64_t *)(uintptr_t)(src->pd_phys + 0x80000000U);
-        for (uint32_t i = 0; i < page_count && ok; i++) {
-            uint32_t addr = page_base + i * 4096;
-            uint32_t l1_idx = (addr >> 30) & 0x1FF;
-            uint32_t l2_idx = (addr >> 21) & 0x1FF;
-            uint32_t l3_idx = (addr >> 12) & 0x1FF;
-            uint64_t l1e = src_l1[l1_idx];
-            if ((l1e & 0x3) != 0x3) {
-                ok = 0;
-                break;
-            }
-            uint32_t l2_phys = (uint32_t)(l1e & 0xFFFFF000ULL);
-            uint64_t *l2 = (uint64_t *)(uintptr_t)(l2_phys + 0x80000000U);
-            uint64_t l2e = l2[l2_idx];
-            if ((l2e & 0x3) != 0x3) {
-                ok = 0;
-                break;
-            }
-            uint32_t l3_phys = (uint32_t)(l2e & 0xFFFFF000ULL);
-            uint64_t *l3 = (uint64_t *)(uintptr_t)(l3_phys + 0x80000000U);
-            uint64_t l3e = l3[l3_idx];
-            if (!(l3e & 0x1)) {
-                ok = 0;
-                break;
-            }
-            uint32_t phys = (uint32_t)(l3e & 0xFFFFF000ULL);
-            mm_vmm_map_page(virt_start + i * 4096, phys,
-                            PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER |
-                                PAGE_FLAG_SHARED);
-        }
-        if (ok) {
-            current_process->shared_virt_bump += page_count * 4096;
-            regs->eax = virt_start + offset;
-        } else {
-            regs->eax = 0;
-        }
+    case 58:
+        regs->eax = sys_map_foreign((int)regs->ebx, (uint32_t)regs->ecx, (uint32_t)regs->edx);
         break;
-    }
     case 64:
         regs->eax = (uint32_t)sys_waitpid((int)regs->ebx);
         break;
@@ -929,6 +1025,10 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         break;
         static int blk_active_disk = 0;
     case 86: {
+        if (!blk_allowed()) {
+            regs->eax = (uint32_t)-1;
+            break;
+        }
         blk_active_disk = (int)regs->ebx;
         regs->eax = 0;
         break;
@@ -937,10 +1037,7 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         extern int virtio_blk_transfer_disk(int idx, uint64_t sector, uint32_t count, void *buf,
                                             int write);
         extern int virtio_blk_get_disk_count(void);
-        extern void arm_uart_puts(const char *);
-        arm_uart_puts("BLK80 ");
-        if (blk_active_disk >= virtio_blk_get_disk_count()) {
-            arm_uart_puts("NODEV\n");
+        if (!blk_allowed() || blk_active_disk >= virtio_blk_get_disk_count()) {
             regs->eax = (uint32_t)-1;
             break;
         }
@@ -967,14 +1064,13 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
             }
         }
         regs->eax = ok ? 0 : (uint32_t)-1;
-        arm_uart_puts(ok ? "OK\n" : "FAIL\n");
         break;
     }
     case 81: {
         extern int virtio_blk_transfer_disk(int idx, uint64_t sector, uint32_t count, void *buf,
                                             int write);
         extern int virtio_blk_get_disk_count(void);
-        if (blk_active_disk >= virtio_blk_get_disk_count()) {
+        if (!blk_allowed() || blk_active_disk >= virtio_blk_get_disk_count()) {
             regs->eax = (uint32_t)-1;
             break;
         }
@@ -1027,7 +1123,7 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
                                             int write);
         int disk_idx = (int)regs->ebx;
         blk_io_req_t *req = (blk_io_req_t *)(uintptr_t)regs->ecx;
-        if (!req || !is_ptr_safe(req, sizeof(blk_io_req_t))) {
+        if (!blk_allowed() || !req || !is_ptr_safe(req, sizeof(blk_io_req_t))) {
             regs->eax = (uint32_t)-1;
             break;
         }
@@ -1061,7 +1157,7 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
                                             int write);
         int disk_idx = (int)regs->ebx;
         blk_io_req_t *req = (blk_io_req_t *)(uintptr_t)regs->ecx;
-        if (!req || !is_ptr_safe(req, sizeof(blk_io_req_t))) {
+        if (!blk_allowed() || !req || !is_ptr_safe(req, sizeof(blk_io_req_t))) {
             regs->eax = (uint32_t)-1;
             break;
         }
@@ -1092,9 +1188,9 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
     case 90: {
         extern void arm_uart_puts(const char *);
         const char *msg = (const char *)(uintptr_t)regs->ebx;
-        if (msg && is_ptr_safe(msg, 1)) {
-            arm_uart_puts(msg);
-        }
+        char kbuf[256];
+        if (msg && user_str_copy(kbuf, msg, sizeof(kbuf), 1) >= 0)
+            arm_uart_puts(kbuf);
         regs->eax = 0;
         break;
     }

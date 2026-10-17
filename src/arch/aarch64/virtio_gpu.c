@@ -430,6 +430,22 @@ static void gpu_resource_flush(void) {
     gpu_flush_rect(0, 0, ARM_FB_WIDTH, ARM_FB_HEIGHT);
 }
 
+extern uint32_t *fb_ptr;
+extern uint32_t fb_pitch;
+
+static void gpu_clean_fb_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (!fb_ptr || w == 0 || h == 0)
+        return;
+    for (uint32_t row = y; row < y + h; row++) {
+        uintptr_t start = (uintptr_t)fb_ptr + (uintptr_t)row * fb_pitch + (uintptr_t)x * 4;
+        uintptr_t end = start + (uintptr_t)w * 4;
+        start &= ~(uintptr_t)63;
+        for (uintptr_t a = start; a < end; a += 64)
+            asm volatile("dc cvac, %0" ::"r"(a) : "memory");
+    }
+    arm_dsb();
+}
+
 void virtio_gpu_init(uint32_t fb_phys) {
     saved_fb_phys = fb_phys;
     gpu_base = 0;
@@ -492,6 +508,7 @@ void virtio_gpu_flush(void) {
     if (gpu_base == 0)
         return;
 
+    gpu_clean_fb_rect(0, 0, ARM_FB_WIDTH, ARM_FB_HEIGHT);
     gpu_transfer_to_host_2d();
     gpu_resource_flush();
 }
@@ -505,6 +522,7 @@ void virtio_gpu_flush_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
         w = ARM_FB_WIDTH - x;
     if (y + h > ARM_FB_HEIGHT)
         h = ARM_FB_HEIGHT - y;
+    gpu_clean_fb_rect(x, y, w, h);
     gpu_transfer_rect(x, y, w, h);
     gpu_flush_rect(x, y, w, h);
 }

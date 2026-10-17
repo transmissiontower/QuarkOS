@@ -31,6 +31,8 @@ SECTIONS {
         *(.data)
     } :data
 
+
+
     .modules ALIGN(4K) : AT(ADDR(.modules) - 0xC0000000 + 0x40000000) {
         *(.modules)
     } :data

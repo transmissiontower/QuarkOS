@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/mmu.c - AArch64 MMU page table management and physical memory allocator
- */
 #include "mm/memory.h"
 #include "arch/aarch64/platform.h"
 #include "kernel/klog.h"
@@ -28,6 +25,10 @@
 #define L3_AP_FULL (1ULL << 6)
 
 #define L3_SH_INNER (3ULL << 8)
+#define L3_PXN (1ULL << 53)
+#define L3_UXN (1ULL << 54)
+#define L3_SW_SHARED (1ULL << 55) 
+#define L3_EL0_ACCESS (1ULL << 6)
 
 static uint8_t phys_mem_bitmap[BITMAP_SIZE];
 static uint32_t page_frame_min;
@@ -39,6 +40,26 @@ int mem_num_vpages;
 
 #define REFCOUNT_PAGES (ARM_RAM_SIZE / 4096)
 static uint8_t page_refcount[REFCOUNT_PAGES];
+static uint8_t page_exported[REFCOUNT_PAGES / 8 + 1];
+
+void mm_page_mark_exported(uint32_t phys) {
+    uint32_t idx = (phys - ARM_PHYS_OFFSET) >> 12;
+    if (idx < REFCOUNT_PAGES)
+        page_exported[idx >> 3] |= (uint8_t)(1u << (idx & 7));
+}
+
+int mm_page_is_exported(uint32_t phys) {
+    uint32_t idx = (phys - ARM_PHYS_OFFSET) >> 12;
+    if (idx >= REFCOUNT_PAGES)
+        return 0;
+    return (page_exported[idx >> 3] >> (idx & 7)) & 1;
+}
+
+static void mm_page_clear_exported(uint32_t phys) {
+    uint32_t idx = (phys - ARM_PHYS_OFFSET) >> 12;
+    if (idx < REFCOUNT_PAGES)
+        page_exported[idx >> 3] &= (uint8_t)~(1u << (idx & 7));
+}
 
 void mm_page_ref_inc(uint32_t phys) {
     uint32_t idx = (phys - ARM_PHYS_OFFSET) >> 12;
@@ -258,6 +279,49 @@ uint32_t mm_virt_to_phys(uint32_t virt) {
     return (uint32_t)(l3e & 0xFFFFF000ULL) | (virt & 0xFFF);
 }
 
+static uint64_t user_pte_lookup(uint64_t *l1, uint32_t virt) {
+    if (virt >= KERNEL_START)
+        return 0;
+    uint64_t l1e = l1[(virt >> 30) & 0x1FF];
+    if ((l1e & 0x3) != 0x3)
+        return 0;
+    uint64_t *l2 = (uint64_t *)(uintptr_t)PHYS_TO_VIRT((uint32_t)(l1e & 0xFFFFF000ULL));
+    uint64_t l2e = l2[(virt >> 21) & 0x1FF];
+    if ((l2e & 0x3) != 0x3)
+        return 0;
+    uint64_t *l3 = (uint64_t *)(uintptr_t)PHYS_TO_VIRT((uint32_t)(l2e & 0xFFFFF000ULL));
+    uint64_t l3e = l3[(virt >> 12) & 0x1FF];
+    if (!(l3e & L3_VALID) || !(l3e & L3_EL0_ACCESS))
+        return 0;
+    return l3e;
+}
+
+uint32_t mm_user_virt_to_phys_dir(uint32_t pd_phys, uint32_t virt) {
+    uint64_t *l1 = (uint64_t *)(uintptr_t)PHYS_TO_VIRT(pd_phys);
+    uint64_t e = user_pte_lookup(l1, virt);
+    if (!e)
+        return 0;
+    return (uint32_t)(e & 0xFFFFF000ULL) | (virt & 0xFFF);
+}
+
+uint32_t mm_user_virt_to_phys(uint32_t virt) {
+    return mm_user_virt_to_phys_dir(arm_get_ttbr0(), virt);
+}
+
+int mm_user_range_ok(uint32_t virt, uint32_t size) {
+    if (size == 0)
+        return 1;
+    uint64_t end = (uint64_t)virt + size;
+    if (end > KERNEL_START)
+        return 0;
+    uint64_t *l1 = (uint64_t *)(uintptr_t)PHYS_TO_VIRT(arm_get_ttbr0());
+    for (uint64_t a = virt & ~0xFFFULL; a < end; a += 4096) {
+        if (!user_pte_lookup(l1, (uint32_t)a))
+            return 0;
+    }
+    return 1;
+}
+
 void mm_pmm_lock_region(uint32_t base, uint32_t size) {
     uint32_t start = base >> 12;
     uint32_t count = (size + 0xFFF) >> 12;
@@ -327,6 +391,7 @@ void mm_pmm_free_frame(uint32_t phys) {
         return;
     }
     phys_mem_bitmap[page >> 3] &= ~(1 << (page & 7));
+    mm_page_clear_exported(phys);
     if (total_alloc > 0)
         total_alloc--;
 }
@@ -407,7 +472,18 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
         arm_tlb_flush_all();
     }
 
+    /*
+     * HVF note: when this call creates a brand-new L3 table (first page of a
+     * fresh 2 MB region) the walker on real hardware may not see the new
+     * L2/L3 entries yet, and the first access to the page then takes a
+     * translation fault even though the tables are correct (seen as a WRITE
+     * ABORT, DFSC=XLAT-L3, in mm_heap_expand).  The split-block path above
+     * already forces a hypervisor sync after installing its table; do the
+     * same here and after the final entry is written.
+     */
+    int new_l3 = 0;
     if ((l2[l2_idx] & 0x3) != DESC_TABLE) {
+        new_l3 = 1;
         uint32_t l3_phys_new = mm_pmm_alloc_frame();
         if (!l3_phys_new) {
             KLOG_VMM(LOG_ERROR, "OOM allocating L3 for virt=%x", virt);
@@ -426,6 +502,8 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
         l2[l2_idx] = (uint64_t)l3_phys_new | DESC_TABLE;
         pte_clean(&l2[l2_idx]);
         arm_tlb_flush_all();
+        arm_dsb();
+        hvf_sync_pagetables();
 
         if (virt >= KERNEL_START) {
             uint64_t *master_l1 = (uint64_t *)((uintptr_t)PHYS_TO_VIRT(
@@ -449,12 +527,32 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
     if (flags & PAGE_FLAG_USER)
         ap = L3_AP_FULL;
 
-    l3[l3_idx] =
-        ((uint64_t)phys & 0xFFFFF000ULL) | L3_VALID | L3_PAGE | L3_AF | attr | ap | L3_SH_INNER;
+    uint64_t xn = L3_PXN;
+    if (!((flags & PAGE_FLAG_USER) && (flags & PAGE_FLAG_EXEC)))
+        xn |= L3_UXN;
+
+    /* Replacing a borrowed mapping: drop the reference it held. */
+    uint64_t old_e = l3[l3_idx];
+    if ((old_e & L3_VALID) && (old_e & L3_SW_SHARED))
+        mm_page_ref_dec((uint32_t)(old_e & 0xFFFFF000ULL));
+
+    uint64_t sw = 0;
+    if ((flags & PAGE_FLAG_USER) && (flags & PAGE_FLAG_SHARED)) {
+        sw = L3_SW_SHARED;
+        mm_page_ref_inc(phys & 0xFFFFF000U);
+    }
+
+    l3[l3_idx] = ((uint64_t)phys & 0xFFFFF000ULL) | L3_VALID | L3_PAGE | L3_AF | attr | ap |
+                 L3_SH_INNER | xn | sw;
     pte_clean(&l3[l3_idx]);
 
     mem_num_vpages++;
     arm_tlb_flush_single(virt);
+    if (new_l3) {
+        arm_dsb();
+        hvf_sync_pagetables();
+        arm_tlb_flush_single(virt);
+    }
 }
 
 void mm_vmm_unmap_page(uint32_t virt) {
@@ -482,6 +580,8 @@ void mm_vmm_unmap_page(uint32_t virt) {
     uint32_t l3_phys = (uint32_t)(l2[l2_idx] & 0xFFFFF000ULL);
     uint64_t *l3 = (uint64_t *)((uintptr_t)PHYS_TO_VIRT(l3_phys));
 
+    if ((l3[l3_idx] & L3_VALID) && (l3[l3_idx] & L3_SW_SHARED))
+        mm_page_ref_dec((uint32_t)(l3[l3_idx] & 0xFFFFF000ULL));
     l3[l3_idx] = DESC_FAULT;
     pte_clean(&l3[l3_idx]);
     arm_tlb_flush_single(virt);
@@ -503,7 +603,12 @@ static void cleanup_l1(uint64_t *l1) {
                 uint64_t *l3 = (uint64_t *)((uintptr_t)PHYS_TO_VIRT(l3_phys));
                 for (int k = 0; k < 512; k++) {
                     if (l3[k] & L3_VALID) {
-                        mm_pmm_free_frame((uint32_t)(l3[k] & 0xFFFFF000ULL));
+                        uint32_t fphys = (uint32_t)(l3[k] & 0xFFFFF000ULL);
+                        if (l3[k] & L3_SW_SHARED) {
+                            mm_page_ref_dec(fphys);
+                        } else if (mm_page_ref_get(fphys) == 0) {
+                            mm_pmm_free_frame(fphys);
+                        }
                         l3[k] = 0;
                     }
                 }
@@ -538,6 +643,7 @@ void memory_init(uint32_t phys_alloc_start) {
 
     memset(phys_mem_bitmap, 0xFF, sizeof(phys_mem_bitmap));
     memset(page_refcount, 0, sizeof(page_refcount));
+    memset(page_exported, 0, sizeof(page_exported));
     page_frame_min = 0;
     page_frame_max = 0;
     total_alloc = 0;

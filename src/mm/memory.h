@@ -10,6 +10,7 @@
 #define PAGE_FLAG_USER (1 << 2)
 #define PAGE_FLAG_SHARED (1 << 10)
 #define PAGE_FLAG_UNCACHED (1 << 11)
+#define PAGE_FLAG_EXEC (1 << 12) 
 #define MAX_PHYS_PAGES 1048576
 #define BITMAP_SIZE (MAX_PHYS_PAGES / 8)
 void memory_init(uint32_t phys_alloc_start);
@@ -22,6 +23,13 @@ void mm_vmm_map_page(uint32_t virtualAddr, uint32_t physAddr, uint32_t flags);
 void kernel_panic(const char *msg);
 void *map_module(uint32_t phys_addr, uint32_t size);
 uint32_t mm_virt_to_phys(uint32_t virt);
+
+int mm_user_range_ok(uint32_t virt, uint32_t size);
+uint32_t mm_user_virt_to_phys(uint32_t virt);
+uint32_t mm_user_virt_to_phys_dir(uint32_t pd_phys, uint32_t virt);
+
+void mm_page_mark_exported(uint32_t phys);
+int mm_page_is_exported(uint32_t phys);
 
 void mm_page_ref_inc(uint32_t phys);
 int mm_page_ref_dec(uint32_t phys);

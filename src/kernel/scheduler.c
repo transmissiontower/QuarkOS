@@ -19,6 +19,18 @@ void mm_pmm_free_frame(uint32_t phys);
 void mm_vmm_cleanup_current_dir();
 static process_t *process_to_free = 0;
 
+static void reap_pending(void) {
+    process_t *p = process_to_free;
+    if (!p || p == current_process)
+        return;
+    process_to_free = 0;
+    if (p->pd_phys)
+        mm_pmm_free_frame((uint32_t)p->pd_phys);
+    if (p->kstack_alloc)
+        mm_heap_free((void *)(uintptr_t)p->kstack_alloc);
+    mm_heap_free(p);
+}
+
 void validate_current(const char *tag) {
     uintptr_t cp = (uintptr_t)current_process;
 
@@ -28,7 +40,7 @@ void validate_current(const char *tag) {
         kernel_panic("current_process out of range");
     }
     int pid = current_process->pid;
-    if (pid < 0 || pid > 64) {
+    if (pid < 0) { /* PIDs are never reused, so there is no upper bound */
         KLOG_PROC(LOG_CRIT, "CORRUPT pid=%d cp=%lx at %s", pid, (uint64_t)cp, tag);
         extern void kernel_panic(const char *msg);
         kernel_panic("current_process->pid out of range");
@@ -63,18 +75,24 @@ typedef struct {
     uint32_t image_end;
 } exec_image_info_t;
 
+#define MAX_USER_IMAGE 0x4000000U /* 64 MiB */
+
 static int load_quark_exec_image(const QuarkExec *exec, uint32_t size, exec_image_info_t *info) {
     if (!exec || !info || size <= sizeof(QuarkExec))
         return -1;
     uint32_t user_base = 0x400000;
     uint32_t payload_size = size - sizeof(QuarkExec);
+    if (payload_size > MAX_USER_IMAGE || exec->bss_size > MAX_USER_IMAGE)
+        return -1;
     uint32_t total_mem_size = payload_size + exec->bss_size;
-    if (total_mem_size == 0)
+    if (total_mem_size == 0 || total_mem_size > MAX_USER_IMAGE)
+        return -1;
+    if (exec->entry & 3)
         return -1;
     uint32_t pages_needed = (total_mem_size + 4095) / 4096;
     if (pages_needed == 0)
         pages_needed = 1;
-    uint32_t flags = PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER;
+    uint32_t flags = PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_EXEC;
     const uint8_t *payload = ((const uint8_t *)exec) + sizeof(QuarkExec);
     for (uint32_t i = 0; i < pages_needed; i++) {
         uint32_t phys = mm_pmm_alloc_frame();
@@ -185,15 +203,7 @@ void k_scheduler_yield() {
         switch_context(&old_proc->esp, new_esp);
         validate_current("yield-post");
     }
-    if (process_to_free) {
-        if (process_to_free->pd_phys) {
-            mm_pmm_free_frame((uint32_t)process_to_free->pd_phys);
-        }
-        if (process_to_free->kstack_alloc)
-            mm_heap_free((void *)(uintptr_t)process_to_free->kstack_alloc);
-        mm_heap_free(process_to_free);
-        process_to_free = 0;
-    }
+    reap_pending();
 }
 process_t *k_proc_find_by_id(int pid) {
     if (!ready_queue)
@@ -341,6 +351,7 @@ spawn_fail:
     mm_vmm_clear_l1_override();
 }
 
+    mm_vmm_cleanup_dir_phys(new_pd_phys); 
     mm_pmm_free_frame(new_pd_phys);
     if (!temp_code_freed)
         mm_heap_free(temp_code);
@@ -365,6 +376,11 @@ void k_proc_terminate(int pid) {
             {
                 process_t *scanner = ready_queue;
                 do {
+                    if (scanner != curr && scanner->ipc_wait_from == pid) {
+                        scanner->ipc_reply_ready = 2;
+                        if (scanner->state == PROCESS_IPC_WAIT)
+                            scanner->state = PROCESS_READY;
+                    }
                     if (scanner->waitpid_target == pid) {
                         scanner->ipc_reply_slot.data1 = (uint32_t)curr->exit_code;
                         scanner->waitpid_target = -1;
@@ -379,6 +395,7 @@ void k_proc_terminate(int pid) {
                 mm_vmm_cleanup_current_dir();
 
                 curr->state = PROCESS_ZOMBIE;
+                reap_pending();
                 process_to_free = curr;
                 k_scheduler_yield();
             } else {
@@ -418,13 +435,5 @@ void k_scheduler_direct_switch(process_t *dest) {
         switch_context(&old->esp, new_esp);
         validate_current("direct-post");
     }
-    if (process_to_free) {
-        if (process_to_free->pd_phys) {
-            mm_pmm_free_frame((uint32_t)process_to_free->pd_phys);
-        }
-        if (process_to_free->kstack_alloc)
-            mm_heap_free((void *)(uintptr_t)process_to_free->kstack_alloc);
-        mm_heap_free(process_to_free);
-        process_to_free = 0;
-    }
+    reap_pending();
 }
