@@ -1,25 +1,9 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/storage_server.c - FAT12/FAT16/FAT32 storage server with ATA PIO disk I/O
- */
 #include "fs/fat.h"
 #include "kernel/ipc.h"
 #include "lib/stdbool.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
-#define ATA_DATA 0x1F0
-#define ATA_ERROR 0x1F1
-#define ATA_SECTOR_CNT 0x1F2
-#define ATA_LBA_LO 0x1F3
-#define ATA_LBA_MID 0x1F4
-#define ATA_LBA_HI 0x1F5
-#define ATA_DRIVE_HEAD 0x1F6
-#define ATA_STATUS 0x1F7
-#define ATA_COMMAND 0x1F7
-#define ATA_CMD_READ_PIO 0x20
-#define ATA_CMD_WRITE_PIO 0x30
-#define ATA_STATUS_BSY 0x80
-#define ATA_STATUS_DRQ 0x08
 typedef struct {
     uint16_t bytes_per_sector;
     uint8_t sectors_per_cluster;
@@ -45,6 +29,7 @@ static uint8_t fat_cache_buf[512];
 static int fat_cache_dirty = 0;
 static uint32_t fat_next_free_hint = 2;
 static int current_disk_idx = 0;
+static uint32_t current_partition_lba = 0;
 static int is_fat32 = 0;
 static uint32_t root_cluster = 0;
 #define MAX_DISKS 8
@@ -73,79 +58,64 @@ static void reset_save_session(void) {
     }
     memset(&save_session, 0, sizeof(save_session));
 }
-#define PCI_ADDR_PORT 0xCF8
-#define PCI_DATA_PORT 0xCFC
-#define BM_CMD 0x00
-#define BM_STATUS 0x02
-#define BM_PRDT 0x04
-#define BM_CMD_START 0x01
-#define BM_CMD_READ 0x08
-#define BM_ST_ERROR 0x02
-#define BM_ST_IRQ 0x04
-typedef struct {
-    uint32_t phys_addr;
-    uint16_t byte_count;
-    uint16_t flags;
-} __attribute__((packed)) prd_t;
-static uint16_t bm_base = 0;
-static uint8_t *prdt_buf = 0;
-static uint32_t prdt_phys = 0;
-static uint32_t pci_read32(uint8_t dev, uint8_t func, uint8_t off) {
-    uint32_t addr = (1u << 31) | ((uint32_t)dev << 11) | ((uint32_t)func << 8) | (off & 0xFC);
-    qk_hw_outl(PCI_ADDR_PORT, addr);
-    return qk_hw_inl(PCI_DATA_PORT);
-}
-static void pci_write32(uint8_t dev, uint8_t func, uint8_t off, uint32_t val) {
-    uint32_t addr = (1u << 31) | ((uint32_t)dev << 11) | ((uint32_t)func << 8) | (off & 0xFC);
-    qk_hw_outl(PCI_ADDR_PORT, addr);
-    qk_hw_outl(PCI_DATA_PORT, val);
-}
-static void bm_dma_init(void) {
-    return;
-}
-static int ata_dma_read_sectors(uint32_t lba, uint32_t count, uint8_t *buffer) {
+static int virtio_read_sectors(uint32_t lba, uint32_t count, uint8_t *buffer) {
     uint32_t done = 0;
     while (done < count) {
         uint32_t chunk = count - done;
         if (chunk > 128)
             chunk = 128;
-        int r = qk_blk_read(lba + done, chunk, buffer + done * 512);
+        int r = qk_blk_read(current_partition_lba + lba + done, chunk, buffer + done * 512);
         if (r != 0)
             return r;
         done += chunk;
     }
     return 0;
 }
-static int ata_error = 0;
-void ata_wait_bsy() {
-    for (uint32_t i = 0; i < 100000; i++) {
-        if (!(qk_hw_inb(ATA_STATUS) & ATA_STATUS_BSY))
-            return;
-    }
-    ata_error = 1;
+int storage_read_sector(uint32_t lba, uint8_t *buffer) {
+    return qk_blk_read(current_partition_lba + lba, 1, buffer);
 }
-void ata_wait_drq() {
-    for (uint32_t i = 0; i < 100000; i++) {
-        uint8_t st = qk_hw_inb(ATA_STATUS);
-        if (st & ATA_STATUS_DRQ)
-            return;
-        if (st & 0x01) {
-            ata_error = 1;
-            return;
-        }
-    }
-    ata_error = 1;
+int storage_write_sector(uint32_t lba, uint8_t *buffer) {
+    return qk_blk_write(current_partition_lba + lba, 1, buffer);
 }
-int drv_stor_ata_read(uint32_t lba, uint8_t *buffer) {
-    return qk_blk_read(lba, 1, buffer);
-}
-int drv_stor_ata_write(uint32_t lba, uint8_t *buffer) {
-    return qk_blk_write(lba, 1, buffer);
-}
-static int drv_stor_ata_write_sectors(uint32_t lba, uint8_t count, const uint8_t *buffer) {
+static int storage_write_sectors(uint32_t lba, uint8_t count, const uint8_t *buffer) {
     if (count == 0)
         return 0;
-    return qk_blk_write(lba, count, buffer);
+    return qk_blk_write(current_partition_lba + lba, count, buffer);
+}
+
+static int valid_fat_boot_sector(const uint8_t *sector) {
+    uint16_t bytes_per_sector = (uint16_t)sector[11] | ((uint16_t)sector[12] << 8);
+    uint8_t sectors_per_cluster = sector[13];
+    uint16_t reserved_sectors = (uint16_t)sector[14] | ((uint16_t)sector[15] << 8);
+    uint8_t fat_count = sector[16];
+
+    return bytes_per_sector == 512 && sectors_per_cluster &&
+           !(sectors_per_cluster & (sectors_per_cluster - 1)) &&
+           sectors_per_cluster <= 128 && reserved_sectors && fat_count;
+}
+
+static int read_current_boot_sector(uint8_t *sector) {
+    current_partition_lba = 0;
+    if (qk_blk_read(0, 1, sector) != 0)
+        return -1;
+    if (valid_fat_boot_sector(sector) || sector[510] != 0x55 || sector[511] != 0xAA)
+        return 0;
+
+    for (int i = 0; i < 4; i++) {
+        const uint8_t *entry = sector + 446 + i * 16;
+        uint8_t type = entry[4];
+        uint32_t start_lba = (uint32_t)entry[8] | ((uint32_t)entry[9] << 8) |
+                             ((uint32_t)entry[10] << 16) | ((uint32_t)entry[11] << 24);
+        if ((type == 0x0B || type == 0x0C || type == 0x1B || type == 0x1C) && start_lba) {
+            current_partition_lba = start_lba;
+            if (qk_blk_read(start_lba, 1, sector) == 0 && valid_fat_boot_sector(sector))
+                return 0;
+            current_partition_lba = 0;
+            qk_blk_read(0, 1, sector);
+            return 0;
+        }
+    }
+    return 0;
 }
 
 static int fat_find_entry_in_dir(uint32_t dir_cluster, const char *fat_name,
@@ -296,14 +266,14 @@ void to_fat_name(const char *src, char *dest) {
 }
 static void fat_cache_flush(void) {
     if (fat_cache_dirty && fat_cached_sector != 0xFFFFFFFFu) {
-        drv_stor_ata_write(fat_cached_sector, fat_cache_buf);
+        storage_write_sector(fat_cached_sector, fat_cache_buf);
         fat_cache_dirty = 0;
     }
 }
 static void fat_cache_load(uint32_t sector) {
     if (fat_cached_sector != sector) {
         fat_cache_flush();
-        drv_stor_ata_read(sector, fat_cache_buf);
+        storage_read_sector(sector, fat_cache_buf);
         fat_cached_sector = sector;
     }
 }
@@ -347,7 +317,7 @@ uint8_t *fat_read_file_server(uint32_t cluster, uint32_t size) {
         uint8_t *rptr = ptr;
         while (sectors > 0) {
             uint32_t batch = (sectors > 255) ? 255 : sectors;
-            ata_dma_read_sectors(lba, batch, rptr);
+            virtio_read_sectors(lba, batch, rptr);
             lba += batch;
             rptr += batch * 512;
             sectors -= batch;
@@ -372,7 +342,7 @@ static int fat_find_entry_in_dir(uint32_t dir_cluster, const char *fat_name,
     uint32_t scnt = (!is_fat32 && dir_cluster == 0) ? root_sectors : fat.sectors_per_cluster;
     if (scnt > DIR_BULK_MAX_SECTORS)
         scnt = DIR_BULK_MAX_SECTORS;
-    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+    virtio_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
     for (uint32_t i = 0; i < total_entries; i++) {
@@ -404,7 +374,7 @@ static int fat_find_entry_lfn(uint32_t dir_cluster, const char *name, fat_dir_en
         uint32_t scnt = fat16_root ? root_sectors : fat.sectors_per_cluster;
         if (scnt > DIR_BULK_MAX_SECTORS)
             scnt = DIR_BULK_MAX_SECTORS;
-        ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+        virtio_read_sectors(lba, scnt, dir_bulk_buf);
         fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
         uint32_t total_entries = scnt * 16;
 
@@ -599,13 +569,13 @@ static void fat_zero_cluster(uint32_t cluster) {
     uint8_t *buf = malloc(spc * 512);
     if (buf) {
         memset(buf, 0, spc * 512);
-        drv_stor_ata_write_sectors(lba, (uint8_t)spc, buf);
+        storage_write_sectors(lba, (uint8_t)spc, buf);
         free(buf);
     } else {
         uint8_t zero[512];
         memset(zero, 0, sizeof(zero));
         for (uint32_t i = 0; i < spc; i++)
-            drv_stor_ata_write(lba + i, zero);
+            storage_write_sector(lba + i, zero);
     }
 }
 static void fat_write_chain(uint32_t start_cluster, const uint8_t *data, uint32_t size) {
@@ -625,7 +595,7 @@ static void fat_write_chain(uint32_t start_cluster, const uint8_t *data, uint32_
             memcpy(cbuf, data, to_copy);
         if (to_copy < bytes_per_cluster)
             memset(cbuf + to_copy, 0, bytes_per_cluster - to_copy);
-        drv_stor_ata_write_sectors(lba, (uint8_t)spc, cbuf);
+        storage_write_sectors(lba, (uint8_t)spc, cbuf);
         if (remaining <= bytes_per_cluster) {
             remaining = 0;
         } else {
@@ -656,7 +626,7 @@ static int fat_lookup_entry_with_location(uint32_t dir_cluster, const char *fat_
     uint32_t scnt = dir_sector_count(dir_cluster);
     if (scnt > DIR_BULK_MAX_SECTORS)
         scnt = DIR_BULK_MAX_SECTORS;
-    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+    virtio_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
     for (uint32_t i = 0; i < total_entries; i++) {
@@ -682,7 +652,7 @@ static int fat_find_free_entry_slot(uint32_t dir_cluster, uint32_t *out_lba, int
     uint32_t scnt = dir_sector_count(dir_cluster);
     if (scnt > DIR_BULK_MAX_SECTORS)
         scnt = DIR_BULK_MAX_SECTORS;
-    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+    virtio_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total_entries = scnt * 16;
     for (uint32_t i = 0; i < total_entries; i++) {
@@ -706,7 +676,7 @@ static int fat_find_free_entry_slots(uint32_t dir_cluster, int count, uint32_t *
     uint32_t scnt = dir_sector_count(dir_cluster);
     if (scnt > DIR_BULK_MAX_SECTORS)
         scnt = DIR_BULK_MAX_SECTORS;
-    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+    virtio_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total = scnt * 16;
     int run = 0, run_start = 0;
@@ -732,10 +702,10 @@ static int fat_find_free_entry_slots(uint32_t dir_cluster, int count, uint32_t *
 
 static int fat_write_entry_at(uint32_t lba, int entry_index, const fat_dir_entry_t *entry) {
     uint8_t buf[512];
-    drv_stor_ata_read(lba, buf);
+    storage_read_sector(lba, buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)buf;
     entries[entry_index] = *entry;
-    drv_stor_ata_write(lba, buf);
+    storage_write_sector(lba, buf);
     return 0;
 }
 static void fat_fill_entry_name(fat_dir_entry_t *entry, const char *fat_name) {
@@ -841,7 +811,7 @@ static int fat_create_directory_entry(uint32_t parent_cluster, const char *name)
     prepare_special_entry(&dotdot, "..", (parent_cluster == 0) ? 0 : parent_cluster);
     entries[0] = dot;
     entries[1] = dotdot;
-    drv_stor_ata_write(cluster_to_lba(new_cluster), buf);
+    storage_write_sector(cluster_to_lba(new_cluster), buf);
     fat_dir_entry_t new_entry;
     memset(&new_entry, 0, sizeof(new_entry));
     fat_fill_entry_name(&new_entry, fat_name);
@@ -894,7 +864,7 @@ static int fat_move_file_in_dir(uint32_t src_dir_cluster, uint32_t dst_dir_clust
     uint32_t src_scnt = dir_sector_count(src_dir_cluster);
     if (src_scnt > DIR_BULK_MAX_SECTORS)
         src_scnt = DIR_BULK_MAX_SECTORS;
-    ata_dma_read_sectors(src_lba, src_scnt, dir_bulk_buf);
+    virtio_read_sectors(src_lba, src_scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total = src_scnt * 16;
     char fat_name[11];
@@ -984,9 +954,9 @@ static int fat_move_file_in_dir(uint32_t src_dir_cluster, uint32_t dst_dir_clust
         uint32_t slba = src_lba + ((uint32_t)k / 16);
         int sidx = k % 16;
         uint8_t buf[512];
-        drv_stor_ata_read(slba, buf);
+        storage_read_sector(slba, buf);
         buf[sidx * 32] = 0xE5;
-        drv_stor_ata_write(slba, buf);
+        storage_write_sector(slba, buf);
     }
     return 0;
 }
@@ -995,7 +965,7 @@ static int fat_delete_file_in_dir(uint32_t dir_cluster, const char *filename) {
     uint32_t scnt = dir_sector_count(dir_cluster);
     if (scnt > DIR_BULK_MAX_SECTORS)
         scnt = DIR_BULK_MAX_SECTORS;
-    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+    virtio_read_sectors(lba, scnt, dir_bulk_buf);
     fat_dir_entry_t *entries = (fat_dir_entry_t *)dir_bulk_buf;
     uint32_t total = scnt * 16;
     char fat_name[11];
@@ -1071,9 +1041,9 @@ static int fat_delete_file_in_dir(uint32_t dir_cluster, const char *filename) {
         uint32_t slba = lba + ((uint32_t)k / 16);
         int sidx = k % 16;
         uint8_t buf[512];
-        drv_stor_ata_read(slba, buf);
+        storage_read_sector(slba, buf);
         buf[sidx * 32] = 0xE5;
-        drv_stor_ata_write(slba, buf);
+        storage_write_sector(slba, buf);
     }
     return 0;
 }
@@ -1098,9 +1068,10 @@ static int switch_to_disk(int idx) {
     current_disk_idx = idx;
     qk_disk_select(idx);
     uint8_t boot_buf[512];
-    if (drv_stor_ata_read(0, boot_buf) != 0) {
+    if (read_current_boot_sector(boot_buf) != 0) {
         current_disk_idx = 0;
         qk_disk_select(0);
+        current_partition_lba = 0;
         return -1;
     }
     fat_boot_sector_t *bs = (fat_boot_sector_t *)boot_buf;
@@ -1170,7 +1141,7 @@ void main() {
     qk_set_proc_name(-1, "storage");
     qk_register_as_server(QK_SERVER_STORAGE);
     uint8_t boot_buf[512];
-    int rd = drv_stor_ata_read(0, boot_buf);
+    int rd = read_current_boot_sector(boot_buf);
     if (rd != 0) {
         message_t msg;
         while (1) {
@@ -1203,7 +1174,6 @@ void main() {
         root_sectors = (fat.dir_entry_count * 32 + 511) / 512;
         data_start_lba = root_dir_lba + root_sectors;
     }
-    bm_dma_init();
     message_t msg;
     while (1) {
         qk_ipc_recv(&msg);
@@ -1326,11 +1296,11 @@ void main() {
                 uint32_t pages_needed = (current_file_size + 4095) / 4096;
                 if (found && current_file_data && current_file_size > 0 &&
                     pages_needed <= SHARED_MAX_PAGES) {
-                    int cnt = qk_virt_to_phys_list((uint32_t)current_file_data, current_file_size,
-                                                   current_file_pages);
+                    int cnt = qk_virt_to_phys_list((uint32_t)(uintptr_t)current_file_data,
+                                                   current_file_size, current_file_pages);
                     if (cnt > 0 && cnt <= SHARED_MAX_PAGES) {
                         current_file_page_count = (uint32_t)cnt;
-                        current_file_page_offset = (uint32_t)current_file_data & 0xFFF;
+                        current_file_page_offset = (uint32_t)(uintptr_t)current_file_data & 0xFFF;
                         r.data2 = current_file_page_count;
                         r.data3 = current_file_page_offset;
                         uint32_t first_batch =
@@ -1397,7 +1367,7 @@ void main() {
                     uint32_t scnt = fat16_root ? root_sectors : fat.sectors_per_cluster;
                     if (scnt > DIR_BULK_MAX_SECTORS)
                         scnt = DIR_BULK_MAX_SECTORS;
-                    ata_dma_read_sectors(lba, scnt, dir_bulk_buf);
+                    virtio_read_sectors(lba, scnt, dir_bulk_buf);
                     fat_dir_entry_t *e = (fat_dir_entry_t *)dir_bulk_buf;
                     uint32_t total_dir_entries = scnt * 16;
                     for (uint32_t di = 0; di < total_dir_entries; di++) {

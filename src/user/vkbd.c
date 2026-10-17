@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/vkbd.c - On-screen virtual keyboard with drag-to-move and modifier key support
- */
 #include "lib/stdlib.h"
 #include "user/lib/font_atlas.h"
 #include "user/lib/gfx.h"
@@ -135,7 +132,7 @@ static void push_geom_to_comp(int comp_pid) {
     uint32_t *pl = (uint32_t *)reply.payload;
     pl[0] = (uint32_t)pw;
     pl[1] = (uint32_t)ph;
-    pl[2] = (uint32_t)vkbd_buf;
+    pl[2] = (uint32_t)(uintptr_t)vkbd_buf;
     qk_sys_ipc_send(comp_pid, &reply);
 }
 static void send_key_to_comp(int comp_pid, uint8_t sc, int release) {

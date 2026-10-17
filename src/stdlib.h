@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/stdlib.h - Standard library stub providing malloc, free, realloc, and abs
+ * src/stdlib.h - Freestanding allocation and integer utility declarations
  */
-#ifndef _STUB_STDLIB_H
-#define _STUB_STDLIB_H
+#ifndef SODIUM_STDLIB_H
+#define SODIUM_STDLIB_H
 #include "lib/stdint.h"
 #ifndef NULL
 #define NULL ((void *)0)

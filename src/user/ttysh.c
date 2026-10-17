@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/ttysh.c - Shell with command history, directory navigation, and built-in commands
- */
 #include "kernel/ipc.h"
 #include "lib/stdbool.h"
 #include "lib/stdlib.h"
@@ -1311,7 +1308,7 @@ int main(void) {
     qk_setenv("PATH=/PRG");
     qk_setenv("SHELL=reactty");
 
-    tty_print(C_BCYAN "QuarkOS reactty" C_RESET "  --  type 'help' for commands\n");
+    tty_print(C_BCYAN "Sodium reactty" C_RESET "  --  type 'help' for commands\n");
     show_prompt();
 
     readline_t rl;

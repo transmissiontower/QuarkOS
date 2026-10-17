@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/kernel/klog.c - Kernel logging subsystem with ring buffer and UART output
- */
 #include "kernel/klog.h"
 
-#if defined(__aarch64__)
 #include "arch/aarch64/platform.h"
-#elif defined(__arm__)
-#include "arch/arm/platform.h"
-#endif
 
 #define KLOG_RING_SIZE (32 * 1024)
 static char klog_ring[KLOG_RING_SIZE];
@@ -150,25 +143,17 @@ static void klog_vformat(void (*put)(char), const char *fmt, __builtin_va_list a
     }
 }
 
-#if defined(__aarch64__) || defined(__arm__)
 static void uart_putc_wrapper(char c) {
     if (c == '\n')
         arm_uart_putc('\r');
     arm_uart_putc(c);
 }
-#else
-static void uart_putc_wrapper(char c) {
-    (void)c;
-}
-#endif
 
 void klog(log_level_t level, int subsys, const char *fmt, ...) {
     if (level < ring_level && level < uart_level)
         return;
 
-#if defined(__aarch64__) || defined(__arm__)
-    uint32_t flags = arm_irq_save();
-#endif
+    uint64_t flags = arm_irq_save();
 
     uint64_t ms = get_uptime_ms();
     uint32_t secs = (uint32_t)(ms / 1000);
@@ -240,42 +225,28 @@ void klog(log_level_t level, int subsys, const char *fmt, ...) {
         uart_putc_wrapper('\n');
     }
 
-#if defined(__aarch64__) || defined(__arm__)
     arm_irq_restore(flags);
-#endif
 }
 
 void klog_hex32(uint32_t val) {
-#if defined(__aarch64__) || defined(__arm__)
     for (int s = 28; s >= 0; s -= 4) {
         int n = (val >> s) & 0xF;
         arm_uart_putc(n < 10 ? '0' + n : 'A' + n - 10);
     }
-#else
-    (void)val;
-#endif
 }
 
 void klog_hex64(uint64_t val) {
-#if defined(__aarch64__) || defined(__arm__)
     klog_hex32((uint32_t)(val >> 32));
     klog_hex32((uint32_t)val);
-#else
-    (void)val;
-#endif
 }
 
 int klog_read(char *buf, uint32_t max_len) {
     uint32_t copied = 0;
-#if defined(__aarch64__) || defined(__arm__)
-    uint32_t flags = arm_irq_save();
-#endif
+    uint64_t flags = arm_irq_save();
     while (klog_head != klog_tail && copied < max_len) {
         buf[copied++] = klog_ring[klog_head];
         klog_head = (klog_head + 1) % KLOG_RING_SIZE;
     }
-#if defined(__aarch64__) || defined(__arm__)
     arm_irq_restore(flags);
-#endif
     return (int)copied;
 }

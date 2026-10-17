@@ -1349,6 +1349,7 @@ static int stbtt__run_charstring(const stbtt_fontinfo *info, int glyph_index, st
                     subrs = stbtt__cid_get_glyph_subrs(info, glyph_index);
                 has_subrs = 1;
             }
+            __attribute__((fallthrough));
         case 0x1D:
             if (sp < 1)
                 return STBTT__CSERR("call(g|)subr stack");
@@ -1824,6 +1825,7 @@ STBTT_DEF float stbtt_ScaleForMappingEmToPixels(const stbtt_fontinfo *info, floa
     return pixels / unitsPerEm;
 }
 STBTT_DEF void stbtt_FreeShape(const stbtt_fontinfo *info, stbtt_vertex *v) {
+    (void)info;
     STBTT_free(v, info->userdata);
 }
 STBTT_DEF stbtt_uint8 *stbtt_FindSVGDoc(const stbtt_fontinfo *info, int gl) {
@@ -1905,6 +1907,7 @@ typedef struct stbtt__hheap {
     int num_remaining_in_head_chunk;
 } stbtt__hheap;
 static void *stbtt__hheap_alloc(stbtt__hheap *hh, size_t size, void *userdata) {
+    (void)userdata;
     if (hh->first_free) {
         void *p = hh->first_free;
         hh->first_free = *(void **)p;
@@ -1930,6 +1933,7 @@ static void stbtt__hheap_free(stbtt__hheap *hh, void *p) {
     hh->first_free = p;
 }
 static void stbtt__hheap_cleanup(stbtt__hheap *hh, void *userdata) {
+    (void)userdata;
     stbtt__hheap_chunk *c = hh->head;
     while (c) {
         stbtt__hheap_chunk *n = c->next;
@@ -2559,6 +2563,7 @@ static void stbtt__tesselate_cubic(stbtt__point *points, int *num_points, float 
 static stbtt__point *stbtt_FlattenCurves(stbtt_vertex *vertices, int num_verts,
                                          float objspace_flatness, int **contour_lengths,
                                          int *num_contours, void *userdata) {
+    (void)userdata;
     stbtt__point *points = 0;
     int num_points = 0;
     float objspace_flatness_squared = objspace_flatness * objspace_flatness;
@@ -2637,6 +2642,7 @@ STBTT_DEF void stbtt_Rasterize(stbtt__bitmap *result, float flatness_in_pixels,
     }
 }
 STBTT_DEF void stbtt_FreeBitmap(unsigned char *bitmap, void *userdata) {
+    (void)userdata;
     STBTT_free(bitmap, userdata);
 }
 STBTT_DEF unsigned char *stbtt_GetGlyphBitmapSubpixel(const stbtt_fontinfo *info, float scale_x,
@@ -3533,6 +3539,7 @@ STBTT_DEF unsigned char *stbtt_GetCodepointSDF(const stbtt_fontinfo *info, float
                              onedge_value, pixel_dist_scale, width, height, xoff, yoff);
 }
 STBTT_DEF void stbtt_FreeSDF(unsigned char *bitmap, void *userdata) {
+    (void)userdata;
     STBTT_free(bitmap, userdata);
 }
 static stbtt_int32 stbtt__CompareUTF8toUTF16_bigendian_prefix(stbtt_uint8 *s1, stbtt_int32 len1,

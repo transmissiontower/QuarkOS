@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: MIT
-#
-# tools/icon_baker.py - Rasterizes icon font glyphs into a binary atlas and generates C header definitions
 
 import struct
 import os
@@ -127,7 +125,8 @@ def bake_icons():
         for m in metrics:
             f.write(struct.pack('<IHHHHhhh', m['cp'], m['x'], m['y'], m['w'], m['h'], m['adv'], m['ox'], m['oy']))
 
-        for r, g, b, a in list(img.getdata()):
+        pixels = img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata()
+        for r, g, b, a in pixels:
             f.write(struct.pack('<I', (a << 24) | (r << 16) | (g << 8) | b))
 
     with open(OUTPUT_H, "w") as f:

@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/terminal.c - ANSI terminal emulator with scrollback and mouse text selection
- */
 #include "gfx/events.h"
 #include "kernel/ipc.h"
 #include "lib/stdbool.h"
@@ -49,18 +46,6 @@ static void lb_commit(void) {
     lbuf[idx][copy] = 0;
     ltotal++;
     lcur_len = 0;
-}
-
-static int count_content_lines(void) {
-    int count = 0;
-    for (int i = ltotal - 1; i >= 0 && ltotal - i <= MAX_LINES; i--) {
-        int idx = lbuf_idx(i);
-        if (lbuf[idx][0] != 0)
-            count++;
-        else
-            break;
-    }
-    return count;
 }
 
 static int esc_state = 0;

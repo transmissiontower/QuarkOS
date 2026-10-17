@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/string.h - Standard string/memory function stubs (memset, memcpy, strlen, etc.)
+ * src/string.h - Freestanding string and memory declarations
  */
-#ifndef _STUB_STRING_H
-#define _STUB_STRING_H
+#ifndef SODIUM_STRING_H
+#define SODIUM_STRING_H
 #include "lib/stdint.h"
 #ifndef NULL
 #define NULL ((void *)0)

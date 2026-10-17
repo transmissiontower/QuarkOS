@@ -83,6 +83,4 @@ typedef struct {
     message_t messages[IPC_QUEUE_SIZE];
     int head, tail, count;
 } message_queue_t;
-#define IO_PRIV_ATA 0x01
-#define IO_PRIV_PS2 0x02
 #endif

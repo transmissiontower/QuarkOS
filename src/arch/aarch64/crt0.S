@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * src/arch/aarch64/crt0.S - C runtime startup stub for user-space programs
+ * src/arch/aarch64/crt0.S - C runtime startup for user-space programs
  */
 .section .text
 .global _start

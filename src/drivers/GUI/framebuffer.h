@@ -5,7 +5,7 @@
  */
 #ifndef FRAMEBUFFER_H
 #define FRAMEBUFFER_H
-#include "kernel/multiboot.h"
+#include "kernel/bootinfo.h"
 #include "lib/stdint.h"
 #define COLOR_BLACK 0x00000000
 #define COLOR_WHITE 0x00FFFFFF
@@ -13,7 +13,6 @@
 #define COLOR_GREEN 0x0000FF00
 #define COLOR_BLUE 0x000000FF
 #define COLOR_ORANGE 0xEC5800
-#define VGA_STATUS 0x3DA
 #define RGB(r, g, b) (((r) << 16) | ((g) << 8) | (b))
 extern uint32_t *fb_ptr;
 extern uint8_t *back_buffer;
@@ -23,7 +22,7 @@ extern uint32_t fb_bpp;
 extern uint32_t fb_pitch;
 extern uint32_t fb_phy_addr;
 extern uint32_t fb_size_bytes;
-void drv_fb_init(struct multiboot_info *mb_info);
+void drv_fb_init(const boot_info_t *boot_info);
 void drv_fb_swap_buffers();
 void swap_rect(int x, int y, int w, int h);
 void wait_vblank();

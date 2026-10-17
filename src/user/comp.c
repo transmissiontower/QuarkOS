@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/comp.c - Window compositor and desktop shell
- */
 #include "gfx/bitmaps.h"
 #include "gfx/events.h"
 #include "lib/stdlib.h"
@@ -97,22 +94,6 @@ static drag_session_t g_drag;
 #ifndef ICON_IMAGE
 #define ICON_IMAGE 0xEA06
 #endif
-#define DESK_MAX_ICONS 32
-#define DESK_ICON_W 90
-#define DESK_ICON_H 90
-#define DESK_ICON_PAD 12
-#define DESK_START_X 24
-#define DESK_START_Y 60
-typedef struct {
-    char name[64];
-    int is_dir;
-    uint32_t cluster;
-} desk_entry_t;
-static desk_entry_t desk_entries[DESK_MAX_ICONS];
-static int desk_entry_count = 0;
-static int desk_loaded = 0;
-static int desk_selected = -1;
-
 static void process_message(message_t *msg);
 static inline int clamp_int(int v, int min, int max) {
     if (v < min)
@@ -208,103 +189,6 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size) {
     return buffer;
 }
 
-static void desk_load(void) {
-    if (desk_loaded)
-        return;
-    desk_loaded = 1;
-    desk_entry_count = 0;
-    if (ensure_storage_pid() != 0)
-        return;
-
-    uint32_t desk_cluster = 0;
-    char dummy[64];
-    if (qk_path_resolve_ext(0, "/USR/DEFAULT/DESK", &desk_cluster, dummy) != 0)
-        return;
-
-    message_t req, resp;
-    memset(&req, 0, sizeof(req));
-    req.type = MSG_DIR_REQ;
-    req.data1 = desk_cluster;
-    qk_ipc_send_recv(storage_server_pid, &req, &resp);
-    uint16_t desk_cl = 0;
-
-    while (1) {
-        if (resp.type != MSG_DIR_REPLY)
-            break;
-        char *ptr = (char *)resp.payload;
-        while (*ptr) {
-            int is_d = (*ptr == '1') ? 1 : 0;
-            while (*ptr && *ptr != '|')
-                ptr++;
-            if (*ptr == '|')
-                ptr++;
-            int cl = 0;
-            while (*ptr >= '0' && *ptr <= '9')
-                cl = cl * 10 + (*ptr++ - '0');
-            if (*ptr == '|')
-                ptr++;
-            char nm[64];
-            int ni = 0;
-            while (*ptr && *ptr != '\n' && ni < 63)
-                nm[ni++] = *ptr++;
-            nm[ni] = 0;
-            if (*ptr == '\n')
-                ptr++;
-            if (is_d && ni >= 4) {
-                char up[5];
-                for (int i = 0; i < 4 && i < ni; i++) {
-                    up[i] = nm[i];
-                    if (up[i] >= 'a' && up[i] <= 'z')
-                        up[i] -= 32;
-                }
-                up[4] = 0;
-                if (up[0] == 'D' && up[1] == 'E' && up[2] == 'S' && up[3] == 'K')
-                    desk_cl = (uint32_t)cl;
-            }
-        }
-        if (resp.data1 == 0)
-            break;
-        qk_ipc_recv(&resp);
-    }
-    if (desk_cl == 0)
-        return;
-
-    memset(&req, 0, sizeof(req));
-    req.type = MSG_DIR_REQ;
-    req.data1 = desk_cl;
-    qk_ipc_send_recv(storage_server_pid, &req, &resp);
-    while (1) {
-        if (resp.type != MSG_DIR_REPLY)
-            break;
-        char *ptr = (char *)resp.payload;
-        while (*ptr && desk_entry_count < DESK_MAX_ICONS) {
-            desk_entry_t *de = &desk_entries[desk_entry_count];
-            de->is_dir = (*ptr == '1') ? 1 : 0;
-            while (*ptr && *ptr != '|')
-                ptr++;
-            if (*ptr == '|')
-                ptr++;
-            int cl = 0;
-            while (*ptr >= '0' && *ptr <= '9')
-                cl = cl * 10 + (*ptr++ - '0');
-            de->cluster = (uint32_t)cl;
-            if (*ptr == '|')
-                ptr++;
-            int ni = 0;
-            while (*ptr && *ptr != '\n' && ni < 63)
-                de->name[ni++] = *ptr++;
-            de->name[ni] = 0;
-            if (*ptr == '\n')
-                ptr++;
-            if (ni > 0 && de->name[0] != '.')
-                desk_entry_count++;
-        }
-        if (resp.data1 == 0)
-            break;
-        qk_ipc_recv(&resp);
-    }
-}
-
 static int desk_icon_id(const char *name) {
     int len = strlen(name);
     if (len >= 4) {
@@ -327,89 +211,6 @@ static int desk_icon_id(const char *name) {
             return ICON_BINARY;
     }
     return ICON_FILE_TEXT;
-}
-
-static void render_desktop_icons(void) {
-    if (!desk_loaded) {
-        desk_load();
-        return;
-    }
-    if (desk_entry_count == 0)
-        return;
-    int cols = ((int)ctx.width - DESK_START_X * 2) / (DESK_ICON_W + DESK_ICON_PAD);
-    if (cols < 1)
-        cols = 1;
-
-    for (int i = 0; i < desk_entry_count; i++) {
-        int col = i / ((int)(ctx.height - DESK_START_Y - 60) / (DESK_ICON_H + DESK_ICON_PAD));
-        int row = i % ((int)(ctx.height - DESK_START_Y - 60) / (DESK_ICON_H + DESK_ICON_PAD));
-        int x = DESK_START_X + col * (DESK_ICON_W + DESK_ICON_PAD);
-        int y = DESK_START_Y + row * (DESK_ICON_H + DESK_ICON_PAD);
-
-        if (i == desk_selected)
-            gfx_rect_rounded_fill(&ctx, x, y, DESK_ICON_W, DESK_ICON_H, 8, 0x30FFFFFF);
-
-        int icon = desk_entries[i].is_dir ? ICON_FOLDER : desk_icon_id(desk_entries[i].name);
-        if (gui_icons)
-            draw_icon_sized(&ctx, gui_icons, x + (DESK_ICON_W - 40) / 2, y + 6, icon, 0xFFFFFFFF,
-                            40);
-
-        const char *name = desk_entries[i].name;
-        int tw = 0;
-        for (const char *p = name; *p; p++)
-            tw += get_char_width(*p);
-        int tx = x + (DESK_ICON_W - tw) / 2;
-        if (tx < x + 2)
-            tx = x + 2;
-        draw_string_vector(&ctx, tx, y + 52, name, 0xFFDDDDDD);
-    }
-}
-
-static void desk_handle_click(int mx2, int my2) {
-    int cols_h = ((int)ctx.height - DESK_START_Y - 60) / (DESK_ICON_H + DESK_ICON_PAD);
-    if (cols_h < 1)
-        cols_h = 1;
-    int old_sel = desk_selected;
-    desk_selected = -1;
-    for (int i = 0; i < desk_entry_count; i++) {
-        int col = i / cols_h;
-        int row = i % cols_h;
-        int x = DESK_START_X + col * (DESK_ICON_W + DESK_ICON_PAD);
-        int y = DESK_START_Y + row * (DESK_ICON_H + DESK_ICON_PAD);
-        if (mx2 >= x && mx2 < x + DESK_ICON_W && my2 >= y && my2 < y + DESK_ICON_H) {
-            if (old_sel == i) {
-                char path[128] = "/USR/DEFAULT/DESK/";
-                int plen = strlen(path);
-                strncpy(path + plen, desk_entries[i].name, 127 - plen);
-                path[127] = 0;
-
-                int icon = desk_icon_id(desk_entries[i].name);
-                const char *app = 0;
-                if (icon == ICON_IMAGE)
-                    app = "/PRG/IMGVIEW.QEX";
-                else if (icon == ICON_FILE_TEXT)
-                    app = "/PRG/NOTEPAD.QEX";
-                if (app) {
-                    uint32_t sz = 0;
-                    void *buf = load_file_from_storage(app, &sz);
-                    if (buf && sz > 0) {
-                        int pid = qk_spawn(buf, sz);
-                        free(buf);
-                        if (pid >= 0) {
-                            message_t m;
-                            memset(&m, 0, sizeof(m));
-                            m.type = MSG_FILE_OPEN;
-                            strncpy((char *)m.payload, path, sizeof(m.payload) - 1);
-                            qk_sys_ipc_send(pid, &m);
-                        }
-                    }
-                }
-            } else {
-                desk_selected = i;
-            }
-            return;
-        }
-    }
 }
 
 static void cache_terminal_binary(void) {
@@ -1087,7 +888,7 @@ static void process_message(message_t *msg) {
             reply.data1 = buf_size;
             reply.data2 = (uint32_t)win->w;
             reply.data3 = (uint32_t)content_h;
-            ((uint32_t *)reply.payload)[0] = (uint32_t)win->gfx_buffer;
+            ((uint32_t *)reply.payload)[0] = (uint32_t)(uintptr_t)win->gfx_buffer;
         } else {
             reply.type = MSG_ERROR;
         }

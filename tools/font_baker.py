@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: MIT
-#
-# tools/font_baker.py - Rasterizes a TTF font into a binary glyph atlas for the OS compositor
 
 from PIL import Image, ImageDraw, ImageFont
 import struct
@@ -125,7 +123,7 @@ def bake():
                 m['x'], m['y'], m['w'], m['h'],
                 m['adv'], m['off_x'], m['off_y']))
 
-        pixels = list(img.getdata())
+        pixels = img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata()
         for r, g, b, a in pixels:
             val = (a << 24) | (r << 16) | (g << 8) | b
             f.write(struct.pack('<I', val))

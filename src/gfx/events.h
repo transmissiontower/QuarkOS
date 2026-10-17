@@ -25,14 +25,4 @@ typedef struct {
     uint8_t button;
     int32_t scroll;
 } Event;
-void events_init();
-void event_push(Event e);
-int event_pop(Event *e);
-extern volatile int dbg_kbd_irq_count;
-extern volatile int dbg_mouse_irq_count;
-extern volatile int dbg_push_count;
-extern volatile int dbg_pop_count;
-extern volatile int dbg_handle_key_count;
-extern volatile int dbg_ignore_kbd_push;
-extern volatile int dbg_kbd_ignored_count;
 #endif

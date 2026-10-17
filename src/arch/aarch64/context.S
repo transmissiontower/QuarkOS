@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/context.S - Context switching and user-mode entry for AArch64
- */
 .section .text
 .global switch_context
 .global enter_user_mode
@@ -26,26 +23,25 @@ switch_context:
     dsb     sy
     isb
 
-    ldr     x9, =0xF4010004
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
     dsb     sy
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
     dsb     sy
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
     dsb     sy
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
-    ldr     w10, [x9]
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
+    mrs     x10, ICC_PMR_EL1
     dsb     sy
     tlbi    vmalle1
     dsb     sy

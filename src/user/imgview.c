@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/user/imgview.c - Image viewer with BMP and STB-based format support
- */
 #include "kernel/ipc.h"
 #include "lib/stdlib.h"
 #include "user/lib/libapi.h"
@@ -89,7 +86,7 @@ static void *read_file_fast(const char *path, uint32_t *out_size, int *shared_ou
             if (virt) {
                 if (shared_out)
                     *shared_out = 1;
-                return (void *)(virt + page_offset);
+                return (void *)(uintptr_t)(virt + page_offset);
             }
         }
     }

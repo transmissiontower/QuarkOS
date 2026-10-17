@@ -4,11 +4,9 @@
  */
 #include "mm/memory.h"
 #include "arch/aarch64/platform.h"
-#include "kernel/crash.h"
 #include "kernel/klog.h"
 #include "lib/stdint.h"
 #include "util/util.h"
-#include "video/vga.h"
 #include "drivers/GUI/framebuffer.h"
 
 #define PHYS_TO_VIRT(p) ((uint32_t)(p) + 0x80000000U)
@@ -89,8 +87,6 @@ static inline void page_clean(void *addr) {
 
 extern uint64_t aarch64_kernel_l1[];
 
-uint32_t *initial_page_dir_ptr;
-
 void kernel_panic(const char *msg) {
     arm_irq_disable();
     clear_screen(COLOR_RED);
@@ -125,17 +121,19 @@ volatile int hvf_ttbr0_changed = 0;
 
 void hvf_sync_pagetables(void) {
     if (!hvf_ttbr0_changed) {
-        (void)mmio_read32(GIC_CPU_VIRT + GICC_PMR);
-        (void)mmio_read32(GIC_CPU_VIRT + GICC_PMR);
+        uint64_t priority_mask;
+        asm volatile("mrs %0, ICC_PMR_EL1" : "=r"(priority_mask) :: "memory");
+        asm volatile("mrs %0, ICC_PMR_EL1" : "=r"(priority_mask) :: "memory");
         arm_dsb();
         return;
     }
 
     for (int i = 0; i < 4; i++) {
-        (void)mmio_read32(GIC_CPU_VIRT + GICC_PMR);
-        (void)mmio_read32(GIC_CPU_VIRT + GICC_PMR);
-        (void)mmio_read32(GIC_CPU_VIRT + GICC_PMR);
-        (void)mmio_read32(GIC_CPU_VIRT + GICC_PMR);
+        uint64_t priority_mask;
+        asm volatile("mrs %0, ICC_PMR_EL1" : "=r"(priority_mask) :: "memory");
+        asm volatile("mrs %0, ICC_PMR_EL1" : "=r"(priority_mask) :: "memory");
+        asm volatile("mrs %0, ICC_PMR_EL1" : "=r"(priority_mask) :: "memory");
+        asm volatile("mrs %0, ICC_PMR_EL1" : "=r"(priority_mask) :: "memory");
         arm_dsb();
     }
     arm_tlb_flush_all();
@@ -260,17 +258,6 @@ uint32_t mm_virt_to_phys(uint32_t virt) {
     return (uint32_t)(l3e & 0xFFFFF000ULL) | (virt & 0xFFF);
 }
 
-uint32_t *mem_get_current_page_dir(void) {
-    uint32_t ttbr0 = arm_get_ttbr0();
-    return (uint32_t *)((uintptr_t)PHYS_TO_VIRT(ttbr0));
-}
-
-void mm_vmm_set_active_dir(uint32_t *pd) {
-    uint32_t phys = VIRT_TO_PHYS((uint32_t)(uintptr_t)pd);
-    arm_set_ttbr0(phys);
-    arm_tlb_flush_all();
-}
-
 void mm_pmm_lock_region(uint32_t base, uint32_t size) {
     uint32_t start = base >> 12;
     uint32_t count = (size + 0xFFF) >> 12;
@@ -342,10 +329,6 @@ void mm_pmm_free_frame(uint32_t phys) {
     phys_mem_bitmap[page >> 3] &= ~(1 << (page & 7));
     if (total_alloc > 0)
         total_alloc--;
-}
-
-uint32_t mm_pmm_alloc_l1(void) {
-    return mm_pmm_alloc_frame();
 }
 
 void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
@@ -550,8 +533,7 @@ void mm_vmm_cleanup_dir_phys(uint32_t pd_phys) {
     cleanup_l1(l1);
 }
 
-void memory_init(struct multiboot_info *mboot, uint32_t phys_alloc_start) {
-    (void)mboot;
+void memory_init(uint32_t phys_alloc_start) {
     mem_num_vpages = 0;
 
     memset(phys_mem_bitmap, 0xFF, sizeof(phys_mem_bitmap));
@@ -592,13 +574,4 @@ void *map_module(uint32_t phys_addr, uint32_t size) {
     }
     module_virt_alloc_ptr = virt_addr + offset;
     return (void *)(uintptr_t)(virt_addr + (phys_addr & 0xFFF));
-}
-
-void mem_free_identity_map(void) {
-    uint64_t *l1 = aarch64_kernel_l1;
-    l1[1] = DESC_FAULT;
-    arm_tlb_flush_all();
-}
-
-void arm_map_high_vectors(void) {
 }

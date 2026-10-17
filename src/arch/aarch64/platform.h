@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/platform.h - AArch64 hardware constants, MMIO helpers, and device register maps
- */
 #ifndef AARCH64_PLATFORM_H
 #define AARCH64_PLATFORM_H
 
 #include "lib/stdint.h"
+
+struct InterruptRegisters;
 
 #define ARM_PHYS_OFFSET 0x40000000
 #define ARM_RAM_SIZE 0x20000000
 
 #define ARM_UART0_BASE 0x09000000
 #define ARM_GIC_DIST_BASE 0x08000000
-#define ARM_GIC_CPU_BASE 0x08010000
+#define ARM_GIC_REDIST_BASE 0x080A0000
 
 #define VIRTIO_MMIO_BASE 0x0a000000
 #define VIRTIO_MMIO_STRIDE 0x200
@@ -47,8 +46,8 @@
 #define ARM_GIC_VIRT_ADDR(phys) ARM_MB_VIRT(phys)
 
 #define UART0_VIRT ARM_MB_VIRT(ARM_UART0_BASE)
-#define GIC_CPU_VIRT ARM_MB_VIRT(ARM_GIC_CPU_BASE)
 #define GIC_DIST_VIRT ARM_MB_VIRT(ARM_GIC_DIST_BASE)
+#define GIC_REDIST_VIRT ARM_MB_VIRT(ARM_GIC_REDIST_BASE)
 
 #define VIRTIO_MMIO_VIRT(n) ARM_MB_VIRT(VIRTIO_MMIO_BASE + (n) * VIRTIO_MMIO_STRIDE)
 
@@ -87,14 +86,14 @@ static inline void arm_irq_enable(void) {
     asm volatile("msr daifclr, #2" ::: "memory");
 }
 
-static inline uint32_t arm_irq_save(void) {
-    uint32_t flags;
+static inline uint64_t arm_irq_save(void) {
+    uint64_t flags;
     asm volatile("mrs %0, daif" : "=r"(flags)::"memory");
     asm volatile("msr daifset, #2" ::: "memory");
     return flags;
 }
 
-static inline void arm_irq_restore(uint32_t flags) {
+static inline void arm_irq_restore(uint64_t flags) {
     asm volatile("msr daif, %0" ::"r"(flags) : "memory");
 }
 
@@ -149,18 +148,23 @@ static inline void arm_tlb_flush_single(uint32_t va) {
 #define UART_FR 0x018
 #define UART_FR_TXFF (1 << 5)
 
-#define GICC_CTLR 0x000
-#define GICC_PMR 0x004
-#define GICC_IAR 0x00C
-#define GICC_EOIR 0x010
-
 #define GICD_CTLR 0x000
+#define GICD_IGROUPR 0x080
 #define GICD_ISENABLER 0x100
 #define GICD_ICENABLER 0x180
 #define GICD_IPRIORITYR 0x400
-#define GICD_ITARGETSR 0x800
-#define GICD_ICFGR 0xC00
 #define GICD_ICPENDR 0x280
+#define GICD_IROUTER 0x6100
+
+#define GICR_WAKER 0x014
+#define GICR_WAKER_PROCESSOR_SLEEP (1u << 1)
+#define GICR_WAKER_CHILDREN_ASLEEP (1u << 2)
+#define GICR_SGI_BASE 0x10000
+#define GICR_IGROUPR0 0x080
+#define GICR_ISENABLER0 0x100
+#define GICR_ICENABLER0 0x180
+#define GICR_ICPENDR0 0x280
+#define GICR_IPRIORITYR 0x400
 
 #define ARM_IRQ_TIMER 30
 #define ARM_IRQ_VTIMER 27
@@ -177,9 +181,12 @@ extern void arm_uart_puts(const char *s);
 void arm_gic_init(void);
 void arm_gic_enable_irq(uint32_t irq);
 void arm_gic_disable_irq(uint32_t irq);
+void arm_gic_install_irq_handler(uint32_t irq, void (*handler)(struct InterruptRegisters *r));
 uint32_t arm_gic_ack(void);
 void arm_gic_eoi(uint32_t irq);
 void arm_timer_init(void);
+void arm_psci_system_off(void);
+void arm_psci_system_reset(void);
 void virtio_gpu_init(uint32_t fb_phys);
 void virtio_gpu_flush(void);
 void virtio_input_init(void);
