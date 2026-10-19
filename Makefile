@@ -81,7 +81,7 @@ src/arch/aarch64/context.o: src/arch/aarch64/context.S
 
 AARCH64_USER_DIR = build_aarch64_user
 AARCH64_USER_LIB_OBJ = \
-    $(AARCH64_USER_DIR)/crt0.o $(AARCH64_USER_DIR)/libapi.o $(AARCH64_USER_DIR)/lib.o \
+    $(AARCH64_USER_DIR)/libapi.o $(AARCH64_USER_DIR)/lib.o \
     $(AARCH64_USER_DIR)/gfx.o $(AARCH64_USER_DIR)/window.o $(AARCH64_USER_DIR)/font_atlas.o \
     $(AARCH64_USER_DIR)/math.o $(AARCH64_USER_DIR)/stdlib.o $(AARCH64_USER_DIR)/path.o \
     $(AARCH64_USER_DIR)/storage_client.o
@@ -92,10 +92,6 @@ USER_APP_NAMES += init
 USER_APP_QEXES := $(foreach n,$(USER_APP_NAMES),build/$(n).qex)
 
 AARCH64_USER_LIBGCC = $(shell $(CC) -mcpu=cortex-a57 -print-libgcc-file-name)
-
-$(AARCH64_USER_DIR)/crt0.o: src/arch/aarch64/crt0.S
-	@mkdir -p $(AARCH64_USER_DIR)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(AARCH64_USER_DIR)/%.o: src/user/lib/%.c
 	@mkdir -p $(AARCH64_USER_DIR)
