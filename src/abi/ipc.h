@@ -1,6 +1,6 @@
 #ifndef IPC_H
 #define IPC_H
-#include "lib/stdint.h"
+#include "stdint.h"
 typedef struct {
     int sender_pid;
     int type;

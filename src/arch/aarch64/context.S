@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 .section .text
 .global switch_context
 .global enter_user_mode

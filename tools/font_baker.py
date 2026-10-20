@@ -1,11 +1,9 @@
-# SPDX-License-Identifier: MIT
-
 from PIL import Image, ImageDraw, ImageFont
 import struct
 import sys
 import os
 
-FONT_FILENAME = "tools/Inter-VariableFont_opsz,wght.ttf"
+FONT_FILENAME = "assets/fonts/inter.ttf"
 FONT_SIZE = 14
 OUTPUT_FILE = "build/font_atlas.bin"
 IMG_WIDTH = 512

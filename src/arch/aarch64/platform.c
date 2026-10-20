@@ -1,11 +1,10 @@
-// SPDX-License-Identifier: MIT
 #include "arch/aarch64/platform.h"
-#include "kernel/bootinfo.h"
-#include "kernel/klog.h"
-#include "drivers/rtc.h"
-#include "lib/stdint.h"
-#include "mm/memory.h"
-#include "util/util.h"
+#include "kernel/core/bootinfo.h"
+#include "kernel/core/klog.h"
+#include "drivers/rtc/rtc.h"
+#include "stdint.h"
+#include "kernel/mm/memory.h"
+#include "kernel/lib/util.h"
 
 extern uint32_t _kernel_end;
 

@@ -1,10 +1,9 @@
-// SPDX-License-Identifier: MIT
-#include "mm/memory.h"
+#include "kernel/mm/memory.h"
 #include "arch/aarch64/platform.h"
-#include "kernel/klog.h"
-#include "lib/stdint.h"
-#include "util/util.h"
-#include "drivers/GUI/framebuffer.h"
+#include "kernel/core/klog.h"
+#include "stdint.h"
+#include "kernel/lib/util.h"
+#include "drivers/video/framebuffer.h"
 
 #define PHYS_TO_VIRT(p) ((uint32_t)(p) + 0x80000000U)
 #define VIRT_TO_PHYS(v) ((uint32_t)(v) - 0x80000000U)
@@ -472,15 +471,6 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
         arm_tlb_flush_all();
     }
 
-    /*
-     * HVF note: when this call creates a brand-new L3 table (first page of a
-     * fresh 2 MB region) the walker on real hardware may not see the new
-     * L2/L3 entries yet, and the first access to the page then takes a
-     * translation fault even though the tables are correct (seen as a WRITE
-     * ABORT, DFSC=XLAT-L3, in mm_heap_expand).  The split-block path above
-     * already forces a hypervisor sync after installing its table; do the
-     * same here and after the final entry is written.
-     */
     int new_l3 = 0;
     if ((l2[l2_idx] & 0x3) != DESC_TABLE) {
         new_l3 = 1;
@@ -531,7 +521,6 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
     if (!((flags & PAGE_FLAG_USER) && (flags & PAGE_FLAG_EXEC)))
         xn |= L3_UXN;
 
-    /* Replacing a borrowed mapping: drop the reference it held. */
     uint64_t old_e = l3[l3_idx];
     if ((old_e & L3_VALID) && (old_e & L3_SW_SHARED))
         mm_page_ref_dec((uint32_t)(old_e & 0xFFFFF000ULL));

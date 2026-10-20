@@ -7,6 +7,7 @@
 
 sodium.*
 u-boot.bin
+boot/uboot/u-boot.bin
 build/
 build_aarch64_user/
 
@@ -17,6 +18,8 @@ cdrom.img
 usb.img
 
 # Generated files
-src/user/lib/icons_def.h
+src/user/libui/icons_def.h
 boot.log
 empty.tmp
+
+out/

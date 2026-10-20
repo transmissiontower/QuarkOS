@@ -1,5 +1,3 @@
-# SPDX-License-Identifier: MIT
-
 import struct
 import sys
 from PIL import Image

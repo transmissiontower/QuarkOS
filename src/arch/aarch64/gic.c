@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: MIT
 #include "arch/aarch64/platform.h"
-#include "kernel/klog.h"
-#include "kernel/process.h"
-#include "util/util.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/process.h"
+#include "kernel/lib/util.h"
 
 #define MAX_IRQ 128
 static void (*irq_handlers[MAX_IRQ])(struct InterruptRegisters *r);

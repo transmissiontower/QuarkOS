@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: MIT
 #ifndef AARCH64_PLATFORM_H
 #define AARCH64_PLATFORM_H
 
-#include "lib/stdint.h"
+#include "stdint.h"
 
 struct InterruptRegisters;
 

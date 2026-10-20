@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/modules.S - Embedded binary blobs for built-in kernel modules and assets
- */
 .section .modules, "a"
 
 .global _mod_storage_server_start

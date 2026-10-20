@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/vectors.S - AArch64 exception vector table and trap handlers
- */
 .extern k_syscall_entry
 .extern k_syscall_dispatch_aarch64
 .extern arm_irq_dispatch

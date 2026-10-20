@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: MIT
-/*
- * src/arch/aarch64/boot.S - Early boot entry point, initial page table setup, and jump to kernel
- */
 .section .boot, "ax"
 .global _start
 .global aarch64_kernel_l1
@@ -37,9 +33,7 @@
 
 _start:
 
-    // U-Boot enters AArch64 kernels at EL2 on QEMU virt. Drop to EL1 before
-    // touching EL1-only system registers. QEMU's direct loader already enters
-    // at EL1 and skips this path.
+    // U-Boot enters at EL2. Drop to EL1.
     mrs     x0, CurrentEL
     cmp     x0, #0x8
     b.ne    7f
@@ -53,7 +47,7 @@ _start:
     msr     cptr_el2, xzr
     ldr     x0, =7f
     ldr     x1, =(KERN_VIRT - PHYS_OFFSET)
-    sub     x0, x0, x1           // EL2 may have MMU disabled at handoff
+    sub     x0, x0, x1           // in case MMU is disabled
     msr     elr_el2, x0
     mov     x0, #0x3C5           // EL1h, mask debug/SError/IRQ/FIQ
     msr     spsr_el2, x0
@@ -72,7 +66,6 @@ _start:
     eret
 
 7:
-    // Some U-Boot builds enter applications at EL1 with their MMU still on.
     mrs     x0, CurrentEL
     cmp     x0, #0x4
     b.ne    8f

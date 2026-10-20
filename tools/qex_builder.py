@@ -1,7 +1,3 @@
-# SPDX-License-Identifier: MIT
-#
-# tools/qex_builder.py - Packages flat binaries into QEX executables with ELF metadata extraction
-
 import os
 import struct
 import sys

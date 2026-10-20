@@ -1,13 +1,11 @@
-# SPDX-License-Identifier: MIT
-
 import struct
 import os
 from PIL import Image, ImageFont, ImageDraw
 from fontTools import ttLib
 
-FONT_PATH = "tools/lucide.ttf"
+FONT_PATH = "assets/fonts/lucide.ttf"
 OUTPUT_BIN = "build/icons.bin"
-OUTPUT_H = "src/user/lib/icons_def.h"
+OUTPUT_H = "src/user/libui/icons_def.h"
 FONT_SIZE = 48
 IMG_WIDTH = 1024
 
