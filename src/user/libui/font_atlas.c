@@ -28,6 +28,7 @@ AtlasFont *gui_icons = 0;
 
 #define FONT_MAGIC_ATLAS 0x464F4E54
 #define DEFAULT_SIZE 17
+#define TEXT_Y_OFFSET 13
 
 static stbtt_fontinfo g_ttf;
 static int g_ttf_ready = 0;
@@ -35,6 +36,9 @@ static float g_scale = 0.0f;
 static int g_ascent_px = 0;
 static int g_line_h = 0;
 static uint8_t *g_ttf_data = 0;
+static stbtt_fontinfo g_icon_ttf;
+static int g_icon_ttf_ready = 0;
+static AtlasFont g_icon_marker;
 
 #define CACHE_SZ 128
 typedef struct {
@@ -114,6 +118,100 @@ void font_atlas_init(uint8_t *raw_data) {
     } else {
         ttf_init(raw_data);
     }
+}
+
+static uint8_t *read_file_from_disk(const char *path, uint32_t *out_size) {
+    int storage_pid = qk_get_server_pid(QK_SERVER_STORAGE);
+    if (!path || storage_pid < 0)
+        return 0;
+    message_t req, resp;
+    memset(&req, 0, sizeof(req));
+    req.type = MSG_FILE_OPEN;
+    req.data1 = 0xFFFFu;
+    strncpy((char *)req.payload, path, sizeof(req.payload) - 1);
+    if (qk_ipc_send_recv(storage_pid, &req, &resp) != 0)
+        return 0;
+    if (resp.type != MSG_FILE_SIZE || resp.data1 == 0)
+        return 0;
+    uint32_t size = resp.data1;
+    uint32_t page_count = resp.data2;
+    uint32_t page_offset = resp.data3;
+    uint8_t *data = (uint8_t *)malloc(size);
+    if (!data)
+        return 0;
+    int copied = 0;
+    if (page_count > 0 && page_count <= 4096) {
+        static uint32_t pages[4096];
+        uint32_t fetched = page_count < 128 ? page_count : 128;
+        memcpy(pages, resp.payload, fetched * sizeof(uint32_t));
+        while (fetched < page_count) {
+            memset(&req, 0, sizeof(req));
+            req.type = MSG_FILE_GET_PAGES;
+            req.data1 = fetched;
+            if (qk_ipc_send_recv(storage_pid, &req, &resp) != 0 ||
+                resp.type != MSG_FILE_SIZE || resp.data1 == 0)
+                break;
+            uint32_t got = resp.data1;
+            if (got > page_count - fetched) got = page_count - fetched;
+            memcpy(pages + fetched, resp.payload, got * sizeof(uint32_t));
+            fetched += got;
+        }
+        if (fetched == page_count) {
+            uint32_t mapped = qk_map_phys_list(pages, page_count);
+            if (mapped) {
+                memcpy(data, (void *)(uintptr_t)(mapped + page_offset), size);
+                copied = 1;
+            }
+        }
+    }
+    if (!copied) {
+        uint32_t offset = 0;
+        while (offset < size) {
+            memset(&req, 0, sizeof(req));
+            req.type = MSG_REQ_DATA;
+            req.data1 = offset;
+            req.data2 = sizeof(resp.payload);
+            if (qk_ipc_send_recv(storage_pid, &req, &resp) != 0 ||
+                resp.type != MSG_FILE_DATA || resp.data1 == 0)
+                break;
+            uint32_t chunk = resp.data1;
+            if (chunk > size - offset) chunk = size - offset;
+            memcpy(data + offset, resp.payload, chunk);
+            offset += chunk;
+        }
+        copied = (offset == size);
+    }
+    if (!copied) {
+        free(data);
+        return 0;
+    }
+    *out_size = size;
+    return data;
+}
+
+int font_atlas_load_from_disk(const char *path) {
+    uint32_t size = 0;
+    uint8_t *data = read_file_from_disk(path, &size);
+    /* TrueType's sfnt signature is 0x00010000 in big endian. */
+    if (!data || size < 4 || data[0] != 0 || data[1] != 1 || data[2] != 0 || data[3] != 0) {
+        free(data);
+        return -1;
+    }
+    font_atlas_init(data);
+    return user_font ? 0 : -1;
+}
+
+int icon_font_load_from_disk(const char *path) {
+    uint32_t size = 0;
+    uint8_t *data = read_file_from_disk(path, &size);
+    if (!data || size < 4 || data[0] != 0 || data[1] != 1 || data[2] != 0 || data[3] != 0 ||
+        !stbtt_InitFont(&g_icon_ttf, data, 0)) {
+        free(data);
+        return -1;
+    }
+    g_icon_ttf_ready = 1;
+    gui_icons = &g_icon_marker;
+    return 0;
 }
 
 void font_atlas_init_for_ptr(AtlasFont *atlas, uint8_t *raw_data) {
@@ -211,6 +309,7 @@ int get_font_height(void) {
 }
 
 int draw_codepoint_vector(gfx_context_t *ctx, int x, int y, uint32_t cp, uint32_t color) {
+    y -= TEXT_Y_OFFSET;
     if (g_ttf_ready) {
         CGlyph *cg = glyph_get(cp, DEFAULT_SIZE);
         if (!cg || !cg->bm)
@@ -279,6 +378,7 @@ int draw_codepoint_ex(gfx_context_t *ctx, int x, int y, uint32_t cp, uint32_t co
     (void)flags;
     if (!g_ttf_ready)
         return draw_codepoint_vector(ctx, x, y, cp, color);
+    y -= TEXT_Y_OFFSET;
     float sc = stbtt_ScaleForPixelHeight(&g_ttf, (float)size);
     int asc, desc, lg;
     stbtt_GetFontVMetrics(&g_ttf, &asc, &desc, &lg);
@@ -368,45 +468,58 @@ int get_line_height_ex(int size) {
 
 void draw_icon(gfx_context_t *ctx, AtlasFont *atlas, int x, int y, uint32_t icon_id,
                uint32_t color) {
-    if (!atlas || icon_id < 32)
-        return;
-    GlyphInfo *g = glyph_find_atlas(atlas, icon_id);
-    if (!g)
-        return;
-    for (int iy = 0; iy < g->h; iy++)
-        for (int ix = 0; ix < g->w; ix++) {
-            uint32_t px = atlas->bitmap[(g->y + iy) * atlas->tex_width + (g->x + ix)];
-            uint8_t a = (px >> 24) & 0xFF;
-            if (a > 0)
-                gfx_put_pixel_aa(ctx, x + g->off_x + ix, y + g->off_y + iy, color, a);
-        }
+    draw_icon_sized(ctx, atlas, x, y, icon_id, color, 32);
 }
+
+typedef struct {
+    uint32_t codepoint;
+    int size, width, height;
+    uint8_t *bitmap;
+} IconGlyphCacheEntry;
+
+#define ICON_GLYPH_CACHE_SIZE 128
+static IconGlyphCacheEntry g_icon_cache[ICON_GLYPH_CACHE_SIZE];
+static uint32_t g_icon_cache_next;
 
 void draw_icon_sized(gfx_context_t *ctx, AtlasFont *atlas, int x, int y, uint32_t icon_id,
                      uint32_t color, int size) {
-    if (!atlas || icon_id < 32 || size <= 0)
+    if (!atlas || !g_icon_ttf_ready || icon_id < 32 || size <= 0)
         return;
-    GlyphInfo *g = glyph_find_atlas(atlas, icon_id);
-    if (!g || g->w == 0 || g->h == 0)
+    IconGlyphCacheEntry *entry = 0;
+    for (int i = 0; i < ICON_GLYPH_CACHE_SIZE; i++) {
+        if (g_icon_cache[i].bitmap && g_icon_cache[i].codepoint == icon_id &&
+            g_icon_cache[i].size == size) {
+            entry = &g_icon_cache[i];
+            break;
+        }
+    }
+    if (!entry) {
+        int xoff, yoff;
+        float scale = stbtt_ScaleForPixelHeight(&g_icon_ttf, (float)size);
+        int width, height;
+        uint8_t *bitmap = stbtt_GetCodepointBitmap(&g_icon_ttf, 0, scale, (int)icon_id, &width,
+                                                   &height, &xoff, &yoff);
+        if (!bitmap || width <= 0 || height <= 0) {
+            free(bitmap);
+            return;
+        }
+        entry = &g_icon_cache[g_icon_cache_next++ % ICON_GLYPH_CACHE_SIZE];
+        free(entry->bitmap);
+        entry->codepoint = icon_id;
+        entry->size = size;
+        entry->width = width;
+        entry->height = height;
+        entry->bitmap = bitmap;
+    }
+    if (!entry->bitmap)
         return;
-    for (int oy = 0; oy < size; oy++) {
-        int sy0 = oy * g->h / size, sy1 = (oy + 1) * g->h / size;
-        if (sy1 <= sy0)
-            sy1 = sy0 + 1;
-        for (int ox = 0; ox < size; ox++) {
-            int sx0 = ox * g->w / size, sx1 = (ox + 1) * g->w / size;
-            if (sx1 <= sx0)
-                sx1 = sx0 + 1;
-            uint32_t sum = 0, count = 0;
-            for (int sy = sy0; sy < sy1; sy++)
-                for (int sx = sx0; sx < sx1; sx++) {
-                    uint32_t px = atlas->bitmap[(g->y + sy) * atlas->tex_width + (g->x + sx)];
-                    sum += (px >> 24) & 0xFF;
-                    count++;
-                }
-            uint8_t a = (uint8_t)(sum / count);
-            if (a > 0)
-                gfx_put_pixel_aa(ctx, x + ox, y + oy, color, a);
+    int dx = x + (size - entry->width) / 2;
+    int dy = y + (size - entry->height) / 2;
+    for (int iy = 0; iy < entry->height; iy++) {
+        for (int ix = 0; ix < entry->width; ix++) {
+            uint8_t alpha = entry->bitmap[iy * entry->width + ix];
+            if (alpha)
+                gfx_put_pixel_aa(ctx, dx + ix, dy + iy, color, alpha);
         }
     }
 }

@@ -20,8 +20,6 @@ extern uint32_t total_phys_pages;
 uint32_t k_font_size = 0;
 uint32_t k_font_phys_addr = 0;
 void *k_font_virt_addr = 0;
-uint32_t k_icons_phys_start = 0;
-uint32_t k_icons_size = 0;
 uint32_t k_wallpaper_phys_addr = 0;
 uint32_t k_wallpaper_size = 0;
 uint32_t k_logo_phys_addr = 0;
@@ -81,11 +79,6 @@ static int kernel_exec_internal(const boot_info_t *boot_info) {
             if (cmdline && strstr(cmdline, "type=wallpaper")) {
                 k_wallpaper_phys_addr = mods[i].start;
                 k_wallpaper_size = size;
-                continue;
-            }
-            if (cmdline && strstr(cmdline, "type=icons")) {
-                k_icons_phys_start = mods[i].start;
-                k_icons_size = size;
                 continue;
             }
             if (cmdline && strstr(cmdline, "type=logo")) {

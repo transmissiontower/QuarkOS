@@ -32,12 +32,8 @@ LIBGCC  = $(shell $(CC) -mcpu=cortex-a57 -print-libgcc-file-name)
 LDFLAGS = -T src/arch/aarch64/kernel.ld -nostdlib
 USER_LDFLAGS = -T src/user/linker.ld -nostdlib
 
-FONT_ATLAS = build/font_atlas.bin
-ICONS_BIN = build/icons.bin
-WALLPAPER_BIN = build/wallpaper.bin
-
 ASSETS_DESK := $(wildcard assets/desk/*)
-ASSETS_SYS  := $(wildcard assets/images/*)
+ASSETS_SYS  := $(filter-out assets/images/wallpaper.bmp,$(wildcard assets/images/*))
 
 KERNEL_C = src/kernel/core/kernel.c src/kernel/core/tick.c src/drivers/video/bootsplash.c src/kernel/lib/util.c \
  src/drivers/timer.c src/kernel/mm/kmalloc.c src/drivers/video/framebuffer.c \
@@ -126,29 +122,14 @@ $(foreach app,$(USER_APP_NAMES),$(eval $(call USER_APP_template,$(app))))
 build/comp.qex: build/compositor.qex
 	cp $< $@
 
-user_bin: $(ICONS_BIN) $(USER_APP_QEXES)
-
-resources:
-	$(MAKE) $(FONT_ATLAS) $(ICONS_BIN) $(WALLPAPER_BIN)
+user_bin: $(USER_APP_QEXES)
 
 build/logo.bmp: assets/images/logo.bmp
 	@mkdir -p build
 	cp $< $@
 
-src/arch/aarch64/modules.o: src/arch/aarch64/modules.S user_bin resources build/logo.bmp
+src/arch/aarch64/modules.o: src/arch/aarch64/modules.S user_bin build/logo.bmp
 	$(CC) $(CFLAGS) -c $< -o $@
-
-$(FONT_ATLAS): tools/font_baker.py assets/fonts/inter.ttf
-	mkdir -p build
-	python3 tools/font_baker.py
-
-$(ICONS_BIN): tools/icon_baker.py assets/fonts/lucide.ttf
-	mkdir -p build
-	python3 tools/icon_baker.py
-
-$(WALLPAPER_BIN): tools/wallpaper_baker.py assets/images/wallpaper.bmp
-	python3 tools/wallpaper_baker.py assets/images/wallpaper.bmp build/wallpaper.bin
-
 
 $(KERNEL): $(KERNEL_OBJ) src/arch/aarch64/kernel.ld
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJ) $(LIBGCC)
@@ -161,7 +142,7 @@ $(BOOT_SCRIPT): boot/uboot/boot.cmd
 	@mkdir -p build
 	$(MKIMAGE) -A arm64 -T script -C none -n "Sodium U-Boot boot" -d $< $@
 
-disk: $(KERNEL_BIN) $(BOOT_SCRIPT) user_bin $(FONT_ATLAS) $(WALLPAPER_BIN)
+disk: $(KERNEL_BIN) $(BOOT_SCRIPT) user_bin
 	mkdir -p build
 	dd if=/dev/zero of=$(DISK) bs=1M count=64
 	python3 tools/mbr_partition.py $(DISK) $(DISK_FAT_OFFSET_SECTORS)
@@ -179,9 +160,9 @@ disk: $(KERNEL_BIN) $(BOOT_SCRIPT) user_bin $(FONT_ATLAS) $(WALLPAPER_BIN)
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::USR/DEFAULT/DOCS
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::TMP
 	$(foreach n,$(USER_APP_NAMES),$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) build/$(n).qex ::PRG/$(shell echo $(n) | tr '[:lower:]' '[:upper:]').QEX ;)
-	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) build/font_atlas.bin ::SYS/DAT/ATL.BIN
-	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) $(ICONS_BIN) ::SYS/DAT/GUI.BIN
-	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) build/wallpaper.bin ::SYS/DAT/BG.BIN
+	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) assets/images/wallpaper.bmp ::SYS/DAT/BG.BMP
+	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) assets/fonts/inter.ttf ::SYS/DAT/INTER.TTF
+	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) assets/fonts/lucide.ttf ::SYS/DAT/LUCIDE.TTF
 	$(foreach f,$(ASSETS_SYS),$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) $(f) ::SYS/DAT/$(shell echo $(notdir $(f)) | tr '[:lower:]' '[:upper:]') ;)
 	$(foreach f,$(ASSETS_DESK),$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) $(f) ::USR/DEFAULT/DESK/$(shell echo $(notdir $(f)) | tr '[:lower:]' '[:upper:]') ;)
 	touch empty.tmp && $(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) empty.tmp ::TMP/.KEEP
@@ -290,8 +271,7 @@ clean:
 	rm -f $(KERNEL) $(DISK)
 	rm -f boot.log empty.tmp
 	rm -f floppy.img cdrom.img usb.img
-	rm -f src/user/libui/icons_def.h
 	rm -rf build_aarch64_user
 	rm -f build/*.qex build/*.bin build/*.elf build/logo.bmp
 
-.PHONY: all clean image disk run run-gui run-hvf run-hvf-multi run-tcg user_bin resources test-disks
+.PHONY: all clean image disk run run-gui run-hvf run-hvf-multi run-tcg user_bin test-disks

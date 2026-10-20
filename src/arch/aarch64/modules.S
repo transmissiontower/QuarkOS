@@ -42,24 +42,6 @@ _mod_init_start:
 .incbin "build/init.qex"
 _mod_init_end:
 
-.global _mod_font_atlas_start
-.global _mod_font_atlas_end
-_mod_font_atlas_start:
-.incbin "build/font_atlas.bin"
-_mod_font_atlas_end:
-
-.global _mod_icons_start
-.global _mod_icons_end
-_mod_icons_start:
-.incbin "build/icons.bin"
-_mod_icons_end:
-
-.global _mod_wallpaper_start
-.global _mod_wallpaper_end
-_mod_wallpaper_start:
-.incbin "build/wallpaper.bin"
-_mod_wallpaper_end:
-
 .global _mod_logo_start
 .global _mod_logo_end
 _mod_logo_start:

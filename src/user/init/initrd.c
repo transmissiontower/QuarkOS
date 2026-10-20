@@ -15,8 +15,6 @@ extern void mm_vmm_clear_l1_override(void);
 uint32_t k_font_size;
 uint32_t k_font_phys_addr;
 void *k_font_virt_addr;
-uint32_t k_icons_phys_start;
-uint32_t k_icons_size;
 uint32_t k_wallpaper_phys_addr;
 uint32_t k_wallpaper_size;
 uint32_t k_logo_phys_addr;
@@ -65,9 +63,6 @@ void k_start_init_process(const boot_info_t *boot_info) {
         if (cmdline && strstr(cmdline, "type=wallpaper")) {
             k_wallpaper_phys_addr = mods[i].start;
             k_wallpaper_size = size;
-        } else if (cmdline && strstr(cmdline, "type=icons")) {
-            k_icons_phys_start = mods[i].start;
-            k_icons_size = size;
         } else if (cmdline && strstr(cmdline, "type=logo")) {
             k_logo_phys_addr = mods[i].start;
             k_logo_size = size;

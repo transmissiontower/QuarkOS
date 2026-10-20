@@ -598,8 +598,7 @@ int main(void) {
     if (comp_pid < 0 || storage_pid < 0)
         return 1;
     void *font_addr = 0;
-    if (qk_map_font_atlas(&font_addr) == 0)
-        font_atlas_init((uint8_t *)font_addr);
+    font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
     message_t msg;
     memset(&msg, 0, sizeof(msg));
     msg.type = MSG_WIN_CREATE;

@@ -7,11 +7,39 @@
 #include "user/libc/libapi.h"
 #include "user/libc/path.h"
 #include "user/libui/window.h"
+#define _STDDEF_H
+#define _STDDEF_H_
+#define _ANSI_STDDEF_H
+#define _GCC_WRAP_STDINT_H
+#define _STDINT_H
+#define _SYS_STDINT_H_
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
+#define STBI_MALLOC(sz) malloc((unsigned int)(sz))
+#define STBI_FREE(p) free((p))
+#define STBI_REALLOC_SIZED(p, o, n) realloc((p), (unsigned int)(n))
+#define STBI_REALLOC(p, sz) realloc((p), (unsigned int)(sz))
+#define STBI_NO_STDIO
+#define STBI_NO_HDR
+#define STBI_NO_LINEAR
+#define STBI_NO_TGA
+#define STBI_NO_PSD
+#define STBI_NO_PIC
+#define STBI_NO_PNM
+#define STBI_ASSERT(x) ((void)0)
+#define STBI_NO_THREAD_LOCALS
+#define STB_IMAGE_IMPLEMENTATION
+#include "third_party/stb/stb_image.h"
 fb_info_t fb;
 gfx_context_t ctx;
 static gfx_context_t fb_ctx;
 int32_t mx = 512, my = 384;
-uint32_t fps_counter = 0, last_fps_update = 0, *wallpaper_data = 0;
+uint32_t fps_counter = 0, last_fps_update = 0;
+static uint8_t *wallpaper_bmp;
+static uint32_t wallpaper_size;
+static uint8_t *wallpaper_rgba;
+static int wallpaper_width, wallpaper_height;
 int current_fps = 0;
 static int debug_overlay_visible = 0;
 static uint32_t total_ipc_messages = 0;
@@ -134,29 +162,46 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size) {
         *out_size = 0;
     if (!filename || ensure_storage_pid() != 0)
         return 0;
-    uint32_t dir_cluster = 0;
-    char resolved_name[16];
-    const char *target_name = filename;
-    if (strstr(filename, "/")) {
-        if (qk_path_resolve(filename, &dir_cluster, resolved_name) != 0)
-            return 0;
-        target_name = resolved_name;
-    }
-    message_t req;
+    message_t req, resp;
     memset(&req, 0, sizeof(message_t));
     req.type = MSG_FILE_OPEN;
-    req.data1 = dir_cluster;
-    strncpy((char *)req.payload, target_name, 12);
-    if (qk_sys_ipc_send(storage_server_pid, &req) != 0)
-        return 0;
-    message_t resp;
-    if (wait_for_storage_reply(&resp) != 0)
+    req.data1 = 0xFFFFu;
+    strncpy((char *)req.payload, filename, sizeof(req.payload) - 1);
+    if (qk_ipc_send_recv(storage_server_pid, &req, &resp) != 0)
         return 0;
     if (resp.type != MSG_FILE_SIZE || resp.data1 == 0)
         return 0;
     uint32_t size = resp.data1;
     if (out_size)
         *out_size = size;
+    uint32_t page_count = resp.data2;
+    uint32_t page_offset = resp.data3;
+    if (page_count > 0 && page_count <= 4096) {
+        static uint32_t pages[4096];
+        uint32_t fetched = page_count < 128 ? page_count : 128;
+        memcpy(pages, resp.payload, fetched * sizeof(uint32_t));
+        while (fetched < page_count) {
+            memset(&req, 0, sizeof(req));
+            req.type = MSG_FILE_GET_PAGES;
+            req.data1 = fetched;
+            if (qk_ipc_send_recv(storage_server_pid, &req, &resp) != 0 ||
+                resp.type != MSG_FILE_SIZE || resp.data1 == 0)
+                break;
+            uint32_t got = resp.data1;
+            if (got > page_count - fetched) got = page_count - fetched;
+            memcpy(pages + fetched, resp.payload, got * sizeof(uint32_t));
+            fetched += got;
+        }
+        if (fetched == page_count) {
+            uint32_t mapped = qk_map_phys_list(pages, page_count);
+            if (mapped) {
+                uint8_t *copy = (uint8_t *)malloc(size);
+                if (!copy) return 0;
+                memcpy(copy, (void *)(uintptr_t)(mapped + page_offset), size);
+                return copy;
+            }
+        }
+    }
     uint8_t *buffer = (uint8_t *)malloc(size);
     if (!buffer)
         return 0;
@@ -1065,11 +1110,28 @@ static void present_frame(void) {
         prev_cursor_valid = 0;
 }
 void render() {
-    if (wallpaper_data) {
-        uint32_t wp_w = 1920;
-        uint32_t copy_w = (fb.width < wp_w) ? fb.width : wp_w;
-        for (uint32_t y = 0; y < fb.height; y++)
-            memcpy(ctx.buffer + y * fb.width, wallpaper_data + y * wp_w, copy_w * 4);
+    if (wallpaper_rgba && wallpaper_width > 0 && wallpaper_height > 0) {
+        uint32_t crop_w = (uint32_t)wallpaper_width;
+        uint32_t crop_h = (uint32_t)wallpaper_height;
+        uint32_t crop_x = 0, crop_y = 0;
+        if (crop_w * fb.height > crop_h * fb.width) {
+            uint32_t new_w = crop_h * fb.width / fb.height;
+            crop_x = (crop_w - new_w) / 2;
+            crop_w = new_w;
+        } else {
+            uint32_t new_h = crop_w * fb.height / fb.width;
+            crop_y = (crop_h - new_h) / 2;
+            crop_h = new_h;
+        }
+        for (uint32_t y = 0; y < fb.height; y++) {
+            uint32_t sy = crop_y + y * crop_h / fb.height;
+            for (uint32_t x = 0; x < fb.width; x++) {
+                uint32_t sx = crop_x + x * crop_w / fb.width;
+                uint8_t *px = wallpaper_rgba + ((sy * wallpaper_width + sx) * 4);
+                ctx.buffer[y * fb.width + x] = 0xFF000000u | ((uint32_t)px[0] << 16) |
+                                               ((uint32_t)px[1] << 8) | px[2];
+            }
+        }
     } else {
         memset32(ctx.buffer, UI_SURFACE_COLOR, (fb.width * fb.height));
     }
@@ -1157,20 +1219,17 @@ void render() {
     fps_counter++;
 }
 int main() {
-    void *icons_addr = 0, *font_addr = 0;
-    qk_map_wallpaper((void **)&wallpaper_data);
-    qk_map_icons_atlas(&icons_addr);
-    if (icons_addr) {
-        gui_icons = (AtlasFont *)malloc(sizeof(AtlasFont));
-        font_atlas_init_for_ptr(gui_icons, (uint8_t *)icons_addr);
-    }
+    wallpaper_bmp = load_file_from_storage("/SYS/DAT/BG.BMP", &wallpaper_size);
+    if (wallpaper_bmp && wallpaper_size <= 0x7FFFFFFFu)
+        wallpaper_rgba = stbi_load_from_memory(wallpaper_bmp, (int)wallpaper_size,
+                                               &wallpaper_width, &wallpaper_height, 0, 4);
+    icon_font_load_from_disk("/SYS/DAT/LUCIDE.TTF");
     if (qk_map_framebuffer(&fb) != 0)
         return 1;
     fb_ctx = (gfx_context_t){fb.buffer, fb.width, fb.height, fb.pitch};
     ctx = (gfx_context_t){(uint32_t *)malloc(fb.width * fb.height * 4), fb.width, fb.height,
                           fb.width * 4};
-    if (qk_map_font_atlas(&font_addr) == 0)
-        font_atlas_init((uint8_t *)font_addr);
+    font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
     window_manager_init();
     last_fps_update = qk_get_uptime();
     uint32_t last_render_ms = qk_get_uptime();

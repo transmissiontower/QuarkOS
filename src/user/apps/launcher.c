@@ -513,10 +513,32 @@ static int spawn_app(const char *qex_path) {
     req.type  = MSG_FILE_OPEN;
     req.data1 = 0xFFFF;
     strncpy((char *)req.payload, qex_path, sizeof(req.payload) - 1);
-    qk_sys_ipc_send(storage_pid, &req);
-    while (1) { qk_ipc_recv(&resp); if (resp.sender_pid == storage_pid) break; }
+    qk_ipc_send_recv(storage_pid, &req, &resp);
     if (resp.type != MSG_FILE_SIZE || resp.data1 == 0) return -1;
     uint32_t size = resp.data1;
+    uint32_t pages_n = resp.data2, page_offset = resp.data3;
+    if (pages_n > 0 && pages_n <= 4096) {
+        static uint32_t pages[4096];
+        uint32_t fetched = pages_n < 128 ? pages_n : 128;
+        memcpy(pages, resp.payload, fetched * sizeof(uint32_t));
+        while (fetched < pages_n) {
+            memset(&req, 0, sizeof(req));
+            req.type = MSG_FILE_GET_PAGES;
+            req.data1 = fetched;
+            if (qk_ipc_send_recv(storage_pid, &req, &resp) != 0 ||
+                resp.type != MSG_FILE_SIZE || resp.data1 == 0)
+                break;
+            uint32_t got = resp.data1;
+            if (got > pages_n - fetched) got = pages_n - fetched;
+            memcpy(pages + fetched, resp.payload, got * sizeof(uint32_t));
+            fetched += got;
+        }
+        if (fetched == pages_n) {
+            uint32_t mapped = qk_map_phys_list(pages, pages_n);
+            if (mapped)
+                return qk_spawn((void *)(uintptr_t)(mapped + page_offset), size);
+        }
+    }
     uint8_t *buf  = (uint8_t *)malloc(size);
     if (!buf) return -1;
     uint32_t off = 0;
@@ -525,8 +547,8 @@ static int spawn_app(const char *qex_path) {
         req.type  = MSG_REQ_DATA;
         req.data1 = off;
         req.data2 = (uint32_t)sizeof(resp.payload);
-        qk_sys_ipc_send(storage_pid, &req);
-        while (1) { qk_ipc_recv(&resp); if (resp.sender_pid == storage_pid && resp.type == MSG_FILE_DATA) break; }
+        if (qk_ipc_send_recv(storage_pid, &req, &resp) != 0 || resp.type != MSG_FILE_DATA)
+            break;
         uint32_t got = resp.data1;
         if (got == 0) break;
         if (off + got > size) got = size - off;
@@ -647,16 +669,9 @@ int main(void) {
     storage_pid = qk_get_server_pid(QK_SERVER_STORAGE);
     if (comp_pid < 0 || storage_pid < 0) return 1;
 
-    void *font_addr = 0;
-    if (qk_map_font_atlas(&font_addr) == 0)
-        font_atlas_init((uint8_t *)font_addr);
+    font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
 
-    void *icons_addr = 0;
-    if (qk_map_icons_atlas(&icons_addr) == 0) {
-        gui_icons = (AtlasFont *)malloc(sizeof(AtlasFont));
-        if (gui_icons)
-            font_atlas_init_for_ptr(gui_icons, (uint8_t *)icons_addr);
-    }
+    icon_font_load_from_disk("/SYS/DAT/LUCIDE.TTF");
 
 
     message_t msg;

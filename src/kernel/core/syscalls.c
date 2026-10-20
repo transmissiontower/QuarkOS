@@ -14,8 +14,6 @@ extern uint32_t total_phys_pages;
 extern uint32_t k_font_phys_addr;
 extern uint32_t k_font_size;
 extern void *k_font_virt_addr;
-extern uint32_t k_icons_phys_start;
-extern uint32_t k_icons_size;
 extern uint32_t k_wallpaper_phys_addr;
 extern uint32_t k_wallpaper_size;
 static int is_ptr_safe(const void *ptr, uint32_t size);
@@ -351,22 +349,6 @@ int sys_map_font_atlas(uint32_t *virt_addr_out) {
                         PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
     }
     *virt_addr_out = virt_start + ((uint32_t)(uintptr_t)k_font_virt_addr & 0xFFFu);
-    return 0;
-}
-int sys_map_icons_atlas(uint32_t *virt_addr_out) {
-    if (!is_ptr_safe(virt_addr_out, 4))
-        return -1;
-    if (k_icons_phys_start == 0)
-        return -1;
-    uint32_t virt_start = 0x91000000;
-    uint32_t phys_base = k_icons_phys_start & ~0xFFFU;
-    uint32_t offset = k_icons_phys_start & 0xFFFU;
-    uint32_t pages = (k_icons_size + offset + 4095) / 4096;
-    for (uint32_t i = 0; i < pages; i++) {
-        mm_vmm_map_page(virt_start + i * 4096, phys_base + i * 4096,
-                        PAGE_FLAG_PRESENT | PAGE_FLAG_USER | PAGE_FLAG_SHARED);
-    }
-    *virt_addr_out = virt_start + offset;
     return 0;
 }
 int sys_sbrk(uint32_t size) {
@@ -932,9 +914,6 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         break;
     case 26:
         regs->eax = sys_sbrk(regs->ebx);
-        break;
-    case 32:
-        regs->eax = sys_map_icons_atlas((uint32_t *)(uintptr_t)regs->ebx);
         break;
     case 33:
         regs->eax = sys_map_wallpaper((uint32_t *)(uintptr_t)regs->ebx);

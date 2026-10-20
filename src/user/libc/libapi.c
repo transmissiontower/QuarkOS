@@ -65,9 +65,6 @@ int qk_map_wallpaper(void **ptr) {
 int qk_map_font_atlas(void **ptr) {
     return syscall(25, (long)ptr, 0, 0);
 }
-int qk_map_icons_atlas(void **ptr) {
-    return syscall(32, (long)ptr, 0, 0);
-}
 int qk_get_vmap(vmap_region_t *out) {
     return syscall(35, (long)out, 0, 0);
 }

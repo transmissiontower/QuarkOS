@@ -601,34 +601,23 @@ static void k_draw_boot_line(int x, int y, const char *str) {
     }
 }
 void draw_boot_splash() {
-    if (k_logo_phys_addr == 0 || !k_font_virt_addr)
+    if (k_logo_phys_addr == 0)
         return;
     void *logo_data = map_module(k_logo_phys_addr, k_logo_size);
-    k_font_init(k_font_virt_addr);
+    if (!logo_data)
+        return;
     BITMAPINFOHEADER *info = (BITMAPINFOHEADER *)(logo_data + sizeof(BITMAPFILEHEADER));
     int bar_w = 200, bar_h = 2, gap = 70;
     int scaled_w = info->bi_width, scaled_h = info->bi_height;
     int logo_x = (fb_width - scaled_w) / 2, logo_y = (fb_height - (scaled_h + gap + bar_h)) / 2;
     int bar_x = (fb_width - bar_w) / 2, bar_y = logo_y + scaled_h + gap;
-    int last_line = -1;
     for (int i = 0; i <= 100; i++) {
         clear_screen(COLOR_BLACK);
         draw_bmp(logo_data, logo_x, logo_y);
         rect_fill(bar_x, bar_y, bar_w, bar_h, 0x1A1A1A);
         rect_fill(bar_x, bar_y, (bar_w * i) / 100, bar_h, COLOR_WHITE);
-        int current_line_limit = (i * (int)boot_log_count) / 100;
-        int line_h = k_boot_font.line_height - 2;
-        for (int m = 0; m <= current_line_limit && m < (int)boot_log_count; m++) {
-            k_draw_boot_line(12, 8 + m * line_h, boot_log_entries[m]);
-        }
         drv_fb_swap_buffers();
-        int delay_multiplier = 1;
-        if (current_line_limit != last_line) {
-            if (current_line_limit == 4 || current_line_limit == 12 || current_line_limit == 18 ||
-                current_line_limit == 26 || current_line_limit == 30)
-                delay_multiplier = 15;
-            last_line = current_line_limit;
-        }
+        int delay_multiplier = (i == 20 || i == 50 || i == 80) ? 15 : 1;
         for (volatile int d = 0; d < 200000 * delay_multiplier; d++)
             asm volatile("nop" ::: "memory");
     }

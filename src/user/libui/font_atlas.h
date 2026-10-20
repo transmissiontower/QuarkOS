@@ -23,6 +23,8 @@ extern AtlasFont *gui_icons;
 #define FONT_ITALIC 2
 
 void font_atlas_init(uint8_t *raw_data);
+int font_atlas_load_from_disk(const char *path);
+int icon_font_load_from_disk(const char *path);
 void font_atlas_init_for_ptr(AtlasFont *atlas, uint8_t *raw_data);
 
 int utf8_decode(const uint8_t *s, uint32_t *cp);

@@ -18,7 +18,6 @@ cdrom.img
 usb.img
 
 # Generated files
-src/user/libui/icons_def.h
 boot.log
 empty.tmp
 

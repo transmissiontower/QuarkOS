@@ -1164,19 +1164,13 @@ int main(void) {
         return 1;
     init_disk_sidebar();
 
+    font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
+    icon_font_load_from_disk("/SYS/DAT/LUCIDE.TTF");
     {
         message_t sub;
         memset(&sub, 0, sizeof(sub));
         sub.type = MSG_DISK_SUBSCRIBE;
         qk_sys_ipc_send(storage_pid, &sub);
-    }
-    void *font_addr = 0;
-    if (qk_map_font_atlas(&font_addr) == 0)
-        font_atlas_init((uint8_t *)font_addr);
-    void *icons_addr = 0;
-    if (qk_map_icons_atlas(&icons_addr) == 0 && icons_addr) {
-        gui_icons = (AtlasFont *)malloc(sizeof(AtlasFont));
-        font_atlas_init_for_ptr(gui_icons, (uint8_t *)icons_addr);
     }
 
     {

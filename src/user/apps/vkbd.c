@@ -225,8 +225,7 @@ void main(void) {
         screen_w = (int)fb.width;
         screen_h = (int)fb.height;
     }
-    if (qk_map_font_atlas(&font_addr) == 0)
-        font_atlas_init((uint8_t *)font_addr);
+    font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
     int pw = vkbd_panel_w();
     int ph = vkbd_panel_h();
     vkbd_buf = (uint32_t *)malloc((uint32_t)(pw * ph * 4));

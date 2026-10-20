@@ -63,7 +63,6 @@ int qk_ipc_send_recv(int dest_pid, message_t *msg, message_t *reply);
 int qk_sbrk(uint32_t size);
 int qk_map_wallpaper(void **ptr);
 int qk_map_font_atlas(void **ptr);
-int qk_map_icons_atlas(void **ptr);
 int qk_get_vmap(vmap_region_t *out);
 int qk_sys_kill(int pid);
 int qk_get_procs(process_info_t *out, int max);
