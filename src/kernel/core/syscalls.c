@@ -39,6 +39,13 @@ static int input_server_pid = -1;
 static int ttysh_server_pid = -1;
 #define SHARED_VIRT_LIMIT 0x90000000U
 static uint32_t kphys_list[4096];
+typedef struct {
+    int dest_pid;
+    uint32_t src_virt;
+    uint32_t size;
+    int valid;
+} foreign_map_grant_t;
+static foreign_map_grant_t foreign_map_grants[64];
 
 static int is_ptr_safe(const void *ptr, uint32_t size) {
     uintptr_t addr = (uintptr_t)ptr;
@@ -109,7 +116,7 @@ static int caller_is_system(void) {
 
 static int sys_set_server_pid_user(int type, int pid) {
     int *slot;
-    if (pid != current_process->pid)
+    if (pid != current_process->pid || current_process->parent_pid != 1)
         return -1;
     if (type == 0)
         slot = &storage_server_pid;
@@ -157,6 +164,9 @@ int sys_kill(int pid) {
         return -1;
     if (is_server_pid(pid))
         return -1; 
+    process_t *target = k_proc_find_by_id(pid);
+    if (!target || (!caller_is_system() && target->parent_pid != current_process->pid))
+        return -1;
     KLOG_PROC(LOG_WARN, "KILL pid=%d by=%d name='%s'", pid, current_process->pid,
               current_process->name);
     k_proc_terminate(pid);
@@ -453,6 +463,8 @@ int sys_get_time(Time *user_time) {
     return 0;
 }
 int sys_power_action(int action) {
+    if (!caller_is_system())
+        return -1;
     if (action == 0)
         arm_psci_system_off();
     if (action == 1)
@@ -490,7 +502,7 @@ int sys_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out) {
     }
     for (uint32_t i = 0; i < pages; i++) {
         uint32_t phys = mm_user_virt_to_phys(page_base + i * 4096) & 0xFFFFF000U;
-        mm_page_mark_exported(phys);
+        mm_page_mark_exported(phys, current_process->pid);
         out[i] = phys;
     }
     return (int)pages;
@@ -509,6 +521,9 @@ uint32_t sys_map_phys_list(uint32_t *phys_pages, uint32_t count) {
         uint32_t phys = kphys_list[i];
         if (!phys || (phys & 0xFFF) || !mm_page_is_exported(phys))
             return 0;
+        int owner = mm_page_export_owner(phys);
+        if (!caller_is_system() && owner != current_process->pid && owner != storage_server_pid)
+            return 0;
     }
     for (uint32_t i = 0; i < count; i++) {
         mm_vmm_map_page(virt_start + i * 4096, kphys_list[i],
@@ -525,8 +540,23 @@ static uint32_t sys_map_foreign(int src_pid, uint32_t src_virt, uint32_t size) {
     process_t *src = k_proc_find_by_id(src_pid);
     if (!src)
         return 0;
-    if (!caller_is_system() && !is_system_pid(src_pid))
-        return 0;
+    int grant_idx = -1;
+    if (!caller_is_system()) {
+        if (src_pid != compositor_server_pid)
+            return 0;
+        for (int i = 0; i < 64; i++) {
+            if (foreign_map_grants[i].valid &&
+                foreign_map_grants[i].dest_pid == current_process->pid &&
+                foreign_map_grants[i].src_virt == src_virt &&
+                foreign_map_grants[i].size == size) {
+                grant_idx = i;
+                foreign_map_grants[i].valid = 0;
+                break;
+            }
+        }
+        if (grant_idx < 0)
+            return 0;
+    }
     if ((uint64_t)src_virt + size > KERNEL_START)
         return 0;
     uint32_t offset = src_virt & 0xFFFU;
@@ -549,6 +579,29 @@ static uint32_t sys_map_foreign(int src_pid, uint32_t src_virt, uint32_t size) {
     }
     current_process->shared_virt_bump += page_count * 4096;
     return virt_start + offset;
+}
+static int sys_grant_foreign_map(int dest_pid, uint32_t src_virt, uint32_t size) {
+    if (current_process->pid != compositor_server_pid || size == 0 ||
+        size > 16 * 1024 * 1024 || (uint64_t)src_virt + size > KERNEL_START ||
+        !mm_user_range_ok(src_virt, size) || !k_proc_find_by_id(dest_pid))
+        return -1;
+    int slot = -1;
+    for (int i = 0; i < 64; i++) {
+        if (foreign_map_grants[i].valid && foreign_map_grants[i].dest_pid == dest_pid &&
+            foreign_map_grants[i].src_virt == src_virt && foreign_map_grants[i].size == size) {
+            slot = i;
+            break;
+        }
+        if (!foreign_map_grants[i].valid && slot < 0)
+            slot = i;
+    }
+    if (slot < 0)
+        return -1;
+    foreign_map_grants[slot].dest_pid = dest_pid;
+    foreign_map_grants[slot].src_virt = src_virt;
+    foreign_map_grants[slot].size = size;
+    foreign_map_grants[slot].valid = 1;
+    return 0;
 }
 int sys_trigger_panic(const char *msg) {
     if (current_process->pid != 0)
@@ -853,6 +906,8 @@ int sys_signal_send(int pid, int signum) {
     process_t *target = k_proc_find_by_id(pid);
     if (!target)
         return -1;
+    if (!caller_is_system() && target->parent_pid != current_process->pid)
+        return -1;
     if (target->ipc_queue.count >= IPC_QUEUE_SIZE)
         return -1;
     message_t *slot = &target->ipc_queue.messages[target->ipc_queue.tail];
@@ -960,6 +1015,10 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         break;
     case 58:
         regs->eax = sys_map_foreign((int)regs->ebx, (uint32_t)regs->ecx, (uint32_t)regs->edx);
+        break;
+    case 59:
+        regs->eax = (uint32_t)sys_grant_foreign_map((int)regs->ebx, (uint32_t)regs->ecx,
+                                                    (uint32_t)regs->edx);
         break;
     case 64:
         regs->eax = (uint32_t)sys_waitpid((int)regs->ebx);

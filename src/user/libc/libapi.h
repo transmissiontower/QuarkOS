@@ -85,6 +85,7 @@ void qk_disk_select(int disk_idx);
 int qk_virt_to_phys_list(uint32_t virt, uint32_t size, uint32_t *out);
 uint32_t qk_map_phys_list(uint32_t *phys_pages, uint32_t count);
 void *qk_map_foreign_mem(int src_pid, uint32_t src_virt, uint32_t size);
+int qk_grant_foreign_map(int dest_pid, uint32_t src_virt, uint32_t size);
 void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out);
 void qk_win_dirty(int comp_pid);
 int qk_get_stats(uint32_t *used, uint32_t *total, uint32_t *cpu);

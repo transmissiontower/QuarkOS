@@ -24,6 +24,22 @@ static const uint32_t ansi_pal[16] = {
 #define PAD_X 10
 #define PAD_Y 4
 
+static int str_eq(const char *a, const char *b) {
+    while (*a && *b) {
+        char ca = *a;
+        char cb = *b;
+        if (ca >= 'a' && ca <= 'z')
+            ca -= 'a' - 'A';
+        if (cb >= 'a' && cb <= 'z')
+            cb -= 'a' - 'A';
+        if (ca != cb)
+            return 0;
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
 static char lbuf[MAX_LINES][MAX_COLS];
 static uint8_t lcol[MAX_LINES][MAX_COLS];
 static int ltotal = 0;
@@ -354,21 +370,14 @@ static void term_render(void) {
 }
 
 static int spawn_ttysh(void) {
-    {
-        int existing = -1;
-        for (int _try = 0; _try < 200 && existing < 0; _try++) {
-            existing = qk_get_server_pid(QK_SERVER_TTYSH);
-            if (existing < 0)
-                qk_sleep(10);
-        }
-        if (existing >= 0) {
-            message_t attach;
-            memset(&attach, 0, sizeof(attach));
-            attach.type = MSG_TERM_ATTACH;
-            attach.data1 = (uint32_t)qk_getpid();
-            qk_sys_ipc_send(existing, &attach);
-            return existing;
-        }
+    int existing = qk_get_server_pid(QK_SERVER_TTYSH);
+    if (existing >= 0) {
+        message_t attach;
+        memset(&attach, 0, sizeof(attach));
+        attach.type = MSG_TERM_ATTACH;
+        attach.data1 = (uint32_t)qk_getpid();
+        qk_sys_ipc_send(existing, &attach);
+        return existing;
     }
 
     int storage = qk_get_server_pid(QK_SERVER_STORAGE);
@@ -407,18 +416,7 @@ static int spawn_ttysh(void) {
             if (*ptr == '\n')
                 ptr++;
             if (is_dir) {
-                const char *n = "APPS";
-                int match = 1;
-                for (int i = 0; i < 4 && name[i]; i++) {
-                    char a = name[i];
-                    if (a >= 'a' && a <= 'z')
-                        a -= 32;
-                    if (a != n[i]) {
-                        match = 0;
-                        break;
-                    }
-                }
-                if (match)
+                if (str_eq(name, "PRG") || (str_eq(name, "APPS") && !apps_cluster))
                     apps_cluster = clus;
             }
         }
@@ -445,26 +443,65 @@ static int spawn_ttysh(void) {
     uint8_t *buf = malloc(size);
     if (!buf)
         return -1;
-    uint32_t off = 0;
-    while (off < size) {
-        memset(&req, 0, sizeof(req));
-        req.type = MSG_REQ_DATA;
-        req.data1 = off;
-        req.data2 = 480;
-        qk_sys_ipc_send(storage, &req);
-        while (1) {
-            qk_ipc_recv(&resp);
-            if (resp.sender_pid == storage && resp.type == MSG_FILE_DATA)
+    int copied = 0;
+    uint32_t page_count = resp.data2;
+    uint32_t page_offset = resp.data3;
+    if (page_count > 0 && page_count <= 4096 &&
+        (uint64_t)page_offset + size <= (uint64_t)page_count * 4096) {
+        static uint32_t pages[4096];
+        uint32_t fetched = page_count < 128 ? page_count : 128;
+        memcpy(pages, resp.payload, fetched * sizeof(uint32_t));
+        while (fetched < page_count) {
+            memset(&req, 0, sizeof(req));
+            req.type = MSG_FILE_GET_PAGES;
+            req.data1 = fetched;
+            qk_sys_ipc_send(storage, &req);
+            while (1) {
+                qk_ipc_recv(&resp);
+                if (resp.sender_pid == storage)
+                    break;
+            }
+            if (resp.type != MSG_FILE_SIZE || resp.data1 == 0)
                 break;
+            uint32_t got = resp.data1;
+            if (got > page_count - fetched)
+                got = page_count - fetched;
+            memcpy(pages + fetched, resp.payload, got * sizeof(uint32_t));
+            fetched += got;
         }
-        uint32_t got = resp.data1;
-        if (!got)
-            break;
-        memcpy(buf + off, resp.payload, got);
-        off += got;
+        if (fetched == page_count) {
+            uint32_t mapped = qk_map_phys_list(pages, page_count);
+            if (mapped) {
+                memcpy(buf, (void *)(uintptr_t)(mapped + page_offset), size);
+                copied = 1;
+            }
+        }
+    }
+    if (!copied) {
+        uint32_t off = 0;
+        while (off < size) {
+            memset(&req, 0, sizeof(req));
+            req.type = MSG_REQ_DATA;
+            req.data1 = off;
+            req.data2 = sizeof(req.payload);
+            qk_sys_ipc_send(storage, &req);
+            while (1) {
+                qk_ipc_recv(&resp);
+                if (resp.sender_pid == storage && resp.type == MSG_FILE_DATA)
+                    break;
+            }
+            uint32_t got = resp.data1;
+            if (!got)
+                break;
+            if (got > size - off)
+                got = size - off;
+            memcpy(buf + off, resp.payload, got);
+            off += got;
+        }
+        copied = (off == size);
     }
 
-    int pid = qk_spawn(buf, size);
+    int pid = copied ? qk_spawn(buf, size) : -1;
     free(buf);
     if (pid < 0)
         return -1;

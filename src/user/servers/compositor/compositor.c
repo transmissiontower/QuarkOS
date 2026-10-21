@@ -928,11 +928,16 @@ static void process_message(message_t *msg) {
             if (content_h < 1)
                 content_h = 1;
             uint32_t buf_size = (uint32_t)win->w * (uint32_t)content_h * 4;
-            reply.type = MSG_WIN_BUFFER_INFO;
-            reply.data1 = buf_size;
-            reply.data2 = (uint32_t)win->w;
-            reply.data3 = (uint32_t)content_h;
-            ((uint32_t *)reply.payload)[0] = (uint32_t)(uintptr_t)win->gfx_buffer;
+            uint32_t buf_virt = (uint32_t)(uintptr_t)win->gfx_buffer;
+            if (qk_grant_foreign_map(msg->sender_pid, buf_virt, buf_size) == 0) {
+                reply.type = MSG_WIN_BUFFER_INFO;
+                reply.data1 = buf_size;
+                reply.data2 = (uint32_t)win->w;
+                reply.data3 = (uint32_t)content_h;
+                ((uint32_t *)reply.payload)[0] = buf_virt;
+            } else {
+                reply.type = MSG_ERROR;
+            }
         } else {
             reply.type = MSG_ERROR;
         }

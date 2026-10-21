@@ -129,6 +129,7 @@ static int load_quark_exec_image(const QuarkExec *exec, uint32_t size, exec_imag
 void k_scheduler_init() {
     process_t *kernel_proc = (process_t *)mm_heap_alloc(sizeof(process_t));
     kernel_proc->pid = 0;
+    kernel_proc->parent_pid = -1;
     kernel_proc->pd_phys = (uintptr_t)arm_get_ttbr0();
     kernel_proc->state = PROCESS_RUNNING;
     kernel_proc->next = kernel_proc;
@@ -243,6 +244,7 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size) {
         return 0;
     }
     proc->pid = next_pid++;
+    proc->parent_pid = current_process ? current_process->pid : 0;
     proc->ipc_queue.head = 0;
     proc->ipc_queue.tail = 0;
     proc->ipc_queue.count = 0;

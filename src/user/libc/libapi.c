@@ -122,6 +122,9 @@ void *qk_map_foreign_mem(int src_pid, uint32_t src_virt, uint32_t size) {
     uint32_t mapped = (uint32_t)syscall(58, src_pid, (long)src_virt, (long)size);
     return mapped ? (void *)(uintptr_t)mapped : 0;
 }
+int qk_grant_foreign_map(int dest_pid, uint32_t src_virt, uint32_t size) {
+    return (int)syscall(59, dest_pid, (long)src_virt, (long)size);
+}
 void *qk_win_map_buffer(int comp_pid, int win_id, int *w_out, int *h_out) {
     message_t msg, reply;
     memset(&msg, 0, sizeof(msg));

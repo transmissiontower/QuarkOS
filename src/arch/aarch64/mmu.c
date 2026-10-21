@@ -22,6 +22,7 @@
 
 #define L3_AP_KERN_RW (0ULL << 6)
 #define L3_AP_FULL (1ULL << 6)
+#define L3_AP_USER_RO (3ULL << 6)
 
 #define L3_SH_INNER (3ULL << 8)
 #define L3_PXN (1ULL << 53)
@@ -40,11 +41,16 @@ int mem_num_vpages;
 #define REFCOUNT_PAGES (ARM_RAM_SIZE / 4096)
 static uint8_t page_refcount[REFCOUNT_PAGES];
 static uint8_t page_exported[REFCOUNT_PAGES / 8 + 1];
+static uint32_t page_export_owner[REFCOUNT_PAGES];
 
-void mm_page_mark_exported(uint32_t phys) {
+void mm_page_mark_exported(uint32_t phys, int owner_pid) {
     uint32_t idx = (phys - ARM_PHYS_OFFSET) >> 12;
-    if (idx < REFCOUNT_PAGES)
+    if (idx < REFCOUNT_PAGES) {
+        if (page_exported[idx >> 3] & (uint8_t)(1u << (idx & 7)))
+            return;
         page_exported[idx >> 3] |= (uint8_t)(1u << (idx & 7));
+        page_export_owner[idx] = (uint32_t)owner_pid;
+    }
 }
 
 int mm_page_is_exported(uint32_t phys) {
@@ -54,10 +60,19 @@ int mm_page_is_exported(uint32_t phys) {
     return (page_exported[idx >> 3] >> (idx & 7)) & 1;
 }
 
+int mm_page_export_owner(uint32_t phys) {
+    uint32_t idx = (phys - ARM_PHYS_OFFSET) >> 12;
+    if (idx >= REFCOUNT_PAGES || !mm_page_is_exported(phys))
+        return -1;
+    return (int)page_export_owner[idx];
+}
+
 static void mm_page_clear_exported(uint32_t phys) {
     uint32_t idx = (phys - ARM_PHYS_OFFSET) >> 12;
-    if (idx < REFCOUNT_PAGES)
+    if (idx < REFCOUNT_PAGES) {
         page_exported[idx >> 3] &= (uint8_t)~(1u << (idx & 7));
+        page_export_owner[idx] = 0;
+    }
 }
 
 void mm_page_ref_inc(uint32_t phys) {
@@ -515,7 +530,7 @@ void mm_vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags) {
 
     uint64_t ap = L3_AP_KERN_RW;
     if (flags & PAGE_FLAG_USER)
-        ap = L3_AP_FULL;
+        ap = (flags & PAGE_FLAG_WRITE) ? L3_AP_FULL : L3_AP_USER_RO;
 
     uint64_t xn = L3_PXN;
     if (!((flags & PAGE_FLAG_USER) && (flags & PAGE_FLAG_EXEC)))
@@ -633,6 +648,7 @@ void memory_init(uint32_t phys_alloc_start) {
     memset(phys_mem_bitmap, 0xFF, sizeof(phys_mem_bitmap));
     memset(page_refcount, 0, sizeof(page_refcount));
     memset(page_exported, 0, sizeof(page_exported));
+    memset(page_export_owner, 0, sizeof(page_export_owner));
     page_frame_min = 0;
     page_frame_max = 0;
     total_alloc = 0;

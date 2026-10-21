@@ -13,6 +13,7 @@ typedef enum {
 } process_state_t;
 typedef struct process {
     int pid;
+    int parent_pid;
     uintptr_t esp;
     uintptr_t kernel_stack;
     uintptr_t kstack_alloc;
