@@ -67,6 +67,12 @@ void window_manager_init(void) {
         window_stack[i] = 0;
     }
 }
+void window_manager_set_screen_size(int width, int height) {
+    if (width > 0)
+        wm_screen_w = width;
+    if (height > 0)
+        wm_screen_h = height;
+}
 void to_front(Window *win) {
     int idx = -1;
     for (int i = 0; i < window_count; i++) {
@@ -82,6 +88,9 @@ void to_front(Window *win) {
     window_stack[window_count - 1] = win;
 }
 Window *window_create(int owner_pid, int x, int y, int w, int h, const char *title) {
+    if (w < WINDOW_MIN_WIDTH || h < WINDOW_MIN_HEIGHT || w > wm_screen_w ||
+        h > wm_screen_h || !title)
+        return 0;
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (windows[i].id)
             continue;
@@ -104,6 +113,10 @@ Window *window_create(int owner_pid, int x, int y, int w, int h, const char *tit
         win->title[63] = 0;
         win->max_len = 4096;
         win->text_buffer = malloc(win->max_len);
+        if (!win->text_buffer) {
+            win->id = 0;
+            return 0;
+        }
         win->text_cursor = 0;
         win->text_buffer[0] = 0;
         int content_h = h - TITLE_BAR_HEIGHT;
@@ -111,8 +124,13 @@ Window *window_create(int owner_pid, int x, int y, int w, int h, const char *tit
             content_h = 1;
         uint32_t bytes = (uint32_t)w * (uint32_t)content_h * 4;
         win->gfx_buffer = wm_gfx_alloc(bytes);
-        if (win->gfx_buffer)
-            memset32(win->gfx_buffer, win->bg_color, w * content_h);
+        if (!win->gfx_buffer) {
+            free(win->text_buffer);
+            win->text_buffer = 0;
+            win->id = 0;
+            return 0;
+        }
+        memset32(win->gfx_buffer, win->bg_color, w * content_h);
         win->text_color = COLOR_WHITE;
         win->scroll_y = 0;
         win->max_scroll_y = 0;

@@ -116,7 +116,8 @@ static int caller_is_system(void) {
 
 static int sys_set_server_pid_user(int type, int pid) {
     int *slot;
-    if (pid != current_process->pid || current_process->parent_pid != 1)
+    if (pid != current_process->pid ||
+        (current_process->parent_pid != 0 && current_process->parent_pid != 1))
         return -1;
     if (type == 0)
         slot = &storage_server_pid;

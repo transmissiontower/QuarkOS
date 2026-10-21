@@ -214,6 +214,20 @@ void qk_input_restore(void) {
     msg.data1 = msg.data2 = msg.data3 = 0;
     qk_sys_ipc_send(input_pid, &msg);
 }
+int qk_input_inject(const Event *event, uint32_t modifiers) {
+    if (!event || (event->type != EVENT_KEY_PRESS && event->type != EVENT_KEY_RELEASE))
+        return -1;
+    int input_pid = qk_get_server_pid(QK_SERVER_INPUT);
+    if (input_pid <= 0)
+        return -1;
+    message_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = MSG_INPUT_INJECT;
+    msg.data1 = event->key | (event->type == EVENT_KEY_RELEASE ? 0x80U : 0);
+    msg.data2 = modifiers;
+    memcpy(msg.payload, event, sizeof(*event));
+    return qk_sys_ipc_send(input_pid, &msg);
+}
 void qk_power_shutdown(void) {
     syscall(45, 0, 0, 0);
 }

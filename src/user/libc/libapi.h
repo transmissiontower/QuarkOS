@@ -94,6 +94,7 @@ void qk_compositor_suspend(int comp_pid);
 void qk_compositor_resume(int comp_pid);
 void qk_input_redirect(int target_pid);
 void qk_input_restore(void);
+int qk_input_inject(const Event *event, uint32_t modifiers);
 int qk_getpid(void);
 int qk_waitpid(int pid);
 int qk_pipe_create(const char *name);

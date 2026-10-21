@@ -231,6 +231,18 @@ static int resolve_compositor_pid(void) {
     } while (pid <= 0);
     return pid;
 }
+static void dispatch_service_messages(int comp_pid) {
+    message_t msg;
+    while (qk_ipc_recv_nb(&msg) == 0) {
+        if (msg.type != MSG_INPUT_INJECT)
+            continue;
+        Event *event = (Event *)msg.payload;
+        if (event->type != EVENT_KEY_PRESS && event->type != EVENT_KEY_RELEASE)
+            continue;
+        msg.data3 = (uint32_t)msg.sender_pid;
+        (void)qk_sys_ipc_send(comp_pid, &msg);
+    }
+}
 void main() {
     init_mouse_state();
     while (qk_input_compat_read(PS2_STATUS) & ST_OUTPUT_FULL)
@@ -239,6 +251,7 @@ void main() {
     int comp_check_counter = 0;
     int idle_polls = 0;
     while (1) {
+        dispatch_service_messages(comp_pid);
         uint8_t status = qk_input_compat_read(PS2_STATUS);
         if (status & ST_OUTPUT_FULL) {
             idle_polls = 0;

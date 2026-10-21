@@ -369,149 +369,15 @@ static void term_render(void) {
     qk_win_dirty(comp_pid);
 }
 
-static int spawn_ttysh(void) {
-    int existing = qk_get_server_pid(QK_SERVER_TTYSH);
-    if (existing >= 0) {
-        message_t attach;
-        memset(&attach, 0, sizeof(attach));
-        attach.type = MSG_TERM_ATTACH;
-        attach.data1 = (uint32_t)qk_getpid();
-        qk_sys_ipc_send(existing, &attach);
-        return existing;
-    }
-
-    int storage = qk_get_server_pid(QK_SERVER_STORAGE);
-    if (storage < 0)
+static int attach_ttysh_service(void) {
+    int shell_pid = qk_get_server_pid(QK_SERVER_TTYSH);
+    if (shell_pid < 0)
         return -1;
-
-    message_t req;
-    memset(&req, 0, sizeof(req));
-    req.type = MSG_DIR_REQ;
-    req.data1 = 0;
-    qk_sys_ipc_send(storage, &req);
-    uint32_t apps_cluster = 0;
-    while (1) {
-        message_t resp;
-        qk_ipc_recv(&resp);
-        if (resp.sender_pid != storage || resp.type != MSG_DIR_REPLY)
-            continue;
-        char *ptr = (char *)resp.payload;
-        while (*ptr) {
-            int is_dir = (*ptr == '1');
-            while (*ptr && *ptr != '|')
-                ptr++;
-            if (*ptr == '|')
-                ptr++;
-            int cl = 0;
-            while (*ptr >= '0' && *ptr <= '9')
-                cl = cl * 10 + (*ptr++ - '0');
-            uint16_t clus = (uint16_t)cl;
-            if (*ptr == '|')
-                ptr++;
-            char name[64];
-            int ni = 0;
-            while (*ptr && *ptr != '\n' && ni < 63)
-                name[ni++] = *ptr++;
-            name[ni] = 0;
-            if (*ptr == '\n')
-                ptr++;
-            if (is_dir) {
-                if (str_eq(name, "PRG") || (str_eq(name, "APPS") && !apps_cluster))
-                    apps_cluster = clus;
-            }
-        }
-        if (resp.data1 == 0)
-            break;
-    }
-    if (!apps_cluster)
-        return -1;
-
-    memset(&req, 0, sizeof(req));
-    req.type = MSG_FILE_OPEN;
-    req.data1 = apps_cluster;
-    strncpy((char *)req.payload, "TTYSH.QEX", 12);
-    qk_sys_ipc_send(storage, &req);
-    message_t resp;
-    while (1) {
-        qk_ipc_recv(&resp);
-        if (resp.sender_pid == storage)
-            break;
-    }
-    if (resp.type != MSG_FILE_SIZE)
-        return -1;
-    uint32_t size = resp.data1;
-    uint8_t *buf = malloc(size);
-    if (!buf)
-        return -1;
-    int copied = 0;
-    uint32_t page_count = resp.data2;
-    uint32_t page_offset = resp.data3;
-    if (page_count > 0 && page_count <= 4096 &&
-        (uint64_t)page_offset + size <= (uint64_t)page_count * 4096) {
-        static uint32_t pages[4096];
-        uint32_t fetched = page_count < 128 ? page_count : 128;
-        memcpy(pages, resp.payload, fetched * sizeof(uint32_t));
-        while (fetched < page_count) {
-            memset(&req, 0, sizeof(req));
-            req.type = MSG_FILE_GET_PAGES;
-            req.data1 = fetched;
-            qk_sys_ipc_send(storage, &req);
-            while (1) {
-                qk_ipc_recv(&resp);
-                if (resp.sender_pid == storage)
-                    break;
-            }
-            if (resp.type != MSG_FILE_SIZE || resp.data1 == 0)
-                break;
-            uint32_t got = resp.data1;
-            if (got > page_count - fetched)
-                got = page_count - fetched;
-            memcpy(pages + fetched, resp.payload, got * sizeof(uint32_t));
-            fetched += got;
-        }
-        if (fetched == page_count) {
-            uint32_t mapped = qk_map_phys_list(pages, page_count);
-            if (mapped) {
-                memcpy(buf, (void *)(uintptr_t)(mapped + page_offset), size);
-                copied = 1;
-            }
-        }
-    }
-    if (!copied) {
-        uint32_t off = 0;
-        while (off < size) {
-            memset(&req, 0, sizeof(req));
-            req.type = MSG_REQ_DATA;
-            req.data1 = off;
-            req.data2 = sizeof(req.payload);
-            qk_sys_ipc_send(storage, &req);
-            while (1) {
-                qk_ipc_recv(&resp);
-                if (resp.sender_pid == storage && resp.type == MSG_FILE_DATA)
-                    break;
-            }
-            uint32_t got = resp.data1;
-            if (!got)
-                break;
-            if (got > size - off)
-                got = size - off;
-            memcpy(buf + off, resp.payload, got);
-            off += got;
-        }
-        copied = (off == size);
-    }
-
-    int pid = copied ? qk_spawn(buf, size) : -1;
-    free(buf);
-    if (pid < 0)
-        return -1;
-
     message_t attach;
     memset(&attach, 0, sizeof(attach));
     attach.type = MSG_TERM_ATTACH;
     attach.data1 = (uint32_t)qk_getpid();
-    qk_sys_ipc_send(pid, &attach);
-    return pid;
+    return qk_sys_ipc_send(shell_pid, &attach) == 0 ? shell_pid : -1;
 }
 
 static void term_paste_to_ttysh(int tpid, const char *text, int len) {
@@ -662,9 +528,9 @@ int main(void) {
 
     qk_set_proc_name(-1, "terminal");
 
-    ttysh_pid = spawn_ttysh();
+    ttysh_pid = attach_ttysh_service();
     if (ttysh_pid < 0) {
-        term_put_str("terminal: failed to spawn ttysh\n");
+        term_put_str("terminal: ttysh service unavailable\n");
         term_render();
         while (1) {
             qk_ipc_recv(&msg);

@@ -6,6 +6,7 @@
 #include "user/libui/gfx.h"
 #include "user/libui/icons_def.h"
 #include "user/libc/libapi.h"
+#include "user/clients/app_registry.h"
 #include "user/libui/window.h"
 
 #define WIN_W     480
@@ -17,7 +18,7 @@
 #define ICON_SZ          18
 #define INNER_PAD        16
 #define QUERY_MAX        64
-#define MAX_APPS         16
+#define MAX_APPS         64
 #define MAX_FILE_RESULTS 32
 
 #define C_BG       0xFF242424u
@@ -30,27 +31,19 @@
 #define C_SEP      0xFF363636u
 #define C_CURSOR   0xFFBBBBBBu
 #define C_ICON_BG  0xFF333333u
-#define ICON_IMAGE 0xEA06u
 
 #define KEY_MOD_SHIFT 0x01u
 #define KEY_MOD_CAPS  0x08u
 
 typedef struct {
-    const char *name;
-    const char *desc;
-    const char *path;
+    char name[64];
+    char desc[64];
+    char path[96];
     uint32_t    icon;
 } AppEntry;
 
-static const AppEntry apps[] = {
-    {"Terminal",        "Shell & command line",    "/PRG/TTYSH.QEX",    ICON_TERMINAL  },
-    {"File Manager",    "Browse files & folders",  "/PRG/FILEMGR.QEX",  ICON_FOLDER    },
-    {"Notepad",         "Text editor",             "/PRG/NOTEPAD.QEX",  ICON_FILE_TEXT },
-    {"Paint",           "Draw & sketch",           "/PRG/PAINT.QEX",    ICON_FOCUS     },
-    {"Image Viewer",    "View images",             "/PRG/IMGVIEW.QEX",  ICON_IMAGE     },
-    {"Process Manager", "System activity & stats", "/PRG/PROCMAN.QEX",  ICON_MONITOR   },
-};
-#define N_APPS ((int)(sizeof(apps) / sizeof(apps[0])))
+static AppEntry apps[MAX_APPS];
+static int app_count;
 
 static int      comp_pid    = -1;
 static int      storage_pid = -1;
@@ -76,6 +69,101 @@ typedef struct {
 static FileEntry file_results[MAX_FILE_RESULTS];
 static int       nfile_results = 0;
 static bool      file_mode     = false;
+
+static int name_equal_folded(const char *a, const char *b) {
+    while (*a && *b) {
+        char ca = *a++, cb = *b++;
+        if (ca >= 'a' && ca <= 'z') ca -= 32;
+        if (cb >= 'a' && cb <= 'z') cb -= 32;
+        if (ca != cb) return 0;
+    }
+    return *a == *b;
+}
+
+static int find_directory(uint32_t parent, const char *name, uint32_t *cluster) {
+    message_t req, resp;
+    memset(&req, 0, sizeof(req));
+    req.type = MSG_DIR_REQ;
+    req.data1 = parent;
+    req.data3 = 0;
+    if (qk_sys_ipc_send(storage_pid, &req) != 0)
+        return -1;
+    do {
+        if (qk_ipc_recv(&resp) != 0 || resp.sender_pid != storage_pid ||
+            resp.type != MSG_DIR_REPLY)
+            continue;
+        char *p = (char *)resp.payload;
+        while (*p) {
+            int is_dir = (*p++ == '1');
+            while (*p && *p != '|') p++;
+            if (*p) p++;
+            uint32_t id = 0;
+            while (*p >= '0' && *p <= '9') id = id * 10 + (uint32_t)(*p++ - '0');
+            if (*p) p++;
+            char entry[64];
+            int n = 0;
+            while (*p && *p != '\n') { if (n < 63) entry[n++] = *p; p++; }
+            entry[n] = 0;
+            if (*p == '\n') p++;
+            if (is_dir && name_equal_folded(entry, name)) {
+                *cluster = id;
+                return 0;
+            }
+        }
+    } while (resp.data1 != 0);
+    return -1;
+}
+
+static void load_installed_apps(void) {
+    uint32_t program_dir;
+    if (find_directory(0, "PRG", &program_dir) != 0)
+        return;
+    message_t req, resp;
+    memset(&req, 0, sizeof(req));
+    req.type = MSG_DIR_REQ;
+    req.data1 = program_dir;
+    req.data3 = 0;
+    if (qk_sys_ipc_send(storage_pid, &req) != 0)
+        return;
+    do {
+        if (qk_ipc_recv(&resp) != 0 || resp.sender_pid != storage_pid ||
+            resp.type != MSG_DIR_REPLY)
+            continue;
+        char *p = (char *)resp.payload;
+        while (*p && app_count < MAX_APPS) {
+            int is_dir = (*p++ == '1');
+            while (*p && *p != '|') p++;
+            if (*p) p++;
+            while (*p >= '0' && *p <= '9') p++;
+            if (*p) p++;
+            char filename[64];
+            int n = 0;
+            while (*p && *p != '\n') { if (n < 63) filename[n++] = *p; p++; }
+            filename[n] = 0;
+            if (*p == '\n') p++;
+            if (is_dir || n < 5 || !name_equal_folded(filename + n - 4, ".QEX"))
+                continue;
+            AppEntry *app = &apps[app_count];
+            int path_n = 0;
+            const char prefix[] = "/PRG/";
+            while (prefix[path_n]) { app->path[path_n] = prefix[path_n]; path_n++; }
+            for (int i = 0; i < n && path_n < (int)sizeof(app->path) - 1; i++)
+                app->path[path_n++] = filename[i];
+            app->path[path_n] = 0;
+            int stem = n - 4;
+            for (int i = 0; i < stem && i < (int)sizeof(app->name) - 1; i++) {
+                char c = filename[i];
+                if (c == '_' || c == '-') c = ' ';
+                if (c >= 'a' && c <= 'z') c -= 32;
+                app->name[i] = c;
+            }
+            app->name[stem < 63 ? stem : 63] = 0;
+            app->desc[0] = 0;
+            app->icon = ICON_BINARY;
+            app_count++;
+        }
+    } while (resp.data1 != 0 && app_count < MAX_APPS);
+}
 
 static bool calc_mode       = false;
 static char calc_result[32] = {0};
@@ -223,7 +311,7 @@ static void filter(void) {
     sel       = 0;
     scroll    = 0;
     calc_mode = false;
-    for (int i = 0; i < N_APPS && nresults < MAX_APPS; i++) {
+    for (int i = 0; i < app_count && nresults < MAX_APPS; i++) {
         if (icontains(apps[i].name, query) || icontains(apps[i].desc, query))
             results[nresults++] = i;
     }
@@ -564,6 +652,25 @@ static void launch(int app_idx) {
     spawn_app(apps[app_idx].path);
 }
 
+static char sc_to_char(uint8_t code, uint32_t mods) {
+    bool shift = (mods & KEY_MOD_SHIFT) != 0;
+    bool caps = (mods & KEY_MOD_CAPS) != 0;
+    const char *digits = "1234567890-=", *shift_digits = "!@#$%^&*()_+";
+    const char *row_q = "qwertyuiop[]", *shift_q = "QWERTYUIOP{}";
+    const char *row_a = "asdfghjkl;'`", *shift_a = "ASDFGHJKL:\"~";
+    const char *row_z = "zxcvbnm,./", *shift_z = "ZXCVBNM<>?";
+    bool upper = shift ^ caps;
+    if (code >= 0x02 && code <= 0x0D)
+        return shift ? shift_digits[code - 0x02] : digits[code - 0x02];
+    if (code >= 0x10 && code <= 0x1B)
+        return upper ? shift_q[code - 0x10] : row_q[code - 0x10];
+    if (code >= 0x1E && code <= 0x29)
+        return (code <= 0x26 ? upper : shift) ? shift_a[code - 0x1E] : row_a[code - 0x1E];
+    if (code >= 0x2C && code <= 0x35)
+        return (code <= 0x32 ? upper : shift) ? shift_z[code - 0x2C] : row_z[code - 0x2C];
+    return code == 0x39 ? ' ' : 0;
+}
+
 static bool ext_is(const char *name, int nl, const char *ext) {
 
     if (nl < 5) return false;
@@ -576,98 +683,47 @@ static bool ext_is(const char *name, int nl, const char *ext) {
 }
 
 static void launch_file(int fi) {
-    FileEntry *fe = &file_results[fi];
-
-    if (fe->is_dir) {
-        int pid = spawn_app("/PRG/FILEMGR.QEX");
-        if (pid > 0) {
-            message_t nav;
-            memset(&nav, 0, sizeof(nav));
-            nav.type = MSG_FILEMGR_NAVIGATE;
-            strncpy((char *)nav.payload, fe->path, sizeof(nav.payload) - 1);
-            qk_sys_ipc_send(pid, &nav);
+    FileEntry *entry = &file_results[fi];
+    char app_path[96];
+    const char *association_kind = entry->is_dir ? "DIRECTORY" : "OPEN";
+    char extension[8] = "DEFAULT";
+    if (!entry->is_dir) {
+        int n = (int)strlen(entry->name);
+        int dot = n - 1;
+        while (dot >= 0 && entry->name[dot] != '.') dot--;
+        if (dot >= 0 && n - dot - 1 > 0 && n - dot - 1 < (int)sizeof(extension)) {
+            int j = 0;
+            for (int i = dot + 1; i < n; ++i) {
+                char c = entry->name[i];
+                if (c >= 'a' && c <= 'z') c -= 32;
+                extension[j++] = c;
+            }
+            extension[j] = 0;
         }
-        return;
-    }
-
-    int nl = 0;
-    while (fe->name[nl]) nl++;
-
-    if (ext_is(fe->name, nl, "QEX")) {
-
-        spawn_app(fe->path);
-        return;
-    }
-
-
-    if (ext_is(fe->name, nl, "BMP") ||
-        ext_is(fe->name, nl, "PNG") ||
-        ext_is(fe->name, nl, "JPG")) {
-        int pid = spawn_app("/PRG/IMGVIEW.QEX");
-        if (pid > 0) {
-            message_t m;
-            memset(&m, 0, sizeof(m));
-            m.type = MSG_FILE_OPEN;
-            strncpy((char *)m.payload, fe->path, sizeof(m.payload) - 1);
-            qk_sys_ipc_send(pid, &m);
+        if (ext_is(entry->name, n, "QEX")) {
+            spawn_app(entry->path);
+            return;
         }
+    }
+    const char *key = entry->is_dir ? "" : extension;
+    if (app_registry_resolve(storage_pid, association_kind, key, app_path, sizeof(app_path)) != 0)
         return;
-    }
-
-
-    if (ext_is(fe->name, nl, "TXT") ||
-        ext_is(fe->name, nl, "LOG") ||
-        ext_is(fe->name, nl, "INI") ||
-        ext_is(fe->name, nl, "CFG")) {
-        int pid = spawn_app("/PRG/NOTEPAD.QEX");
-        if (pid > 0) {
-            message_t m;
-            memset(&m, 0, sizeof(m));
-            m.type = MSG_FILE_OPEN;
-            strncpy((char *)m.payload, fe->path, sizeof(m.payload) - 1);
-            qk_sys_ipc_send(pid, &m);
-        }
+    int pid = spawn_app(app_path);
+    if (pid <= 0)
         return;
-    }
-
-
-    int pid = spawn_app("/PRG/FILEMGR.QEX");
-    if (pid > 0) {
-
-        char parent[96];
-        int i = 0;
-        while (fe->path[i]) i++;
-        while (i > 0 && fe->path[i] != '/') i--;
-        if (i == 0) { parent[0] = '/'; parent[1] = 0; }
-        else { int k = 0; while (k < i && k < 95) { parent[k] = fe->path[k]; k++; } parent[k] = 0; }
-        message_t nav;
-        memset(&nav, 0, sizeof(nav));
-        nav.type = MSG_FILEMGR_NAVIGATE;
-        strncpy((char *)nav.payload, parent, sizeof(nav.payload) - 1);
-        qk_sys_ipc_send(pid, &nav);
-    }
-}
-
-static char sc_to_char(uint8_t code, uint32_t mods) {
-    bool sh  = (mods & KEY_MOD_SHIFT) != 0;
-    bool cap = (mods & KEY_MOD_CAPS)  != 0;
-    const char *r1  = "1234567890-=",  *r1s = "!@#$%^&*()_+";
-    const char *r2  = "qwertyuiop[]",  *r2s = "QWERTYUIOP{}";
-    const char *r3  = "asdfghjkl;'`",  *r3s = "ASDFGHJKL:\"~";
-    const char *r4  = "zxcvbnm,./",    *r4s = "ZXCVBNM<>?";
-    bool up = sh ^ cap;
-    if (code >= 0x02 && code <= 0x0D) return sh  ? r1s[code - 0x02] : r1[code - 0x02];
-    if (code >= 0x10 && code <= 0x1B) return up  ? r2s[code - 0x10] : r2[code - 0x10];
-    if (code >= 0x1E && code <= 0x29) return (code <= 0x26 ? up : sh) ? r3s[code - 0x1E] : r3[code - 0x1E];
-    if (code >= 0x2C && code <= 0x35) return (code <= 0x32 ? up : sh) ? r4s[code - 0x2C] : r4[code - 0x2C];
-    if (code == 0x39) return ' ';
-    return 0;
+    message_t message;
+    memset(&message, 0, sizeof(message));
+    message.type = entry->is_dir ? MSG_FILEMGR_NAVIGATE : MSG_FILE_OPEN;
+    strncpy((char *)message.payload, entry->path, sizeof(message.payload) - 1);
+    qk_sys_ipc_send(pid, &message);
 }
 
 int main(void) {
     comp_pid    = qk_get_server_pid(QK_SERVER_COMPOSITOR);
     storage_pid = qk_get_server_pid(QK_SERVER_STORAGE);
     if (comp_pid < 0 || storage_pid < 0) return 1;
+
+    load_installed_apps();
 
     font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
 

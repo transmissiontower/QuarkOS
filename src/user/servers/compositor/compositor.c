@@ -1,4 +1,6 @@
 #include "drivers/video/bitmaps.h"
+#include "user/servers/compositor/output.h"
+#include "user/servers/compositor/desktop_shell.h"
 #include "abi/events.h"
 #include "stdlib.h"
 #include "user/libui/font_atlas.h"
@@ -33,7 +35,6 @@
 #include "third_party/stb/stb_image.h"
 fb_info_t fb;
 gfx_context_t ctx;
-static gfx_context_t fb_ctx;
 int32_t mx = 512, my = 384;
 uint32_t fps_counter = 0, last_fps_update = 0;
 static uint8_t *wallpaper_bmp;
@@ -47,9 +48,6 @@ static uint32_t total_ipc_messages = 0;
 #define CLIP_MAX 4095
 static char g_clipboard[CLIP_MAX + 1];
 static int g_clip_len = 0;
-typedef struct {
-    int x, y, w, h;
-} ui_rect_t;
 typedef enum {
     POWER_ACTION_SHUTDOWN = 0,
     POWER_ACTION_REBOOT,
@@ -67,10 +65,7 @@ typedef struct {
 #define POWER_MENU_RADIUS 9
 #define POWER_ICON_SCALE 1
 #define POWER_MENU_UP_OFFSET 8
-static ui_rect_t power_button_rect = {0, 0, 0, 0};
-static ui_rect_t terminal_button_rect = {0, 0, 0, 0};
-static ui_rect_t brightness_button_rect = {0, 0, 0, 0};
-static ui_rect_t keyboard_button_rect = {0, 0, 0, 0};
+ui_rect_t power_button_rect = {0, 0, 0, 0};
 static int power_overlay_visible = 0;
 static int power_overlay_hover = -1;
 static int sleep_mode_active = 0;
@@ -78,10 +73,6 @@ static power_action_t power_actions[POWER_ACTION_COUNT] = {
     {"Shutdown", ICON_SHUTDOWN, POWER_ACTION_SHUTDOWN, {0, 0, 0, 0}},
     {"Reboot", ICON_UP, POWER_ACTION_REBOOT, {0, 0, 0, 0}},
     {"Sleep", ICON_SUN, POWER_ACTION_SLEEP, {0, 0, 0, 0}}};
-#define BRIGHTNESS_LEVEL_COUNT 4
-static const uint8_t brightness_alpha_levels[BRIGHTNESS_LEVEL_COUNT] = {0, 40, 90, 150};
-static const int brightness_percent_levels[BRIGHTNESS_LEVEL_COUNT] = {100, 85, 65, 40};
-static int brightness_level_index = 0;
 static uint32_t *blur_buffer = 0;
 static int blur_buf_w = 0;
 static int blur_buf_h = 0;
@@ -89,24 +80,10 @@ static uint32_t *blur_snapshot = 0;
 static int blur_snapshot_w = 0;
 static int blur_snapshot_h = 0;
 static int blur_snapshot_valid = 0;
-typedef struct {
-    int x0, y0, x1, y1;
-} rect_i_t;
-static rect_i_t prev_cursor_rect = {0, 0, 0, 0};
-static int prev_cursor_valid = 0;
 static int storage_server_pid = -1;
 static uint32_t current_time_ms = 0;
 static uint32_t desktop_notification_until = 0;
 static char desktop_notification_text[64];
-static uint8_t *terminal_binary = 0;
-static uint32_t terminal_binary_size = 0;
-static uint8_t *vkbd_binary = 0;
-static uint32_t vkbd_binary_size = 0;
-static int vkbd_pid = -1;
-static int vkbd_is_visible = 0;
-static uint32_t *vkbd_mapped_buf = 0;
-static int vkbd_buf_w = 0, vkbd_buf_h = 0;
-static int vkbd_pos_x = 0, vkbd_pos_y = 0;
 typedef struct {
     int active;
     int source_pid;
@@ -137,7 +114,7 @@ static int ensure_storage_pid(void) {
         storage_server_pid = qk_get_server_pid(QK_SERVER_STORAGE);
     return (storage_server_pid < 0) ? -1 : 0;
 }
-static void desktop_show_notification(const char *text) {
+void compositor_notify(const char *text) {
     if (!text)
         return;
     strncpy(desktop_notification_text, text, sizeof(desktop_notification_text) - 1);
@@ -233,6 +210,10 @@ static void *load_file_from_storage(const char *filename, uint32_t *out_size) {
     return buffer;
 }
 
+void *compositor_load_file(const char *path, uint32_t *size) {
+    return load_file_from_storage(path, size);
+}
+
 static int desk_icon_id(const char *name) {
     int len = strlen(name);
     if (len >= 4) {
@@ -257,32 +238,6 @@ static int desk_icon_id(const char *name) {
     return ICON_FILE_TEXT;
 }
 
-static void cache_terminal_binary(void) {
-    if (terminal_binary)
-        return;
-    uint32_t size = 0;
-    void *buf = load_file_from_storage("/PRG/TERMINAL.QEX", &size);
-    if (!buf || size == 0) {
-        if (buf)
-            free(buf);
-        return;
-    }
-    terminal_binary = (uint8_t *)buf;
-    terminal_binary_size = size;
-}
-static void cache_vkbd_binary(void) {
-    if (vkbd_binary)
-        return;
-    uint32_t size = 0;
-    void *buf = load_file_from_storage("/PRG/VKBD.QEX", &size);
-    if (!buf || size == 0) {
-        if (buf)
-            free(buf);
-        return;
-    }
-    vkbd_binary = (uint8_t *)buf;
-    vkbd_binary_size = size;
-}
 static void ensure_blur_buffer(int w, int h) {
     if (blur_buffer && blur_buf_w == w && blur_buf_h == h)
         return;
@@ -352,29 +307,6 @@ static void blur_buffer_inplace(uint32_t *buffer, int w, int h, int intensity) {
         blur_vertical(blur_buffer, buffer, w, h);
     }
 }
-static void apply_screen_dim(gfx_context_t *context, uint32_t color, uint8_t alpha) {
-    if (!alpha)
-        return;
-    uint32_t total = context->width * context->height;
-    for (uint32_t i = 0; i < total; i++) {
-        context->buffer[i] = gfx_blend_colors(color, context->buffer[i], alpha);
-    }
-}
-static void apply_brightness_overlay(void) {
-    uint8_t alpha = brightness_alpha_levels[brightness_level_index];
-    if (!alpha)
-        return;
-    apply_screen_dim(&ctx, 0xFF000000, alpha);
-}
-static void cycle_brightness_level(void) {
-    brightness_level_index = (brightness_level_index + 1) % BRIGHTNESS_LEVEL_COUNT;
-    char msg[32] = "Brightness ";
-    char value[8];
-    int_to_str(brightness_percent_levels[brightness_level_index], value, 10);
-    strcat(msg, value);
-    strcat(msg, "%");
-    desktop_show_notification(msg);
-}
 static int point_in_rect(ui_rect_t rect, int px, int py) {
     return (px >= rect.x && px < rect.x + rect.w && py >= rect.y && py < rect.y + rect.h);
 }
@@ -430,76 +362,6 @@ static void trigger_power_action(power_action_type_t type) {
         break;
     }
 }
-static void launch_terminal_process(void) {
-    cache_terminal_binary();
-    if (!terminal_binary || terminal_binary_size == 0) {
-        desktop_show_notification("Terminal unavailable");
-        return;
-    }
-    if (qk_spawn(terminal_binary, terminal_binary_size) < 0)
-        desktop_show_notification("Failed to launch terminal");
-}
-static void request_vkbd_geom(void) {
-    if (vkbd_pid < 0)
-        return;
-    message_t req;
-    memset(&req, 0, sizeof(req));
-    req.type = MSG_VKBD_GEOM;
-    qk_sys_ipc_send(vkbd_pid, &req);
-}
-static void apply_vkbd_geom(message_t *rep) {
-    int vis = (int)rep->data1;
-    int nx = (int)rep->data2;
-    int ny = (int)rep->data3;
-    uint32_t *pl = (uint32_t *)rep->payload;
-    int nw = (int)pl[0];
-    int nh = (int)pl[1];
-    uint32_t remote_buf = pl[2];
-    if (!vis || nw <= 0 || nh <= 0 || remote_buf == 0)
-        return;
-    vkbd_pos_x = nx;
-    vkbd_pos_y = ny;
-    if (nw != vkbd_buf_w || nh != vkbd_buf_h || !vkbd_mapped_buf) {
-        vkbd_buf_w = nw;
-        vkbd_buf_h = nh;
-        vkbd_mapped_buf =
-            (uint32_t *)qk_map_foreign_mem(vkbd_pid, remote_buf, (uint32_t)(nw * nh * 4));
-    }
-}
-static void launch_vkbd_process(void) {
-    cache_vkbd_binary();
-    if (!vkbd_binary || vkbd_binary_size == 0) {
-        desktop_show_notification("Keyboard unavailable");
-        return;
-    }
-    if (vkbd_pid >= 0) {
-        message_t tmsg;
-        memset(&tmsg, 0, sizeof(tmsg));
-        tmsg.type = MSG_VKBD_TOGGLE;
-        qk_sys_ipc_send(vkbd_pid, &tmsg);
-        vkbd_is_visible = !vkbd_is_visible;
-        vkbd_mapped_buf = 0;
-        if (vkbd_is_visible)
-            request_vkbd_geom();
-        return;
-    }
-    int pid = qk_spawn(vkbd_binary, vkbd_binary_size);
-    if (pid < 0) {
-        desktop_show_notification("Failed to launch keyboard");
-        return;
-    }
-    vkbd_pid = pid;
-    vkbd_is_visible = 1;
-    vkbd_mapped_buf = 0;
-    uint32_t t = qk_get_uptime();
-    while (qk_get_uptime() - t < 80)
-        qk_yield();
-    message_t tmsg;
-    memset(&tmsg, 0, sizeof(tmsg));
-    tmsg.type = MSG_VKBD_TOGGLE;
-    qk_sys_ipc_send(vkbd_pid, &tmsg);
-    request_vkbd_geom();
-}
 static int handle_mouse_for_ui(Event *e) {
     if (sleep_mode_active) {
         if (e->type == EVENT_MOUSE_DOWN || e->type == EVENT_MOUSE_MOVE || e->type == EVENT_MOUSE_UP)
@@ -523,18 +385,6 @@ static int handle_mouse_for_ui(Event *e) {
             return 1;
     }
     if (e->type == EVENT_MOUSE_DOWN && e->button == MOUSE_BTN_LEFT) {
-        if (point_in_rect(terminal_button_rect, e->x, e->y)) {
-            launch_terminal_process();
-            return 1;
-        }
-        if (point_in_rect(brightness_button_rect, e->x, e->y)) {
-            cycle_brightness_level();
-            return 1;
-        }
-        if (point_in_rect(keyboard_button_rect, e->x, e->y)) {
-            launch_vkbd_process();
-            return 1;
-        }
         if (point_in_rect(power_button_rect, e->x, e->y)) {
             if (power_overlay_visible)
                 close_power_overlay();
@@ -545,82 +395,7 @@ static int handle_mouse_for_ui(Event *e) {
     }
     return 0;
 }
-void draw_pill(int x, int y, int w, int h) {
-    gfx_draw_shadow(&ctx, x, y, w, h, 7, 12);
-    gfx_rect_rounded_fill(&ctx, x, y, w, h, 7, COLOR_WIN_HEADER);
-}
-void render_top_bar() {
-    int y = 10;
-    int h = 35;
-    uint32_t fg = COLOR_WIN_ACTIVE;
-    uint32_t brightness_icon_color =
-        (brightness_level_index == 0) ? fg : gfx_blend_colors(0xFFFFFFFF, fg, 160);
-    int search_x = 10;
-    int search_w = 35;
-    draw_pill(search_x, y, search_w, h);
-    draw_icon_sized(&ctx, gui_icons, search_x + (search_w - 18) / 2 - 1, y + (h - 18) / 2,
-                    ICON_SEARCH, fg, 18);
-    int clock_x = 1920 / 2 - 75;
-    int clock_w = 150;
-    int clock_y = y + 22;
-    draw_pill(clock_x, y, clock_w, h);
-    qk_time_t t;
-    qk_get_time(&t);
-    char time_str[40] = {0};
-    char tmp[12];
-    time_to_str(t.hour, tmp);
-    strcat(time_str, tmp);
-    strcat(time_str, ":");
-    time_to_str(t.minute, tmp);
-    strcat(time_str, tmp);
-    static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-    char date_str[12] = {0};
-    int m = (int)t.month;
-    if (m >= 1 && m <= 12)
-        strcat(date_str, months[m - 1]);
-    else
-        strcat(date_str, "---");
-    strcat(date_str, " ");
-    int_to_str(t.day, tmp, 10);
-    strcat(date_str, tmp);
-    draw_string_vector(&ctx, clock_x + 20, clock_y, date_str, fg);
-    draw_string_vector(&ctx, clock_x + clock_w - 20 - get_string_width(time_str), clock_y, time_str,
-                       fg);
-    int buttons_x = 1920 - 135;
-    int buttons_w = 125;
-    int buttons_y = 19;
-    draw_pill(buttons_x, y, buttons_w, h);
-    draw_icon_sized(&ctx, gui_icons, buttons_x + 9, buttons_y, ICON_TERMINAL, fg, 18);
-    draw_icon_sized(&ctx, gui_icons, buttons_x + 35, buttons_y, ICON_SUN, brightness_icon_color,
-                    18);
-    draw_icon_sized(&ctx, gui_icons, buttons_x + 67, buttons_y, ICON_KEYBOARD, fg, 18);
-    draw_icon_sized(&ctx, gui_icons, buttons_x + 97, buttons_y, ICON_SHUTDOWN, fg, 18);
-    terminal_button_rect.x = buttons_x + 10 - 4;
-    terminal_button_rect.y = buttons_y - 4;
-    terminal_button_rect.w = 28;
-    terminal_button_rect.h = 28;
-    brightness_button_rect.x = buttons_x + 36 - 4;
-    brightness_button_rect.y = buttons_y - 4;
-    brightness_button_rect.w = 28;
-    brightness_button_rect.h = 28;
-    keyboard_button_rect.x = buttons_x + 68 - 4;
-    keyboard_button_rect.y = buttons_y - 4;
-    keyboard_button_rect.w = 28;
-    keyboard_button_rect.h = 28;
-    power_button_rect.x = buttons_x + 98 - 4;
-    power_button_rect.y = buttons_y - 4;
-    power_button_rect.w = 28;
-    power_button_rect.h = 28;
-    int fps_x = buttons_x - 110;
-    int fps_w = 100;
-    int fps_y = y + 22;
-    draw_pill(fps_x, y, fps_w, h);
-    char fps_buf[16];
-    int_to_str(current_fps, fps_buf, 10);
-    draw_string_vector(&ctx, fps_x + 20, fps_y, "CPU", fg);
-    draw_string_vector(&ctx, fps_x + 60, fps_y, fps_buf, fg);
-}
+
 void render_power_overlay(void) {
     if (!power_overlay_visible)
         return;
@@ -729,12 +504,6 @@ static void process_message(message_t *msg) {
                     close_power_overlay();
                 return;
             }
-        }
-        if (vkbd_pid >= 0 && vkbd_is_visible &&
-            (e->type == EVENT_MOUSE_MOVE || e->type == EVENT_MOUSE_DOWN ||
-             e->type == EVENT_MOUSE_UP || e->type == EVENT_KEY_PRESS ||
-             e->type == EVENT_KEY_RELEASE)) {
-            qk_sys_ipc_send(vkbd_pid, msg);
         }
         int consumed = 0;
         if (e->type == EVENT_MOUSE_MOVE || e->type == EVENT_MOUSE_DOWN ||
@@ -978,142 +747,28 @@ static void process_message(message_t *msg) {
                 i--;
             }
         }
-        if (target_pid == vkbd_pid) {
-            vkbd_pid = -1;
-            vkbd_is_visible = 0;
-            vkbd_mapped_buf = 0;
-        }
-    } else if (msg->type == MSG_VKBD_GEOM && msg->sender_pid == vkbd_pid) {
-        apply_vkbd_geom(msg);
-    } else if (msg->type == MSG_VKBD_KEY) {
-        if (msg->data2 == 0xFFFFFFFFU) {
-            debug_overlay_visible = !debug_overlay_visible;
-        } else if (window_count > 0) {
-            uint8_t sc = (uint8_t)(msg->data1 & 0x7F);
-            int release = (msg->data1 & 0x80) != 0;
-            message_t km;
-            memset(&km, 0, sizeof(km));
-            km.type = MSG_KEY_EVENT;
-            km.data1 = msg->data1;
-            km.data2 = msg->data2;
-            Event *e = (Event *)km.payload;
-            e->type = release ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
-            e->key = sc;
-            Window *top = window_stack[window_count - 1];
-            qk_sys_ipc_send(top->owner_pid, &km);
-        }
-    }
-}
-static inline void copy_row_segment(uint8_t *dst_row, uint8_t *src_row, int start_px, int end_px) {
-    if (end_px <= start_px)
-        return;
-    memcpy(dst_row + start_px * 4, src_row + start_px * 4, (end_px - start_px) * 4);
-}
-static inline int rect_has_area(rect_i_t r) {
-    return (r.x1 > r.x0) && (r.y1 > r.y0);
-}
-static inline int rect_equals(rect_i_t a, rect_i_t b) {
-    return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1;
-}
-static inline rect_i_t clamp_cursor_rect(int x, int y, int max_w, int max_h) {
-    rect_i_t r;
-    r.x0 = clamp_int(x, 0, max_w);
-    r.y0 = clamp_int(y, 0, max_h);
-    r.x1 = clamp_int(x + CURSOR_W, 0, max_w);
-    r.y1 = clamp_int(y + CURSOR_H, 0, max_h);
-    return r;
-}
-static void copy_rect_from_ctx(rect_i_t r, uint8_t *dst, uint8_t *src, int dst_stride,
-                               int src_stride) {
-    if (!rect_has_area(r))
-        return;
-    int w_bytes = (r.x1 - r.x0) * 4;
-    for (int y = r.y0; y < r.y1; ++y)
-        memcpy(dst + y * dst_stride + r.x0 * 4, src + y * src_stride + r.x0 * 4, w_bytes);
-}
-typedef struct {
-    int x0, x1;
-} interval_t;
-static inline void add_interval_for_row(rect_i_t r, int y, interval_t *out, int *count, int max_w) {
-    if (y < r.y0 || y >= r.y1)
-        return;
-    int x0 = clamp_int(r.x0, 0, max_w);
-    int x1 = clamp_int(r.x1, 0, max_w);
-    if (x1 <= x0)
-        return;
-    for (int i = 0; i < *count; ++i)
-        if (out[i].x0 == x0 && out[i].x1 == x1)
+    } else if (msg->type == MSG_INPUT_INJECT) {
+        if (msg->sender_pid != qk_get_server_pid(QK_SERVER_INPUT))
             return;
-    out[*count].x0 = x0;
-    out[*count].x1 = x1;
-    (*count)++;
-}
-static void present_frame(void) {
-    if (!fb.buffer || !ctx.buffer)
-        return;
-    int screen_w = (int)ctx.width;
-    int screen_h = (int)ctx.height;
-    if (screen_w <= 0 || screen_h <= 0)
-        return;
-    rect_i_t new_cursor_rect = clamp_cursor_rect(mx, my, screen_w, screen_h);
-    int new_cursor_valid = rect_has_area(new_cursor_rect);
-    uint8_t *src = (uint8_t *)ctx.buffer;
-    uint8_t *dst = (uint8_t *)fb.buffer;
-    int src_stride = screen_w * 4;
-    int dst_stride = (int)fb.pitch;
-    int row_bytes = screen_w * 4;
-    if (!prev_cursor_valid && !new_cursor_valid) {
-        for (int y = 0; y < screen_h; ++y)
-            memcpy(dst + y * dst_stride, src + y * src_stride, row_bytes);
-        if (new_cursor_valid) {
-            copy_rect_from_ctx(new_cursor_rect, dst, src, dst_stride, src_stride);
-            gfx_draw_sprite(&fb_ctx, mx, my, CURSOR_W, CURSOR_H, cursor, cursor_palette);
-            prev_cursor_rect = new_cursor_rect;
-            prev_cursor_valid = 1;
-        } else
-            prev_cursor_valid = 0;
-        return;
+        int source_pid = (int)msg->data3;
+        int sender_has_window = 0;
+        for (int i = 0; i < window_count; ++i)
+            if (window_stack[i] && window_stack[i]->owner_pid == source_pid)
+                sender_has_window = 1;
+        if (!sender_has_window)
+            return;
+        for (int i = window_count - 1; i >= 0; --i) {
+            Window *target = window_stack[i];
+            if (target && target->owner_pid != source_pid) {
+                message_t event = *msg;
+                event.type = MSG_KEY_EVENT;
+                qk_sys_ipc_send(target->owner_pid, &event);
+                break;
+            }
+        }
     }
-    for (int y = 0; y < screen_h; ++y) {
-        uint8_t *dst_row = dst + y * dst_stride;
-        uint8_t *src_row = src + y * src_stride;
-        interval_t intervals[2];
-        int interval_count = 0;
-        if (prev_cursor_valid)
-            add_interval_for_row(prev_cursor_rect, y, intervals, &interval_count, screen_w);
-        if (!prev_cursor_valid || !rect_equals(prev_cursor_rect, new_cursor_rect))
-            if (new_cursor_valid)
-                add_interval_for_row(new_cursor_rect, y, intervals, &interval_count, screen_w);
-        if (interval_count == 0) {
-            memcpy(dst_row, src_row, row_bytes);
-            continue;
-        }
-        if (interval_count == 2 && intervals[0].x0 > intervals[1].x0) {
-            interval_t tmp = intervals[0];
-            intervals[0] = intervals[1];
-            intervals[1] = tmp;
-        }
-        int cur = 0;
-        for (int i = 0; i < interval_count; ++i) {
-            if (cur < intervals[i].x0)
-                copy_row_segment(dst_row, src_row, cur, intervals[i].x0);
-            if (cur < intervals[i].x1)
-                cur = intervals[i].x1;
-        }
-        if (cur < screen_w)
-            copy_row_segment(dst_row, src_row, cur, screen_w);
-    }
-    if (prev_cursor_valid)
-        copy_rect_from_ctx(prev_cursor_rect, dst, src, dst_stride, src_stride);
-    if (!prev_cursor_valid || !rect_equals(prev_cursor_rect, new_cursor_rect))
-        copy_rect_from_ctx(new_cursor_rect, dst, src, dst_stride, src_stride);
-    gfx_draw_sprite(&fb_ctx, mx, my, CURSOR_W, CURSOR_H, cursor, cursor_palette);
-    if (new_cursor_valid) {
-        prev_cursor_rect = new_cursor_rect;
-        prev_cursor_valid = 1;
-    } else
-        prev_cursor_valid = 0;
 }
+
 void render() {
     if (wallpaper_rgba && wallpaper_width > 0 && wallpaper_height > 0) {
         uint32_t crop_w = (uint32_t)wallpaper_width;
@@ -1141,7 +796,7 @@ void render() {
         memset32(ctx.buffer, UI_SURFACE_COLOR, (fb.width * fb.height));
     }
     draw_windows(&ctx);
-    render_top_bar();
+    desktop_shell_render_bar(&ctx, current_fps);
     if (power_overlay_visible || sleep_mode_active) {
         int w = (int)ctx.width;
         int h = (int)ctx.height;
@@ -1151,7 +806,7 @@ void render() {
             if (sleep_mode_active) {
                 blur_buffer_inplace(blur_snapshot, w, h, 14);
                 gfx_context_t tmp_ctx = {blur_snapshot, (uint32_t)w, (uint32_t)h, (uint32_t)w * 4};
-                apply_screen_dim(&tmp_ctx, UI_SURFACE_COLOR, 180);
+                desktop_shell_dim(&tmp_ctx, UI_SURFACE_COLOR, 180);
             }
             blur_snapshot_valid = 1;
         }
@@ -1160,36 +815,6 @@ void render() {
     }
     render_power_overlay();
     render_sleep_screen();
-    if (vkbd_pid >= 0 && vkbd_is_visible) {
-        if (!vkbd_mapped_buf)
-            request_vkbd_geom();
-        if (vkbd_mapped_buf && vkbd_buf_w > 0 && vkbd_buf_h > 0) {
-            int sw = (int)ctx.width;
-            int sh = (int)ctx.height;
-            for (int vy = 0; vy < vkbd_buf_h; vy++) {
-                int dy = vkbd_pos_y + vy;
-                if (dy < 0 || dy >= sh)
-                    continue;
-                for (int vx = 0; vx < vkbd_buf_w; vx++) {
-                    int dx = vkbd_pos_x + vx;
-                    if (dx < 0 || dx >= sw)
-                        continue;
-                    uint32_t px = vkbd_mapped_buf[vy * vkbd_buf_w + vx];
-                    uint8_t a = (uint8_t)(px >> 24);
-                    if (a == 0)
-                        continue;
-                    if (a == 0xFF) {
-                        ctx.buffer[dy * sw + dx] = px;
-                    } else {
-                        ctx.buffer[dy * sw + dx] =
-                            gfx_blend_colors(px, ctx.buffer[dy * sw + dx], a);
-                    }
-                }
-            }
-        }
-    }
-    if (!sleep_mode_active)
-        apply_brightness_overlay();
     render_desktop_notification();
     render_debug_overlay();
 
@@ -1219,7 +844,7 @@ void render() {
         int tw = get_string_width(label);
         draw_string_vector(&ctx, gx + (gs - tw) / 2, gy + gs - 11, label, 0xFF9A9A9Au);
     }
-    present_frame();
+    compositor_output_frame(&ctx, &fb, mx, my);
     qk_gpu_flush();
     fps_counter++;
 }
@@ -1231,11 +856,13 @@ int main() {
     icon_font_load_from_disk("/SYS/DAT/LUCIDE.TTF");
     if (qk_map_framebuffer(&fb) != 0)
         return 1;
-    fb_ctx = (gfx_context_t){fb.buffer, fb.width, fb.height, fb.pitch};
     ctx = (gfx_context_t){(uint32_t *)malloc(fb.width * fb.height * 4), fb.width, fb.height,
                           fb.width * 4};
+    if (!ctx.buffer)
+        return 1;
     font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
     window_manager_init();
+    window_manager_set_screen_size((int)fb.width, (int)fb.height);
     last_fps_update = qk_get_uptime();
     uint32_t last_render_ms = qk_get_uptime();
     message_t msg;

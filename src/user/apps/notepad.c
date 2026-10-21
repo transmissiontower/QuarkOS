@@ -7,6 +7,7 @@
 #include "user/libc/libapi.h"
 #include "user/libc/path.h"
 #include "user/clients/storage_client.h"
+#include "user/clients/app_registry.h"
 #include "user/libui/window.h"
 #define WIN_W 840
 #define WIN_H 620
@@ -539,44 +540,14 @@ static void spawn_picker(int save_mode) {
     if (picker_pid >= 0)
         return;
 
-    message_t req, resp;
-    memset(&req, 0, sizeof(req));
-    req.type = MSG_FILE_OPEN;
-    req.data1 = 0xFFFF;
-    strncpy((char *)req.payload, "/PRG/FILEMGR.QEX", sizeof(req.payload) - 1);
-    qk_sys_ipc_send(storage_pid, &req);
-    while (1) {
-        qk_ipc_recv(&resp);
-        if (resp.sender_pid == storage_pid)
-            break;
-    }
-    if (resp.type != MSG_FILE_SIZE || resp.data1 == 0)
+    char picker_path[96];
+    if (app_registry_resolve(storage_pid, "PICKER", "", picker_path, sizeof(picker_path)) != 0)
         return;
-    uint32_t size = resp.data1;
-    uint8_t *buf = (uint8_t *)malloc(size);
+    uint32_t size = 0;
+    uint8_t *buf = (uint8_t *)storage_read_file(storage_pid, picker_path, &size);
     if (!buf)
         return;
-    uint32_t off = 0;
-    while (off < size) {
-        memset(&req, 0, sizeof(req));
-        req.type = MSG_REQ_DATA;
-        req.data1 = off;
-        req.data2 = (uint32_t)sizeof(resp.payload);
-        qk_sys_ipc_send(storage_pid, &req);
-        while (1) {
-            qk_ipc_recv(&resp);
-            if (resp.sender_pid == storage_pid && resp.type == MSG_FILE_DATA)
-                break;
-        }
-        uint32_t got = resp.data1;
-        if (got == 0)
-            break;
-        if (off + got > size)
-            got = size - off;
-        memcpy(buf + off, resp.payload, got);
-        off += got;
-    }
-    int pid = (off > 0) ? qk_spawn(buf, size) : -1;
+    int pid = size ? qk_spawn(buf, size) : -1;
     free(buf);
     if (pid < 0)
         return;

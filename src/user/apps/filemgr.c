@@ -8,6 +8,7 @@
 #define ICON_IMAGE 0xEA06
 #endif
 #include "user/libc/libapi.h"
+#include "user/clients/app_registry.h"
 #include "user/clients/storage_client.h"
 #include "user/libui/window.h"
 #define WIN_W 900
@@ -1039,6 +1040,30 @@ static void open_with(const char *app_qex, const char *file_path) {
     qk_sys_ipc_send(pid, &msg);
 }
 
+static int open_associated(const char *filename, const char *file_path) {
+    const char *base = filename;
+    for (const char *p = filename; *p; ++p)
+        if (*p == '/') base = p + 1;
+    const char *dot = 0;
+    for (const char *p = base; *p; ++p)
+        if (*p == '.') dot = p;
+    if (!dot || !dot[1])
+        return 0;
+    char extension[8];
+    uint32_t n = 0;
+    for (const char *p = dot + 1; *p && n < sizeof(extension) - 1; ++p) {
+        char c = *p;
+        if (c >= 'a' && c <= 'z') c -= 32;
+        extension[n++] = c;
+    }
+    extension[n] = 0;
+    char app_path[96];
+    if (app_registry_resolve(storage_pid, "OPEN", extension, app_path, sizeof(app_path)) != 0)
+        return 0;
+    open_with(app_path, file_path);
+    return 1;
+}
+
 static void picker_build_path(char *out, int outsz, const char *name) {
     strncpy(out, cur_path, outsz - 20);
     int plen = strlen(out);
@@ -1106,14 +1131,8 @@ static void launch_entry(int idx) {
             }
             return;
         }
-        if (str_ends_ext(e->name, "BMP")) {
-            open_with("/PRG/IMGVIEW.QEX", fp);
+        if (open_associated(e->name, fp))
             return;
-        }
-        if (str_ends_ext(e->name, "TXT")) {
-            open_with("/PRG/NOTEPAD.QEX", fp);
-            return;
-        }
         if (str_ends_ext(e->name, "QEX")) {
             spawn_qex(fp);
             return;
@@ -1142,14 +1161,8 @@ static void launch_entry(int idx) {
         full_path[plen++] = '/';
     strncpy(full_path + plen, e->name, sizeof(full_path) - plen - 1);
     full_path[sizeof(full_path) - 1] = 0;
-    if (str_ends_ext(e->name, "BMP")) {
-        open_with("/PRG/IMGVIEW.QEX", full_path);
+    if (open_associated(e->name, full_path))
         return;
-    }
-    if (str_ends_ext(e->name, "TXT")) {
-        open_with("/PRG/NOTEPAD.QEX", full_path);
-        return;
-    }
     if (str_ends_ext(e->name, "QEX")) {
         spawn_qex(full_path);
         return;

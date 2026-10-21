@@ -1,6 +1,48 @@
 #include "user/clients/storage_client.h"
 #include "stdlib.h"
 #include "user/libc/libapi.h"
+void *storage_read_file(int storage_pid, const char *path, uint32_t *size_out) {
+    if (size_out)
+        *size_out = 0;
+    if (storage_pid < 0 || !path)
+        return 0;
+    message_t req, resp;
+    memset(&req, 0, sizeof(req));
+    req.type = MSG_FILE_OPEN;
+    req.data1 = 0xFFFFu;
+    strncpy((char *)req.payload, path, sizeof(req.payload) - 1);
+    if (qk_ipc_send_recv(storage_pid, &req, &resp) != 0 || resp.type != MSG_FILE_SIZE ||
+        resp.data1 == 0)
+        return 0;
+    uint32_t size = resp.data1;
+    uint8_t *data = (uint8_t *)malloc(size + 1);
+    if (!data)
+        return 0;
+    uint32_t offset = 0;
+    while (offset < size) {
+        memset(&req, 0, sizeof(req));
+        req.type = MSG_REQ_DATA;
+        req.data1 = offset;
+        req.data2 = sizeof(resp.payload);
+        if (qk_ipc_send_recv(storage_pid, &req, &resp) != 0 || resp.type != MSG_FILE_DATA ||
+            resp.data1 == 0)
+            break;
+        uint32_t chunk = resp.data1;
+        if (chunk > size - offset)
+            chunk = size - offset;
+        memcpy(data + offset, resp.payload, chunk);
+        offset += chunk;
+    }
+    if (offset != size) {
+        free(data);
+        return 0;
+    }
+    data[size] = 0;
+    if (size_out)
+        *size_out = size;
+    return data;
+}
+
 static int wait_for_storage_reply(int storage_pid, message_t *out) {
     message_t resp;
     while (1) {

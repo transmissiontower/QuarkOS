@@ -322,32 +322,12 @@ static int save_file(const char *path, const char *data, uint32_t size) {
     return storage_send_file(storage_pid, dc, en, (const uint8_t *)data, size, 0);
 }
 
-static void spawn_app(const char *path, const char *arg) {
-    uint32_t sz = 0;
-    void *buf = read_file(path, &sz);
-    if (!buf || !sz) {
-        tty_print("Failed to load app.\n");
-        if (buf)
-            free(buf);
-        return;
-    }
-    int pid = qk_spawn(buf, sz);
-    free(buf);
-    if (pid >= 0 && arg && *arg) {
-        message_t msg;
-        msg.type = MSG_FILE_OPEN;
-        strncpy((char *)msg.payload, arg, 127);
-        qk_sys_ipc_send(pid, &msg);
-    }
-}
-
 static void cmd_help(const char *args) {
     (void)args;
     tty_print(C_CYAN "  Files  " C_RESET
                      "  ls  cd <path>  cat <f>  hex <f>  touch <f>  mkdir <d>\n");
     tty_print(C_CYAN "  Editor " C_RESET "  quill <f>\n");
-    tty_print(C_CYAN "  Apps   " C_RESET "  notepad  imgview  filemgr  procman  paint  vkbd\n");
-    tty_print(C_CYAN "  System " C_RESET "  procs  kill <pid>  exec <f>  uptime  clear\n");
+    tty_print(C_CYAN "  System " C_RESET "  procs  kill <pid>  exec <path>  uptime  clear\n");
     tty_print(C_CYAN "  Env    " C_RESET "  env  setenv K=V  getenv K\n");
 }
 
@@ -792,59 +772,6 @@ static void cmd_getenv(const char *args) {
         tty_print("getenv: not set.\n");
 }
 
-static void cmd_notepad(const char *args) {
-    spawn_app("/PRG/NOTEPAD.QEX", *args ? args : 0);
-}
-static void cmd_imgview(const char *args) {
-    char ip[128];
-    if (!*args) {
-        spawn_app("/PRG/IMGVIEW.QEX", 0);
-        return;
-    }
-    if (args[0] == '/') {
-        strncpy(ip, args, 127);
-        ip[127] = 0;
-    } else {
-        int pl = strlen(current_path);
-        strncpy(ip, current_path, 127);
-        ip[127] = 0;
-        if (pl > 0 && pl < 127 && ip[pl - 1] != '/')
-            ip[pl++] = '/';
-        strncpy(ip + pl, args, 127 - pl);
-        ip[127] = 0;
-    }
-    int ips = strlen(ip), has_dot = 0;
-    for (int d = ips - 1; d >= 0 && ip[d] != '/'; d--)
-        if (ip[d] == '.') {
-            has_dot = 1;
-            break;
-        }
-    if (!has_dot && ips + 4 < 128) {
-        ip[ips++] = '.';
-        ip[ips++] = 'B';
-        ip[ips++] = 'M';
-        ip[ips++] = 'P';
-        ip[ips] = 0;
-    }
-    spawn_app("/PRG/IMGVIEW.QEX", ip);
-}
-static void cmd_filemgr(const char *args) {
-    (void)args;
-    spawn_app("/PRG/FILEMGR.QEX", 0);
-}
-static void cmd_procman(const char *args) {
-    (void)args;
-    spawn_app("/PRG/PROCMAN.QEX", 0);
-}
-static void cmd_paint(const char *args) {
-    (void)args;
-    spawn_app("/PRG/PAINT.QEX", 0);
-}
-static void cmd_vkbd(const char *args) {
-    (void)args;
-    spawn_app("/PRG/VKBD.QEX", 0);
-}
-
 static int read_line_blocking(char *out, int max_len, uint8_t *special_sc) {
     int ptr = 0;
     out[0] = 0;
@@ -1121,9 +1048,8 @@ static const cmd_t cmd_table[] = {
     {"mkdir", "hatch", cmd_mkdir}, {"exec", "run", cmd_exec},     {"procs", 0, cmd_procs},
     {"uptime", 0, cmd_uptime},     {"clear", "purge", cmd_clear}, {"kill", 0, cmd_kill},
     {"env", 0, cmd_env},           {"setenv", 0, cmd_setenv},     {"getenv", 0, cmd_getenv},
-    {"quill", "nano", cmd_quill},  {"notepad", 0, cmd_notepad},   {"imgview", 0, cmd_imgview},
-    {"filemgr", 0, cmd_filemgr},   {"procman", 0, cmd_procman},   {"paint", 0, cmd_paint},
-    {"vkbd", 0, cmd_vkbd},         {"mnt", "mount", cmd_mnt},     {"unmnt", "unmount", cmd_unmnt},
+    {"quill", "nano", cmd_quill},  {"mnt", "mount", cmd_mnt},
+    {"unmnt", "unmount", cmd_unmnt},
 };
 #define CMD_TABLE_LEN ((int)(sizeof(cmd_table) / sizeof(cmd_table[0])))
 

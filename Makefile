@@ -33,7 +33,7 @@ LDFLAGS = -T src/arch/aarch64/kernel.ld -nostdlib
 USER_LDFLAGS = -T src/user/linker.ld -nostdlib
 
 ASSETS_DESK := $(wildcard assets/desk/*)
-ASSETS_SYS  := $(filter-out assets/images/wallpaper.bmp,$(wildcard assets/images/*))
+ASSETS_SYS  := $(filter-out assets/images/wallpaper.bmp,$(wildcard assets/images/*)) $(wildcard assets/apps/*)
 
 KERNEL_C = src/kernel/core/kernel.c src/kernel/core/tick.c src/drivers/video/bootsplash.c src/kernel/lib/util.c \
  src/drivers/timer.c src/kernel/mm/kmalloc.c src/drivers/video/framebuffer.c \
@@ -67,10 +67,11 @@ src/arch/aarch64/context.o: src/arch/aarch64/context.S
 
 AARCH64_USER_DIR = build_aarch64_user
 AARCH64_USER_START_OBJ = $(AARCH64_USER_DIR)/start.o
-AARCH64_USER_LIB_OBJ = $(addprefix $(AARCH64_USER_DIR)/,libapi.o lib.o gfx.o window.o font_atlas.o math.o stdlib.o path.o storage_client.o)
-USER_APP_SRCS := $(wildcard src/user/apps/*.c) $(wildcard src/user/servers/*/*.c) src/user/init/init.c
+AARCH64_USER_LIB_OBJ = $(addprefix $(AARCH64_USER_DIR)/,libapi.o lib.o gfx.o window.o font_atlas.o math.o stdlib.o path.o storage_client.o app_registry.o)
+USER_APP_SRCS := $(wildcard src/user/apps/*.c) src/user/init/init.c
 USER_APP_NAMES := $(basename $(notdir $(USER_APP_SRCS)))
-USER_APP_QEXES := $(foreach n,$(USER_APP_NAMES),build/$(n).qex) build/comp.qex
+USER_SERVICE_NAMES := compositor input_server time_server storage_server
+USER_APP_QEXES := $(foreach n,$(USER_APP_NAMES) $(USER_SERVICE_NAMES),build/$(n).qex) build/comp.qex
 AARCH64_USER_LIBGCC = $(shell $(CC) -mcpu=cortex-a57 -print-libgcc-file-name)
 
 $(AARCH64_USER_DIR)/%.o: src/user/apps/%.c
@@ -85,6 +86,13 @@ $(AARCH64_USER_DIR)/init.o: src/user/init/init.c
 $(AARCH64_USER_DIR)/compositor.o: src/user/servers/compositor/compositor.c
 	@mkdir -p $(AARCH64_USER_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
+$(AARCH64_USER_DIR)/output.o: src/user/servers/compositor/output.c
+	@mkdir -p $(AARCH64_USER_DIR)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+$(AARCH64_USER_DIR)/desktop_shell.o: src/user/servers/compositor/desktop_shell.c
+	@mkdir -p $(AARCH64_USER_DIR)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+USER_EXTRA_OBJS_compositor = $(AARCH64_USER_DIR)/output.o $(AARCH64_USER_DIR)/desktop_shell.o
 $(AARCH64_USER_DIR)/input_server.o: src/user/servers/input/input_server.c
 	@mkdir -p $(AARCH64_USER_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
@@ -99,6 +107,7 @@ $(AARCH64_USER_DIR)/libapi.o: src/user/libc/libapi.c
 $(AARCH64_USER_DIR)/lib.o: src/user/libc/lib.c
 $(AARCH64_USER_DIR)/path.o: src/user/libc/path.c
 $(AARCH64_USER_DIR)/storage_client.o: src/user/clients/storage_client.c
+$(AARCH64_USER_DIR)/app_registry.o: src/user/clients/app_registry.c
 $(AARCH64_USER_DIR)/gfx.o: src/user/libui/gfx.c
 $(AARCH64_USER_DIR)/window.o: src/user/libui/window.c
 $(AARCH64_USER_DIR)/font_atlas.o: src/user/libui/font_atlas.c
@@ -109,8 +118,8 @@ $(AARCH64_USER_LIB_OBJ):
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 define USER_APP_template
-$(AARCH64_USER_DIR)/$(1).elf: $(AARCH64_USER_START_OBJ) $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/$(1).o src/user/linker.ld
-	$$(LD) $$(USER_LDFLAGS) -o $$@ $$(AARCH64_USER_START_OBJ) $$(AARCH64_USER_LIB_OBJ) $$(AARCH64_USER_DIR)/$(1).o $$(AARCH64_USER_LIBGCC)
+$(AARCH64_USER_DIR)/$(1).elf: $(AARCH64_USER_START_OBJ) $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/$(1).o $$(USER_EXTRA_OBJS_$(1)) src/user/linker.ld
+	$$(LD) $$(USER_LDFLAGS) -o $$@ $$(AARCH64_USER_START_OBJ) $$(AARCH64_USER_LIB_OBJ) $$(AARCH64_USER_DIR)/$(1).o $$(USER_EXTRA_OBJS_$(1)) $$(AARCH64_USER_LIBGCC)
 $(AARCH64_USER_DIR)/$(1).bin: $(AARCH64_USER_DIR)/$(1).elf
 	$$(OBJCOPY) -O binary $$< $$@
 build/$(1).qex: $(AARCH64_USER_DIR)/$(1).bin
@@ -118,6 +127,7 @@ build/$(1).qex: $(AARCH64_USER_DIR)/$(1).bin
 	python3 tools/qex_builder.py $$< $$@
 endef
 $(foreach app,$(USER_APP_NAMES),$(eval $(call USER_APP_template,$(app))))
+$(foreach service,$(USER_SERVICE_NAMES),$(eval $(call USER_APP_template,$(service))))
 
 build/comp.qex: build/compositor.qex
 	cp $< $@

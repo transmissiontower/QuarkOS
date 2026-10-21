@@ -37,17 +37,9 @@ static const VKey vkbd_row4[] = {{"Ctrl", 0x1D, 60}, {"Alt", 0x38, 50},  {"Space
                                  {"Alt", 0x38, 50},  {"Ctrl", 0x1D, 60}, {0, 0, 0}};
 static const VKey *vkbd_rows[VKBD_ROWS] = {vkbd_rowF, vkbd_row0, vkbd_row1,
                                            vkbd_row2, vkbd_row3, vkbd_row4};
-static int vkbd_visible = 0;
-static int vkbd_x = 300;
-static int vkbd_y = 600;
-static int vkbd_dragging = 0;
-static int vkbd_drag_ox = 0;
-static int vkbd_drag_oy = 0;
 static int vkbd_caps = 0;
 static int vkbd_shift = 0;
 static uint8_t vkbd_pressed_sc = 0;
-static int screen_w = 1024;
-static int screen_h = 768;
 #define VKBD_MOD_SHIFT 0x01
 #define VKBD_MOD_CTRL 0x02
 #define VKBD_MOD_ALT 0x04
@@ -60,6 +52,8 @@ static int screen_h = 768;
 #define COLOR_DRAG 0xFF242424
 static uint32_t *vkbd_buf = 0;
 static gfx_context_t vkbd_ctx;
+static int comp_pid = -1;
+static int win_id = -1;
 static int vkbd_panel_w(void) {
     int max_w = 0;
     for (int r = 0; r < VKBD_ROWS; r++) {
@@ -75,18 +69,16 @@ static int vkbd_panel_w(void) {
     return max_w;
 }
 static int vkbd_panel_h(void) {
-    return 24 + VKBD_PAD + VKBD_ROWS * (VKBD_KEY_H + VKBD_GAP) + VKBD_PAD;
+    return VKBD_PAD + VKBD_ROWS * (VKBD_KEY_H + VKBD_GAP) + VKBD_PAD;
 }
 static void render_vkbd(void) {
-    if (!vkbd_visible || !vkbd_buf)
+    if (!vkbd_buf)
         return;
     int pw = vkbd_panel_w();
     int ph = vkbd_panel_h();
     memset(vkbd_buf, 0, (uint32_t)(pw * ph * 4));
-    gfx_rect_rounded_fill(&vkbd_ctx, 0, 0, pw, ph, 10, COLOR_PANEL);
-    gfx_rect_rounded_fill(&vkbd_ctx, 0, 0, pw, 24, 10, COLOR_DRAG);
-    gfx_rect_fill(&vkbd_ctx, 0, 14, pw, 10, COLOR_DRAG);
-    int ky = 24 + VKBD_PAD;
+    gfx_rect_fill(&vkbd_ctx, 0, 0, pw, ph, COLOR_PANEL);
+    int ky = VKBD_PAD;
     for (int r = 0; r < VKBD_ROWS; r++) {
         int kx = VKBD_PAD;
         for (int k = 0; vkbd_rows[r][k].label; k++) {
@@ -119,148 +111,98 @@ static void render_vkbd(void) {
         ky += VKBD_KEY_H + VKBD_GAP;
     }
 }
-static void push_geom_to_comp(int comp_pid) {
+static void send_key_to_system(uint8_t sc, int release) {
+    Event event = {.type = release ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS, .key = sc};
+    uint32_t modifiers = (vkbd_shift ? VKBD_MOD_SHIFT : 0) | (vkbd_caps ? VKBD_MOD_CAPS : 0);
+    qk_input_inject(&event, modifiers);
+}
+static void handle_mouse(Event *e) {
+    int local_x = e->x;
+    int local_y = e->y;
     int pw = vkbd_panel_w();
     int ph = vkbd_panel_h();
-    message_t reply;
-    memset(&reply, 0, sizeof(reply));
-    reply.type = MSG_VKBD_GEOM;
-    reply.data1 = (uint32_t)vkbd_visible;
-    reply.data2 = (uint32_t)vkbd_x;
-    reply.data3 = (uint32_t)vkbd_y;
-    uint32_t *pl = (uint32_t *)reply.payload;
-    pl[0] = (uint32_t)pw;
-    pl[1] = (uint32_t)ph;
-    pl[2] = (uint32_t)(uintptr_t)vkbd_buf;
-    qk_sys_ipc_send(comp_pid, &reply);
-}
-static void send_key_to_comp(int comp_pid, uint8_t sc, int release) {
-    message_t msg;
-    memset(&msg, 0, sizeof(message_t));
-    msg.type = MSG_VKBD_KEY;
-    msg.data1 = (uint32_t)sc | (release ? 0x80U : 0);
-    uint32_t mods = 0;
-    if (vkbd_shift)
-        mods |= VKBD_MOD_SHIFT;
-    if (vkbd_caps)
-        mods |= VKBD_MOD_CAPS;
-    msg.data2 = mods;
-    qk_sys_ipc_send(comp_pid, &msg);
-}
-static void handle_mouse(Event *e, int comp_pid) {
-    if (!vkbd_visible)
-        return;
-    int pw = vkbd_panel_w();
-    int ph = vkbd_panel_h();
-    if (vkbd_dragging) {
-        if (e->type == EVENT_MOUSE_MOVE || e->type == EVENT_MOUSE_DOWN) {
-            vkbd_x = e->x - vkbd_drag_ox;
-            vkbd_y = e->y - vkbd_drag_oy;
-            if (vkbd_x < 0)
-                vkbd_x = 0;
-            if (vkbd_y < 0)
-                vkbd_y = 0;
-            if (vkbd_x + pw > screen_w)
-                vkbd_x = screen_w - pw;
-            if (vkbd_y + ph > screen_h)
-                vkbd_y = screen_h - ph;
-            push_geom_to_comp(comp_pid);
-        }
-        if (e->type == EVENT_MOUSE_UP) {
-            vkbd_dragging = 0;
-            push_geom_to_comp(comp_pid);
-        }
-        return;
-    }
-    if (e->x < vkbd_x || e->x >= vkbd_x + pw || e->y < vkbd_y || e->y >= vkbd_y + ph)
+    if (local_x < 0 || local_x >= pw || local_y < 0 || local_y >= ph)
         return;
     if (e->type == EVENT_MOUSE_UP) {
         vkbd_pressed_sc = 0;
         return;
     }
-    if (e->type == EVENT_MOUSE_DOWN && e->button == MOUSE_BTN_LEFT) {
-        if (e->y < vkbd_y + 24) {
-            vkbd_dragging = 1;
-            vkbd_drag_ox = e->x - vkbd_x;
-            vkbd_drag_oy = e->y - vkbd_y;
-            return;
-        }
-        int ky = vkbd_y + 24 + VKBD_PAD;
-        for (int r = 0; r < VKBD_ROWS; r++) {
-            int kx = vkbd_x + VKBD_PAD;
-            for (int k = 0; vkbd_rows[r][k].label; k++) {
-                int kw = vkbd_rows[r][k].w ? vkbd_rows[r][k].w : VKBD_KEY_W;
-                if (e->x >= kx && e->x < kx + kw && e->y >= ky && e->y < ky + VKBD_KEY_H) {
-                    uint8_t sc = vkbd_rows[r][k].sc;
-                    vkbd_pressed_sc = sc;
-                    if (sc == 0x3A) {
-                        vkbd_caps = !vkbd_caps;
-                        return;
-                    }
-                    if (sc == 0x2A || sc == 0x36)
-                        return;
-                    if (sc == 0x58) {
-                        message_t m;
-                        memset(&m, 0, sizeof(m));
-                        m.type = MSG_VKBD_KEY;
-                        m.data1 = 0x58;
-                        m.data2 = 0xFFFFFFFFU;
-                        qk_sys_ipc_send(comp_pid, &m);
-                        return;
-                    }
-                    send_key_to_comp(comp_pid, sc, 0);
-                    send_key_to_comp(comp_pid, sc, 1);
+    if (e->type != EVENT_MOUSE_DOWN || e->button != MOUSE_BTN_LEFT)
+        return;
+    int ky = VKBD_PAD;
+    for (int r = 0; r < VKBD_ROWS; r++) {
+        int kx = VKBD_PAD;
+        for (int k = 0; vkbd_rows[r][k].label; k++) {
+            int kw = vkbd_rows[r][k].w ? vkbd_rows[r][k].w : VKBD_KEY_W;
+            if (local_x >= kx && local_x < kx + kw && local_y >= ky && local_y < ky + VKBD_KEY_H) {
+                uint8_t sc = vkbd_rows[r][k].sc;
+                vkbd_pressed_sc = sc;
+                if (sc == 0x3A) {
+                    vkbd_caps = !vkbd_caps;
                     return;
                 }
-                kx += kw + VKBD_GAP;
+                if (sc == 0x2A || sc == 0x36) {
+                    vkbd_shift = !vkbd_shift;
+                    return;
+                }
+                send_key_to_system(sc, 0);
+                send_key_to_system(sc, 1);
+                return;
             }
-            ky += VKBD_KEY_H + VKBD_GAP;
+            kx += kw + VKBD_GAP;
         }
+        ky += VKBD_KEY_H + VKBD_GAP;
     }
 }
-void main(void) {
-    void *font_addr = 0;
-    fb_info_t fb;
-    if (qk_map_framebuffer(&fb) == 0) {
-        screen_w = (int)fb.width;
-        screen_h = (int)fb.height;
-    }
+
+int main(void) {
+    comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
+    if (comp_pid <= 0)
+        return 1;
     font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
     int pw = vkbd_panel_w();
     int ph = vkbd_panel_h();
-    vkbd_buf = (uint32_t *)malloc((uint32_t)(pw * ph * 4));
-    if (!vkbd_buf)
-        return;
-    memset(vkbd_buf, 0, (uint32_t)(pw * ph * 4));
-    vkbd_ctx = (gfx_context_t){vkbd_buf, (uint32_t)pw, (uint32_t)ph, (uint32_t)pw * 4};
-    int comp_pid = -1;
-    while (comp_pid <= 0)
-        comp_pid = qk_get_server_pid(QK_SERVER_COMPOSITOR);
     message_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = MSG_WIN_CREATE;
+    msg.data1 = (uint32_t)pw;
+    msg.data2 = (uint32_t)(ph + 34);
+    strncpy((char *)msg.payload, "Virtual Keyboard", sizeof(msg.payload) - 1);
+    qk_sys_ipc_send(comp_pid, &msg);
+    for (;;) {
+        if (qk_ipc_recv(&msg) == 0 && msg.type == MSG_WIN_CREATED)
+            break;
+    }
+    win_id = (int)msg.data1;
+    int width = 0, height = 0;
+    vkbd_buf = qk_win_map_buffer(comp_pid, win_id, &width, &height);
+    if (!vkbd_buf || width <= 0 || height <= 0)
+        return 1;
+    vkbd_ctx = (gfx_context_t){vkbd_buf, (uint32_t)width, (uint32_t)height, (uint32_t)width * 4};
+    render_vkbd();
     while (1) {
         if (qk_ipc_recv(&msg) != 0)
             continue;
-        if (msg.type == MSG_VKBD_TOGGLE) {
-            vkbd_visible = !vkbd_visible;
-            vkbd_pressed_sc = 0;
-            render_vkbd();
-        } else if (msg.type == MSG_MOUSE_EVENT) {
-            Event *e = (Event *)msg.payload;
-            handle_mouse(e, comp_pid);
+        if (msg.type == MSG_MOUSE_EVENT) {
+            handle_mouse((Event *)msg.payload);
             render_vkbd();
         } else if (msg.type == MSG_KEY_EVENT) {
-            Event *e = (Event *)msg.payload;
-            if (e->key == 0x2A || e->key == 0x36)
-                vkbd_shift = (e->type == EVENT_KEY_PRESS) ? 1 : 0;
-            if (e->key == 0x3A && e->type == EVENT_KEY_PRESS)
+            Event *event = (Event *)msg.payload;
+            if (event->key == 0x2A || event->key == 0x36)
+                vkbd_shift = event->type == EVENT_KEY_PRESS;
+            if (event->key == 0x3A && event->type == EVENT_KEY_PRESS)
                 vkbd_caps = !vkbd_caps;
-            if (e->type == EVENT_KEY_PRESS)
-                vkbd_pressed_sc = (uint8_t)(e->key & 0x7F);
-            else if (e->type == EVENT_KEY_RELEASE)
-                vkbd_pressed_sc = 0;
+            vkbd_pressed_sc = event->type == EVENT_KEY_PRESS ? (uint8_t)(event->key & 0x7F) : 0;
             render_vkbd();
-        } else if (msg.type == MSG_VKBD_GEOM) {
-            push_geom_to_comp(comp_pid);
+        } else if (msg.type == MSG_WIN_RESIZED) {
+            uint32_t *new_buffer = qk_win_map_buffer(comp_pid, win_id, &width, &height);
+            if (new_buffer && width > 0 && height > 0) {
+                vkbd_buf = new_buffer;
+                vkbd_ctx = (gfx_context_t){vkbd_buf, (uint32_t)width, (uint32_t)height,
+                                           (uint32_t)width * 4};
+                render_vkbd();
+            }
         }
     }
+    return 0;
 }
