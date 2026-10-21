@@ -7,6 +7,9 @@
 #define WIN_W 400
 #define WIN_H 540
 #define STATS_H 85
+#define PROC_LIST_Y 186
+#define PROC_ROW_H 22
+#define PROC_ROW_TEXT_Y 15
 static int comp_pid = -1;
 static int selected_pid = -1;
 static process_info_t last_procs[14];
@@ -21,22 +24,18 @@ void draw_rect_rpc(int x, int y, int w, int h, uint32_t color) {
     *(uint32_t *)&msg.payload[4] = color;
     qk_sys_ipc_send(comp_pid, &msg);
 }
-void draw_icon_rpc(int x, int y, int icon_id, uint32_t color) {
-    message_t msg;
-    msg.type = MSG_WIN_PRINT_AT;
-    msg.data1 = x;
-    msg.data2 = y;
-    msg.data3 = color;
-    msg.payload[0] = (char)icon_id;
-    msg.payload[1] = 0;
-    qk_sys_ipc_send(comp_pid, &msg);
-}
 void render_ui() {
     uint32_t used_mem, total_mem, cpu_load;
     qk_get_stats(&used_mem, &total_mem, &cpu_load);
     uint32_t uptime = qk_get_uptime() / 1000;
     draw_rect_rpc(0, 0, WIN_W, 50, 0xFF242424);
-    draw_icon_rpc(15, 15, ICON_MONITOR, 0xFF9A9A9A);
+    uint32_t icon_color = 0xFF9A9A9A;
+    draw_rect_rpc(15, 20, 18, 1, icon_color);
+    draw_rect_rpc(15, 31, 18, 1, icon_color);
+    draw_rect_rpc(15, 20, 1, 12, icon_color);
+    draw_rect_rpc(32, 20, 1, 12, icon_color);
+    draw_rect_rpc(23, 32, 3, 3, icon_color);
+    draw_rect_rpc(19, 35, 11, 1, icon_color);
     qk_print_at(42, 32, 0xFFFFFFFF, "System Activity");
     char up_s[32], t_s[16];
     int_to_str(uptime, t_s, 10);
@@ -70,17 +69,17 @@ void render_ui() {
     int ty = 155;
     draw_rect_rpc(10, ty, WIN_W - 20, 26, 0xFF2A2A2A);
     draw_rect_rpc(10, ty + 25, WIN_W - 20, 1, 0xFF3A3A3A);
-    qk_print_at(20, ty + 21, 0xFF9A9A9A, "PID");
-    qk_print_at(75, ty + 21, 0xFF9A9A9A, "NAME");
-    qk_print_at(275, ty + 21, 0xFF9A9A9A, "STATE");
+    qk_print_at(20, ty + 15, 0xFF9A9A9A, "PID");
+    qk_print_at(75, ty + 15, 0xFF9A9A9A, "NAME");
+    qk_print_at(275, ty + 15, 0xFF9A9A9A, "STATE");
     last_count = qk_get_procs(last_procs, 14);
     process_info_t *procs = last_procs;
     int count = last_count;
     for (int i = 0; i < count; i++) {
-        int ry = 190 + (i * 24);
+        int ry = PROC_LIST_Y + (i * PROC_ROW_H);
         bool is_sel = (procs[i].pid == selected_pid);
         uint32_t bg = is_sel ? 0xFF353535 : ((i % 2 == 0) ? 0xFF222222 : 0xFF1E1E1E);
-        draw_rect_rpc(10, ry, WIN_W - 20, 22, bg);
+        draw_rect_rpc(10, ry, WIN_W - 20, 20, bg);
         char p_s[12];
         int_to_str(procs[i].pid, p_s, 10);
         uint32_t n_clr = 0xFFAAAAAA;
@@ -100,12 +99,12 @@ void render_ui() {
             st_clr = 0xFF888888;
             break;
         }
-        qk_print_at(20, ry + 20, 0xFF9A9A9A, p_s);
-        qk_print_at(75, ry + 20, n_clr, (procs[i].name[0] ? procs[i].name : "sys_task"));
-        qk_print_at(275, ry + 20, st_clr, st_s);
+        qk_print_at(20, ry + PROC_ROW_TEXT_Y, 0xFF9A9A9A, p_s);
+        qk_print_at(75, ry + PROC_ROW_TEXT_Y, n_clr,
+                    (procs[i].name[0] ? procs[i].name : "sys_task"));
+        qk_print_at(275, ry + PROC_ROW_TEXT_Y, st_clr, st_s);
         if (is_sel && procs[i].pid != 0) {
             draw_rect_rpc(WIN_W - 48, ry + 2, 32, 18, 0xFFE06C75);
-            draw_icon_rpc(WIN_W - 40, ry + 3, ICON_CLOSE, 0xFFFFFFFF);
         }
     }
     draw_rect_rpc(0, WIN_H - 30, WIN_W, 30, 0xFF242424);
@@ -132,11 +131,11 @@ int main() {
             if (msg.type == MSG_MOUSE_EVENT && msg.data1 == EVENT_MOUSE_DOWN) {
                 int mx = msg.data2;
                 int my = msg.data3 - (TITLE_BAR_HEIGHT + WIN_CONTENT_GAP);
-                if (my >= 190 && my < 190 + (last_count * 24)) {
-                    int idx = (my - 190) / 24;
+                if (my >= PROC_LIST_Y && my < PROC_LIST_Y + (last_count * PROC_ROW_H)) {
+                    int idx = (my - PROC_LIST_Y) / PROC_ROW_H;
                     if (idx >= 0 && idx < last_count) {
-                        if (selected_pid == last_procs[idx].pid && mx > WIN_W - 55 &&
-                            last_procs[idx].pid != 0) {
+                        if (selected_pid == last_procs[idx].pid && mx >= WIN_W - 48 &&
+                            mx < WIN_W - 16 && last_procs[idx].pid > 1) {
                             qk_sys_kill(last_procs[idx].pid);
                             selected_pid = -1;
                         } else {

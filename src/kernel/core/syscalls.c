@@ -113,7 +113,6 @@ static int is_system_pid(int pid) {
 static int caller_is_system(void) {
     return is_system_pid(current_process->pid);
 }
-
 static int sys_set_server_pid_user(int type, int pid) {
     int *slot;
     if (pid != current_process->pid ||

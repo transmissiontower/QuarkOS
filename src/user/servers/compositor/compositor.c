@@ -65,6 +65,8 @@ typedef struct {
 #define POWER_MENU_RADIUS 9
 #define POWER_ICON_SCALE 1
 #define POWER_MENU_UP_OFFSET 8
+#define POWER_MENU_TEXT_COLOR 0xFFE1E5EB
+#define POWER_MENU_SURFACE_COLOR COLOR_WIN_HEADER
 ui_rect_t power_button_rect = {0, 0, 0, 0};
 static int power_overlay_visible = 0;
 static int power_overlay_hover = -1;
@@ -405,15 +407,15 @@ void render_power_overlay(void) {
     int y = power_button_rect.y + power_button_rect.h + POWER_MENU_UP_OFFSET;
     gfx_draw_shadow(&ctx, x, y, POWER_MENU_WIDTH, menu_h, POWER_MENU_RADIUS, 12);
     gfx_rect_rounded_fill(&ctx, x, y, POWER_MENU_WIDTH, menu_h, POWER_MENU_RADIUS,
-                          UI_SURFACE_COLOR);
+                          POWER_MENU_SURFACE_COLOR);
     for (int i = 0; i < POWER_ACTION_COUNT; i++) {
         ui_rect_t r = power_actions[i].bounds;
         if (i == power_overlay_hover)
             gfx_rect_rounded_fill(&ctx, r.x, r.y, r.w, r.h, 8, 0x33000000);
         draw_icon_sized(&ctx, gui_icons, r.x + 7, r.y + (r.h - 18) / 2, power_actions[i].icon_id,
                         COLOR_WIN_ACTIVE, 18);
-        draw_string_vector(&ctx, r.x + 36, r.y + r.h / 2 - 8, power_actions[i].label,
-                           COLOR_WIN_ACTIVE);
+        draw_string_vector(&ctx, r.x + 36, r.y + r.h / 2 + 4, power_actions[i].label,
+                           POWER_MENU_TEXT_COLOR);
     }
 }
 void render_sleep_screen(void) {
