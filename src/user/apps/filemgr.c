@@ -838,13 +838,13 @@ static void render(void) {
                 int is_img = str_ends_ext(e->name, "BMP") || str_ends_ext(e->name, "PNG") ||
                              str_ends_ext(e->name, "JPG");
                 uint32_t icon_id = e->is_dir ? ICON_FOLDER
-                                   : str_ends_ext(e->name, "QEX") || str_ends_ext(e->name, "ELF")
+                                   : str_ends_ext(e->name, "ELF")
                                        ? ICON_TERMINAL
                                    : str_ends_ext(e->name, "BIN") ? ICON_BINARY
                                    : is_img                       ? ICON_IMAGE
                                                                   : ICON_FILE_TEXT;
                 uint32_t ic = e->is_dir ? C_ACCENT
-                              : str_ends_ext(e->name, "QEX") || str_ends_ext(e->name, "ELF")
+                              : str_ends_ext(e->name, "ELF")
                                   ? 0xFF80CC80u
                               : str_ends_ext(e->name, "BIN") ? 0xFFCC9944u
                               : is_img                       ? 0xFF88AADDu
@@ -857,7 +857,7 @@ static void render(void) {
                 if (iy + GICON_H <= gfx_h) {
                     if (e->is_dir)
                         draw_folder_icon(ix, iy, GICON_W, GICON_H);
-                    else if (str_ends_ext(e->name, "QEX"))
+                    else if (str_ends_ext(e->name, "ELF"))
                         draw_file_icon(ix, iy, GICON_W, GICON_H, CF_EXE, CF_EFOLD);
                     else
                         draw_file_icon(ix, iy, GICON_W, GICON_H, CF_FILE, CF_FFOLD);
@@ -962,13 +962,13 @@ static void render(void) {
             int is_img = str_ends_ext(de->name, "BMP") || str_ends_ext(de->name, "PNG") ||
                          str_ends_ext(de->name, "JPG");
             uint32_t icon_id = de->is_dir ? ICON_FOLDER
-                               : str_ends_ext(de->name, "QEX") || str_ends_ext(de->name, "ELF")
+                               : str_ends_ext(de->name, "ELF")
                                    ? ICON_TERMINAL
                                : str_ends_ext(de->name, "BIN") ? ICON_BINARY
                                : is_img                        ? ICON_IMAGE
                                                                : ICON_FILE_TEXT;
             uint32_t ic = de->is_dir ? C_ACCENT
-                          : str_ends_ext(de->name, "QEX") || str_ends_ext(de->name, "ELF")
+                          : str_ends_ext(de->name, "ELF")
                               ? 0xFF80CC80u
                           : str_ends_ext(de->name, "BIN") ? 0xFFCC9944u
                           : is_img                        ? 0xFF88AADDu
@@ -994,12 +994,12 @@ static void render(void) {
 
     qk_win_dirty(comp_pid);
 }
-static int spawn_qex(const char *qex_path) {
+static int spawn_elf(const char *elf_path) {
     message_t req, resp;
     memset(&req, 0, sizeof(req));
     req.type = MSG_FILE_OPEN;
     req.data1 = 0xFFFF;
-    strncpy((char *)req.payload, qex_path, sizeof(req.payload) - 1);
+    strncpy((char *)req.payload, elf_path, sizeof(req.payload) - 1);
     qk_ipc_send_recv(storage_pid, &req, &resp);
     if (resp.type != MSG_FILE_SIZE || resp.data1 == 0)
         return -1;
@@ -1028,8 +1028,8 @@ static int spawn_qex(const char *qex_path) {
     free(buf);
     return pid;
 }
-static void open_with(const char *app_qex, const char *file_path) {
-    int pid = spawn_qex(app_qex);
+static void open_with(const char *app_elf, const char *file_path) {
+    int pid = spawn_elf(app_elf);
     if (pid < 0)
         return;
     message_t msg;
@@ -1133,8 +1133,8 @@ static void launch_entry(int idx) {
         }
         if (open_associated(e->name, fp))
             return;
-        if (str_ends_ext(e->name, "QEX")) {
-            spawn_qex(fp);
+        if (str_ends_ext(e->name, "ELF")) {
+            spawn_elf(fp);
             return;
         }
         if (str_ends_ext(e->name, "TTF") || str_ends_ext(e->name, "BIN"))
@@ -1163,8 +1163,8 @@ static void launch_entry(int idx) {
     full_path[sizeof(full_path) - 1] = 0;
     if (open_associated(e->name, full_path))
         return;
-    if (str_ends_ext(e->name, "QEX")) {
-        spawn_qex(full_path);
+    if (str_ends_ext(e->name, "ELF")) {
+        spawn_elf(full_path);
         return;
     }
     if (str_ends_ext(e->name, "TTF") || str_ends_ext(e->name, "BIN"))

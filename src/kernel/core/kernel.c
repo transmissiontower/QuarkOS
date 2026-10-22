@@ -92,7 +92,9 @@ static int kernel_exec_internal(const boot_info_t *boot_info) {
                 k_font_virt_addr = virt_addr;
                 continue;
             }
-            if (virt_addr && *(uint32_t *)virt_addr == 0x5845517F) {
+            if (virt_addr && size >= 4 && ((uint8_t *)virt_addr)[0] == 0x7f &&
+                ((uint8_t *)virt_addr)[1] == 'E' && ((uint8_t *)virt_addr)[2] == 'L' &&
+                ((uint8_t *)virt_addr)[3] == 'F') {
                 k_proc_spawn((uint8_t *)virt_addr, size);
                 process_t *new_p = ready_queue->next;
                 if (cmdline && new_p) {
@@ -127,7 +129,7 @@ static int kernel_exec_internal(const boot_info_t *boot_info) {
                 int current_pid = pid_tracker++;
                 if (cmdline && strstr(cmdline, "storage_server"))
                     sys_set_server_pid(0, current_pid);
-                if (cmdline && (strstr(cmdline, "comp") || strstr(cmdline, "comp.qex")))
+                if (cmdline && (strstr(cmdline, "comp") || strstr(cmdline, "comp.elf")))
                     sys_set_server_pid(1, current_pid);
                 launched++;
             }

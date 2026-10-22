@@ -67,13 +67,6 @@ void compositor_output_frame(gfx_context_t *frame, fb_info_t *fb, int mx, int my
     if (!prev_cursor_valid && !new_cursor_valid) {
         for (int y = 0; y < screen_h; ++y)
             memcpy(dst + y * dst_stride, src + y * src_stride, row_bytes);
-        if (new_cursor_valid) {
-            copy_rect_from_ctx(new_cursor_rect, dst, src, dst_stride, src_stride);
-            gfx_draw_sprite(&fb_ctx, mx, my, CURSOR_W, CURSOR_H, cursor, cursor_palette);
-            prev_cursor_rect = new_cursor_rect;
-            prev_cursor_valid = 1;
-        } else
-            prev_cursor_valid = 0;
         return;
     }
     for (int y = 0; y < screen_h; ++y) {

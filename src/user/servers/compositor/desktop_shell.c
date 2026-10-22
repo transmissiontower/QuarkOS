@@ -15,8 +15,6 @@ void desktop_shell_dim(gfx_context_t *ctx, uint32_t color, uint8_t alpha) {
         ctx->buffer[i] = gfx_blend_colors(color, ctx->buffer[i], alpha);
 }
 
-void desktop_shell_render_bar(gfx_context_t *ctx, int current_fps);
-
 static void draw_pill(gfx_context_t *ctx, int x, int y, int w, int h) {
     gfx_draw_shadow(ctx, x, y, w, h, 7, 12);
     gfx_rect_rounded_fill(ctx, x, y, w, h, 7, COLOR_WIN_HEADER);

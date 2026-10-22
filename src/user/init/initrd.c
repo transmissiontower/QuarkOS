@@ -6,7 +6,6 @@
 #include "kernel/mm/memory.h"
 #include "kernel/lib/util.h"
 
-#define QEX_MAGIC 0x5845517FU
 #define FONT_MAGIC 0x464F4E54U
 
 extern void mm_vmm_set_l1_override(uint64_t *l1);
@@ -70,7 +69,8 @@ void k_start_init_process(const boot_info_t *boot_info) {
             k_font_phys_addr = mods[i].start;
             k_font_size = size;
             k_font_virt_addr = virt;
-        } else if (*(uint32_t *)virt == QEX_MAGIC && module_name_is(cmdline, "init")) {
+        } else if (size >= 4 && ((uint8_t *)virt)[0] == 0x7f && ((uint8_t *)virt)[1] == 'E' &&
+                   ((uint8_t *)virt)[2] == 'L' && ((uint8_t *)virt)[3] == 'F' && module_name_is(cmdline, "init")) {
             init_image = virt;
             init_size = size;
         }

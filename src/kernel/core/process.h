@@ -40,13 +40,6 @@ typedef struct process {
     char env[256];
 } process_t;
 typedef struct {
-    uint32_t magic;
-    uint32_t entry;
-    uint32_t code_size;
-    uint32_t data_size;
-    uint32_t bss_size;
-} __attribute__((packed)) QuarkExec;
-typedef struct {
     int pid;
     process_state_t state;
     char name[16];

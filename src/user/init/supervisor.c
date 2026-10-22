@@ -94,9 +94,9 @@ static const uint8_t *find_program(const char *name, uint32_t *image_size) {
         for (uint32_t i = 0; program_name_matches && i < wanted_len; i++)
             if (base[i] != name[i])
                 program_name_matches = 0;
-        if (program_name_matches && same_name(base + wanted_len, ".qex") && file_size >= 20 &&
-            initrd_data[data_offset] == 0x7f && initrd_data[data_offset + 1] == 'Q' &&
-            initrd_data[data_offset + 2] == 'E' && initrd_data[data_offset + 3] == 'X') {
+        if (program_name_matches && same_name(base + wanted_len, ".elf") && file_size >= 4 &&
+            initrd_data[data_offset] == 0x7f && initrd_data[data_offset + 1] == 'E' &&
+            initrd_data[data_offset + 2] == 'L' && initrd_data[data_offset + 3] == 'F') {
             *image_size = file_size;
             return initrd_data + data_offset;
         }

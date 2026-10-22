@@ -299,10 +299,10 @@ static int executable_name_matches(const char *entry, const char *command) {
     if (command_name_matches(entry, command)) return 1;
     int n = strlen(command);
     if (n + 4 >= 64) return 0;
-    char qex_name[64];
-    memcpy(qex_name, command, n);
-    memcpy(qex_name + n, ".QEX", 5);
-    return command_name_matches(entry, qex_name);
+    char elf_name[64];
+    memcpy(elf_name, command, n);
+    memcpy(elf_name + n, ".ELF", 5);
+    return command_name_matches(entry, elf_name);
 }
 
 static int start_binary_in_dir(const char *name, const char *args,
@@ -351,30 +351,7 @@ static int start_binary_in_dir(const char *name, const char *args,
                 return -1;
             }
 
-            /* Command files are flat binaries; app files already carry the
-             * QEX header expected by the kernel loader. */
-            enum { QEX_MAGIC = 0x5845517F, COMMAND_BSS_SIZE = 8 * 1024 * 1024 };
-            struct __attribute__((packed)) command_exec_header {
-                uint32_t magic, entry, code_size, data_size, bss_size;
-            };
-            int is_qex = size >= sizeof(struct command_exec_header) &&
-                         ((struct command_exec_header *)binary)->magic == QEX_MAGIC;
-            uint8_t *image = binary;
-            uint32_t image_size = size;
-            if (!is_qex) {
-                image = malloc(sizeof(struct command_exec_header) + size);
-                if (!image) { free(binary); return -1; }
-                struct command_exec_header *header = (struct command_exec_header *)image;
-                header->magic = QEX_MAGIC;
-                header->entry = 0x400000;
-                header->code_size = size;
-                header->data_size = 0;
-                header->bss_size = COMMAND_BSS_SIZE;
-                memcpy(image + sizeof(*header), binary, size);
-                image_size += sizeof(*header);
-            }
-            int pid = qk_spawn(image, image_size);
-            if (image != binary) free(image);
+            int pid = qk_spawn(binary, size);
             free(binary);
             if (pid < 0) return -1;
             if ((launch_input_pipe >= 0 &&

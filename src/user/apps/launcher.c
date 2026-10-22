@@ -141,7 +141,7 @@ static void load_installed_apps(void) {
             while (*p && *p != '\n') { if (n < 63) filename[n++] = *p; p++; }
             filename[n] = 0;
             if (*p == '\n') p++;
-            if (is_dir || n < 5 || !name_equal_folded(filename + n - 4, ".QEX"))
+            if (is_dir || n < 5 || !name_equal_folded(filename + n - 4, ".ELF"))
                 continue;
             AppEntry *app = &apps[app_count];
             int path_n = 0;
@@ -595,12 +595,12 @@ static void render(void) {
     qk_win_dirty(comp_pid);
 }
 
-static int spawn_app(const char *qex_path) {
+static int spawn_app(const char *elf_path) {
     message_t req, resp;
     memset(&req, 0, sizeof(req));
     req.type  = MSG_FILE_OPEN;
     req.data1 = 0xFFFF;
-    strncpy((char *)req.payload, qex_path, sizeof(req.payload) - 1);
+    strncpy((char *)req.payload, elf_path, sizeof(req.payload) - 1);
     qk_ipc_send_recv(storage_pid, &req, &resp);
     if (resp.type != MSG_FILE_SIZE || resp.data1 == 0) return -1;
     uint32_t size = resp.data1;
@@ -702,7 +702,7 @@ static void launch_file(int fi) {
             }
             extension[j] = 0;
         }
-        if (ext_is(entry->name, n, "QEX")) {
+        if (ext_is(entry->name, n, "ELF")) {
             spawn_app(entry->path);
             return;
         }

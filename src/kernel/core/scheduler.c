@@ -69,61 +69,102 @@ void validate_current(const char *tag) {
 }
 
 typedef struct {
-    uint32_t entry;
+    uint64_t entry;
     uint32_t image_base;
     uint32_t image_end;
 } exec_image_info_t;
 
 #define MAX_USER_IMAGE 0x4000000U /* 64 MiB */
 
-static int load_quark_exec_image(const QuarkExec *exec, uint32_t size, exec_image_info_t *info) {
-    if (!exec || !info || size <= sizeof(QuarkExec))
+typedef struct __attribute__((packed)) {
+    unsigned char ident[16]; uint16_t type, machine; uint32_t version;
+    uint64_t entry, phoff, shoff; uint32_t flags;
+    uint16_t ehsize, phentsize, phnum, shentsize, shnum, shstrndx;
+} elf64_ehdr_t;
+typedef struct __attribute__((packed)) {
+    uint32_t type, flags; uint64_t offset, vaddr, paddr, filesz, memsz, align;
+} elf64_phdr_t;
+
+static int load_elf_image(const uint8_t *elf, uint32_t size, uint32_t pd_phys, exec_image_info_t *info) {
+    if (!elf || !info || size < sizeof(elf64_ehdr_t))
         return -1;
-    uint32_t user_base = 0x400000;
-    uint32_t payload_size = size - sizeof(QuarkExec);
-    if (payload_size > MAX_USER_IMAGE || exec->bss_size > MAX_USER_IMAGE)
+    const elf64_ehdr_t *eh = (const elf64_ehdr_t *)elf;
+    if (eh->ident[0] != 0x7f || eh->ident[1] != 'E' || eh->ident[2] != 'L' ||
+        eh->ident[3] != 'F' || eh->ident[4] != 2 || eh->ident[5] != 1 || eh->ident[6] != 1 ||
+        eh->version != 1 || eh->machine != 183 || eh->type != 2 ||
+        eh->ehsize < sizeof(elf64_ehdr_t) || eh->phentsize < sizeof(elf64_phdr_t) ||
+        !eh->phnum || eh->entry > UINT32_MAX || (eh->entry & 3) ||
+        eh->phoff > size || (uint64_t)eh->phnum * eh->phentsize > size - eh->phoff)
         return -1;
-    uint32_t total_mem_size = payload_size + exec->bss_size;
-    if (total_mem_size == 0 || total_mem_size > MAX_USER_IMAGE)
-        return -1;
-    if (exec->entry & 3)
-        return -1;
-    uint32_t pages_needed = (total_mem_size + 4095) / 4096;
-    if (pages_needed == 0)
-        pages_needed = 1;
-    uint32_t flags = PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_USER | PAGE_FLAG_EXEC;
-    const uint8_t *payload = ((const uint8_t *)exec) + sizeof(QuarkExec);
-    for (uint32_t i = 0; i < pages_needed; i++) {
-        uint32_t phys = mm_pmm_alloc_frame();
-        if (!phys)
+    uint64_t low = UINT32_MAX, high = 0;
+    int entry_is_executable = 0;
+    for (uint32_t i = 0; i < eh->phnum; i++) {
+        const elf64_phdr_t *ph = (const elf64_phdr_t *)(elf + eh->phoff + (uint64_t)i * eh->phentsize);
+        if (ph->type != 1) continue;
+        if (ph->filesz > ph->memsz || ph->offset > size || ph->filesz > size - ph->offset ||
+            ph->vaddr > UINT32_MAX || ph->memsz > UINT32_MAX || ph->vaddr + ph->memsz > 0x80000000ULL ||
+            (ph->align > 1 && ((ph->align & (ph->align - 1)) ||
+                               (ph->vaddr % ph->align) != (ph->offset % ph->align))) ||
+            ((ph->vaddr ^ ph->offset) & 0xFFFU))
             return -1;
-        mm_vmm_map_page(user_base + (i * 4096), phys, flags);
-        uint8_t *page_virt = (uint8_t *)(uintptr_t)(phys + 0x80000000U);
-        uint32_t page_start = i * 4096;
-        uint32_t page_end = page_start + 4096;
-
-        if (page_start < payload_size) {
-            uint32_t copy_start = page_start;
-            uint32_t copy_end = payload_size < page_end ? payload_size : page_end;
-            memcpy(page_virt + (copy_start - page_start), payload + copy_start,
-                   copy_end - copy_start);
-
-            if (copy_end < page_end) {
-                uint32_t zero_start = copy_end - page_start;
-                memset(page_virt + zero_start, 0, page_end - page_start - zero_start);
-            }
-        } else {
-            memset(page_virt, 0, 4096);
+        if (ph->memsz) {
+            if (ph->vaddr < low) low = ph->vaddr;
+            if (ph->vaddr + ph->memsz > high) high = ph->vaddr + ph->memsz;
+            if ((ph->flags & 1U) && eh->entry >= ph->vaddr && eh->entry < ph->vaddr + ph->memsz)
+                entry_is_executable = 1;
         }
-
-        for (uint32_t off = 0; off < 4096; off += 64)
-            asm volatile("dc cvau, %0" ::"r"((uint64_t)(uintptr_t)(page_virt + off)) : "memory");
     }
-    info->entry = exec->entry;
-    info->image_base = user_base;
-    info->image_end = user_base + total_mem_size;
-    if (info->entry < info->image_base || info->entry >= info->image_end)
+    if (low == UINT32_MAX || high <= low || high - low > MAX_USER_IMAGE || !entry_is_executable)
         return -1;
+    uint32_t first = (uint32_t)low & ~4095U, end = ((uint32_t)high + 4095U) & ~4095U;
+    for (uint32_t va = first; va < end; va += 4096) {
+        uint32_t page_flags = PAGE_FLAG_PRESENT | PAGE_FLAG_USER;
+        int page_used = 0;
+        for (uint32_t i = 0; i < eh->phnum; i++) {
+            const elf64_phdr_t *ph = (const elf64_phdr_t *)(elf + eh->phoff + (uint64_t)i * eh->phentsize);
+            if (ph->type != 1 || !ph->memsz || ph->vaddr >= (uint64_t)va + 4096 ||
+                ph->vaddr + ph->memsz <= va)
+                continue;
+            page_used = 1;
+            if (ph->flags & 2U) page_flags |= PAGE_FLAG_WRITE;
+            if (ph->flags & 1U) page_flags |= PAGE_FLAG_EXEC;
+        }
+        if (!page_used) continue;
+        uint32_t phys = mm_pmm_alloc_frame(); if (!phys) return -1;
+        mm_vmm_map_page(va, phys, page_flags);
+        uint32_t mapped = mm_user_virt_to_phys_dir(pd_phys, va);
+        if (!mapped) return -1;
+        memset((void *)(uintptr_t)(0x80000000U + (mapped & ~0xFFFU)), 0, 4096);
+    }
+    for (uint32_t i = 0; i < eh->phnum; i++) {
+        const elf64_phdr_t *ph = (const elf64_phdr_t *)(elf + eh->phoff + (uint64_t)i * eh->phentsize);
+        if (ph->type != 1 || !ph->filesz) continue;
+        uint64_t copied = 0;
+        while (copied < ph->filesz) {
+            uint32_t va = (uint32_t)(ph->vaddr + copied);
+            uint32_t phys = mm_user_virt_to_phys_dir(pd_phys, va);
+            if (!phys) return -1;
+            uint32_t chunk = 4096U - (phys & 0xFFFU);
+            if (chunk > ph->filesz - copied) chunk = (uint32_t)(ph->filesz - copied);
+            memcpy((void *)(uintptr_t)(0x80000000U + phys), elf + ph->offset + copied, chunk);
+            copied += chunk;
+        }
+    }
+    for (uint32_t va = first; va < end; va += 4096) {
+        int page_used = 0;
+        for (uint32_t i = 0; i < eh->phnum; i++) {
+            const elf64_phdr_t *ph = (const elf64_phdr_t *)(elf + eh->phoff + (uint64_t)i * eh->phentsize);
+            if (ph->type == 1 && ph->memsz && ph->vaddr < (uint64_t)va + 4096 &&
+                ph->vaddr + ph->memsz > va) { page_used = 1; break; }
+        }
+        if (!page_used) continue;
+        uint32_t phys = mm_user_virt_to_phys_dir(pd_phys, va);
+        if (!phys) return -1;
+        uintptr_t alias = (uintptr_t)(0x80000000U + (phys & ~0xFFFU));
+        for (uint32_t off = 0; off < 4096; off += 64)
+            asm volatile("dc cvau, %0" :: "r"((uint64_t)(alias + off)) : "memory");
+    }
+    info->entry = eh->entry; info->image_base = first; info->image_end = end;
     return 0;
 }
 void k_scheduler_init() {
@@ -232,8 +273,7 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size) {
         return 0;
     }
     memcpy(temp_code, code, size);
-    QuarkExec *exec = size >= sizeof(QuarkExec) ? (QuarkExec *)temp_code : 0;
-    if (!exec || exec->magic != 0x5845517F) {
+    if (size < 4 || temp_code[0] != 0x7f || temp_code[1] != 'E' || temp_code[2] != 'L' || temp_code[3] != 'F') {
         KLOG_SCHED(LOG_WARN, "spawn: unknown executable format (size=%u)", size);
         mm_heap_free(temp_code);
         return 0;
@@ -309,7 +349,7 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size) {
     }
     exec_image_info_t image_info;
     int load_res = -1;
-    load_res = load_quark_exec_image(exec, size, &image_info);
+    load_res = load_elf_image(temp_code, size, new_pd_phys, &image_info);
     if (load_res != 0) {
         goto spawn_fail;
     }
