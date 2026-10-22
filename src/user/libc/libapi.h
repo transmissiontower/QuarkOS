@@ -3,6 +3,12 @@
 #include "abi/events.h"
 #include "abi/ipc.h"
 #include "stdint.h"
+#define STDIN_FILENO 0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+#define QK_FD_TTY 1
+#define QK_FD_PIPE_READ 2
+#define QK_FD_PIPE_WRITE 3
 typedef struct {
     uint32_t width, height, pitch, bpp;
     void *buffer;
@@ -102,6 +108,12 @@ int qk_pipe_open(const char *name);
 int qk_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len);
 int qk_pipe_read(int pipe_id, uint8_t *buf, uint32_t len);
 int qk_pipe_close(int pipe_id);
+int qk_read(int fd, void *buf, uint32_t count);
+int qk_write(int fd, const void *buf, uint32_t count);
+int qk_tty_input(uint8_t ch);
+int qk_fd_set(int pid, int fd, int object, int kind);
+int read(int fd, void *buf, unsigned int count);
+int write(int fd, const void *buf, unsigned int count);
 int qk_set_alarm(uint32_t ms);
 int qk_setenv(const char *kv);
 int qk_getenv(const char *key, char *out, uint32_t maxlen);

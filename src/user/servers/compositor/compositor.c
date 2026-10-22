@@ -611,7 +611,15 @@ static void process_message(message_t *msg) {
                     m_mouse.data3 = em->y;
                     qk_sys_ipc_send(top->owner_pid, &m_mouse);
                 } else if (e->type == EVENT_MOUSE_SCROLL) {
-                    qk_sys_ipc_send(top->owner_pid, msg);
+                    Window *under_pointer = window_at_point(e->x, e->y);
+                    Window *target = under_pointer ? under_pointer : top;
+                    message_t m_mouse = *msg;
+                    Event *em = (Event *)m_mouse.payload;
+                    em->x -= target->x;
+                    em->y -= target->y;
+                    m_mouse.data2 = em->x;
+                    m_mouse.data3 = em->y;
+                    qk_sys_ipc_send(target->owner_pid, &m_mouse);
                 }
             }
         }

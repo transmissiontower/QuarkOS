@@ -17,6 +17,9 @@ extern void *k_font_virt_addr;
 extern uint32_t k_wallpaper_phys_addr;
 extern uint32_t k_wallpaper_size;
 static int is_ptr_safe(const void *ptr, uint32_t size);
+int sys_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len);
+int sys_pipe_read(int pipe_id, uint8_t *buf, uint32_t len);
+int sys_fd_set(int pid, int fd, int object, int kind);
 int sys_map_wallpaper(uint32_t *virt_addr_out) {
     if (!is_ptr_safe(virt_addr_out, 4))
         return -1;
@@ -134,12 +137,25 @@ static int sys_set_server_pid_user(int type, int pid) {
     return 0;
 }
 void k_notify_server_proc_exit(int pid) {
-    if (compositor_server_pid < 0)
-        return;
+    process_t *dead = k_proc_find_by_id(pid);
+    if (dead && dead->parent_pid >= 0 && dead->parent_pid != compositor_server_pid) {
+        process_t *parent = k_proc_find_by_id(dead->parent_pid);
+        if (parent && parent->ipc_queue.count < IPC_QUEUE_SIZE) {
+            message_t *slot = &parent->ipc_queue.messages[parent->ipc_queue.tail];
+            memset(slot, 0, sizeof(message_t));
+            slot->type = MSG_PROCESS_TERMINATED;
+            slot->data1 = (uint32_t)pid;
+            slot->data2 = (uint32_t)dead->exit_code;
+            slot->sender_pid = 0;
+            parent->ipc_queue.tail = (parent->ipc_queue.tail + 1) % IPC_QUEUE_SIZE;
+            parent->ipc_queue.count++;
+            if (parent->state == PROCESS_BLOCKED || parent->state == PROCESS_IPC_WAIT)
+                parent->state = PROCESS_READY;
+        }
+    }
+    if (compositor_server_pid < 0) return;
     process_t *comp = k_proc_find_by_id(compositor_server_pid);
-    if (!comp)
-        return;
-    if (comp->ipc_queue.count < IPC_QUEUE_SIZE) {
+    if (comp && comp->ipc_queue.count < IPC_QUEUE_SIZE) {
         message_t *slot = &comp->ipc_queue.messages[comp->ipc_queue.tail];
         memset(slot, 0, sizeof(message_t));
         slot->type = MSG_PROCESS_TERMINATED;
@@ -326,6 +342,97 @@ int sys_ipc_recv_nb(message_t *user_msg) {
     memcpy(user_msg, slot, sizeof(message_t));
     current_process->ipc_queue.head = (current_process->ipc_queue.head + 1) % IPC_QUEUE_SIZE;
     current_process->ipc_queue.count--;
+    return 0;
+}
+
+#define TTY_LINE_CAP 256
+static uint8_t tty_line[TTY_LINE_CAP];
+static uint32_t tty_line_len, tty_line_pos;
+static int tty_line_ready;
+static int tty_eof_pending;
+static int tty_reader_pid = -1;
+
+int sys_tty_read(int fd, void *ubuf, uint32_t count) {
+    if (fd < 0 || fd > 2 || current_process->fd_kind[fd] == 0 || (!ubuf && count)) return -1;
+    if (!count) return 0;
+    if (!is_ptr_safe(ubuf, count)) return -1;
+    if (current_process->fd_kind[fd] == FD_KIND_PIPE_READ)
+        return sys_pipe_read(current_process->fd_object[fd], (uint8_t *)ubuf, count);
+    if (fd != 0 || current_process->fd_kind[fd] != FD_KIND_TTY) return -1;
+    if (tty_eof_pending && tty_line_pos == tty_line_len) {
+        tty_eof_pending = 0;
+        tty_line_ready = 0;
+        return 0;
+    }
+    while (!tty_line_ready) {
+        tty_reader_pid = current_process->pid;
+        current_process->state = PROCESS_BLOCKED;
+        current_process->wake_up_time = 0;
+        k_scheduler_yield();
+    }
+    uint32_t n = tty_line_len - tty_line_pos;
+    if (n > count) n = count;
+    memcpy(ubuf, tty_line + tty_line_pos, n);
+    tty_line_pos += n;
+    if (tty_line_pos == tty_line_len) {
+        tty_line_len = tty_line_pos = 0;
+        tty_line_ready = 0;
+    }
+    return (int)n;
+}
+
+int sys_tty_write(int fd, const void *ubuf, uint32_t count) {
+    if (fd < 0 || fd > 2 || current_process->fd_kind[fd] == 0 || (!ubuf && count)) return -1;
+    if (!count) return 0;
+    if (!is_ptr_safe(ubuf, count)) return -1;
+    if (current_process->fd_kind[fd] == FD_KIND_PIPE_WRITE)
+        return sys_pipe_write(current_process->fd_object[fd], (const uint8_t *)ubuf, count);
+    if ((fd != 1 && fd != 2) || current_process->fd_kind[fd] != FD_KIND_TTY) return -1;
+    int ttysh = ttysh_server_pid;
+    process_t *dest = k_proc_find_by_id(ttysh);
+    if (!dest) return -1;
+    uint32_t done = 0;
+    while (done < count) {
+        uint32_t n = count - done;
+        if (n > sizeof(((message_t *)0)->payload)) n = sizeof(((message_t *)0)->payload);
+        if (dest->ipc_queue.count >= IPC_QUEUE_SIZE) return done ? (int)done : -1;
+        message_t msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.type = MSG_TTY_OUTPUT;
+        msg.data1 = n;
+        memcpy(msg.payload, (const uint8_t *)ubuf + done, n);
+        ipc_enqueue(dest, &msg);
+        if (dest->state == PROCESS_IPC_WAIT || dest->state == PROCESS_BLOCKED)
+            dest->state = PROCESS_READY;
+        done += n;
+    }
+    return (int)done;
+}
+
+int sys_tty_input(int ch) {
+    if (current_process->pid != ttysh_server_pid || ch < 0 || ch > 255) return -1;
+    if (ch == 3) { tty_line_len = tty_line_pos = 0; tty_line_ready = tty_eof_pending = 0; return 0; }
+    if (ch == '\b' || ch == 127) {
+        if (tty_line_len && tty_line[tty_line_len - 1] != '\n') tty_line_len--;
+        return 0;
+    }
+    if (tty_line_ready || tty_line_len >= TTY_LINE_CAP) return -1;
+    if (ch == 4) {
+        tty_eof_pending = 1;
+        tty_line_ready = 1;
+        process_t *reader = k_proc_find_by_id(tty_reader_pid);
+        if (reader && reader->state == PROCESS_BLOCKED) reader->state = PROCESS_READY;
+        tty_reader_pid = -1;
+        return 0;
+    }
+    tty_line[tty_line_len++] = (uint8_t)ch;
+    if (ch == '\n') {
+        tty_eof_pending = 0;
+        tty_line_ready = 1;
+        process_t *reader = k_proc_find_by_id(tty_reader_pid);
+        if (reader && reader->state == PROCESS_BLOCKED) reader->state = PROCESS_READY;
+        tty_reader_pid = -1;
+    }
     return 0;
 }
 int sys_map_font_atlas(uint32_t *virt_addr_out) {
@@ -631,6 +738,8 @@ int sys_waitpid(int pid) {
 #define PIPE_BUF_SIZE 4096
 typedef struct {
     int id;
+    int created;
+    int readers, writers, owner_closed;
     char name[16];
     uint8_t buf[PIPE_BUF_SIZE];
     uint32_t head, tail, count;
@@ -642,8 +751,10 @@ static int k_pipes_inited = 0;
 static void pipes_init(void) {
     if (k_pipes_inited)
         return;
-    for (int i = 0; i < MAX_PIPES; i++)
+    for (int i = 0; i < MAX_PIPES; i++) {
         k_pipes[i].id = 0;
+        k_pipes[i].created = 0;
+    }
     k_pipes_inited = 1;
 }
 static int pipe_name_eq(const char *a, const char *b) {
@@ -660,6 +771,9 @@ int sys_pipe_create(const char *uname) {
     for (int i = 0; i < MAX_PIPES; i++) {
         if (k_pipes[i].id == 0) {
             k_pipes[i].id = i + 1;
+            k_pipes[i].created = 1;
+            k_pipes[i].readers = k_pipes[i].writers = 0;
+            k_pipes[i].owner_closed = 0;
             strncpy(k_pipes[i].name, name, 15);
             k_pipes[i].name[15] = 0;
             k_pipes[i].head = 0;
@@ -687,12 +801,16 @@ int sys_pipe_write(int pipe_id, const uint8_t *buf, uint32_t len) {
     if (pipe_id < 1 || pipe_id > MAX_PIPES)
         return -1;
     kpipe_t *p = &k_pipes[pipe_id - 1];
-    if (p->id == 0 || !buf || len == 0)
+    if (!p->created) return -1;
+    if (!len) return 0;
+    if (p->id == 0 || !buf || p->readers == 0)
         return -1;
     if (!is_ptr_safe(buf, len))
         return -1;
     for (uint32_t w = 0; w < len; w++) {
+        if (p->id == 0 || p->readers == 0) return w ? (int)w : -1;
         while (p->count >= PIPE_BUF_SIZE) {
+            if (p->id == 0 || p->readers == 0) return w ? (int)w : -1;
             p->blocked_writer = current_process->pid;
             current_process->state = PROCESS_BLOCKED;
             current_process->wake_up_time = 0;
@@ -714,17 +832,21 @@ int sys_pipe_read(int pipe_id, uint8_t *buf, uint32_t len) {
     if (pipe_id < 1 || pipe_id > MAX_PIPES)
         return -1;
     kpipe_t *p = &k_pipes[pipe_id - 1];
-    if (p->id == 0 || !buf || len == 0)
+    if (!p->created) return -1;
+    if (!len) return 0;
+    if (!buf)
         return -1;
     if (!is_ptr_safe(buf, len))
         return -1;
-    for (uint32_t r = 0; r < len; r++) {
-        while (p->count == 0) {
+    while (p->count == 0 && p->id != 0 && p->writers != 0) {
             p->blocked_reader = current_process->pid;
             current_process->state = PROCESS_BLOCKED;
             current_process->wake_up_time = 0;
             k_scheduler_yield();
-        }
+    }
+    if (p->count == 0 && (p->id == 0 || p->writers == 0)) return 0;
+    uint32_t n = len < p->count ? len : p->count;
+    for (uint32_t r = 0; r < n; r++) {
         buf[r] = p->buf[p->head];
         p->head = (p->head + 1) % PIPE_BUF_SIZE;
         p->count--;
@@ -735,7 +857,7 @@ int sys_pipe_read(int pipe_id, uint8_t *buf, uint32_t len) {
             p->blocked_writer = -1;
         }
     }
-    return (int)len;
+    return (int)n;
 }
 int sys_pipe_close(int pipe_id) {
     if (pipe_id < 1 || pipe_id > MAX_PIPES)
@@ -743,6 +865,8 @@ int sys_pipe_close(int pipe_id) {
     kpipe_t *p = &k_pipes[pipe_id - 1];
     if (p->id == 0)
         return -1;
+    p->owner_closed = 1;
+    if (p->readers == 0 && p->writers == 0) p->id = 0;
     if (p->blocked_reader != -1) {
         process_t *r = k_proc_find_by_id(p->blocked_reader);
         if (r && r->state == PROCESS_BLOCKED)
@@ -753,7 +877,52 @@ int sys_pipe_close(int pipe_id) {
         if (w && w->state == PROCESS_BLOCKED)
             w->state = PROCESS_READY;
     }
-    p->id = 0;
+    return 0;
+}
+void k_pipe_process_exit(process_t *proc) {
+    if (!proc) return;
+    for (int fd = 0; fd < 3; fd++) {
+        int kind = proc->fd_kind[fd], id = proc->fd_object[fd];
+        if (id < 1 || id > MAX_PIPES) continue;
+        kpipe_t *p = &k_pipes[id - 1];
+        if (kind == FD_KIND_PIPE_READ && p->readers > 0) {
+            p->readers--;
+            if (p->readers == 0 && p->blocked_writer != -1) {
+                process_t *w = k_proc_find_by_id(p->blocked_writer);
+                if (w && w->state == PROCESS_BLOCKED) w->state = PROCESS_READY;
+                p->blocked_writer = -1;
+            }
+        }
+        if (kind == FD_KIND_PIPE_WRITE && p->writers > 0) {
+            p->writers--;
+            if (p->writers == 0 && p->blocked_reader != -1) {
+                process_t *r = k_proc_find_by_id(p->blocked_reader);
+                if (r && r->state == PROCESS_BLOCKED) r->state = PROCESS_READY;
+                p->blocked_reader = -1;
+            }
+        }
+        if (p->owner_closed && p->readers == 0 && p->writers == 0) p->id = 0;
+        proc->fd_kind[fd] = 0;
+        proc->fd_object[fd] = 0;
+    }
+}
+int sys_fd_set(int pid, int fd, int object, int kind) {
+    if (fd < 0 || fd > 2) return -1;
+    process_t *target = k_proc_find_by_id(pid);
+    if (!target || target->parent_pid != current_process->pid) return -1;
+    if (kind == FD_KIND_TTY) {
+        if ((fd == 0 && object != 0) || (fd != 0 && object != 0)) return -1;
+    } else if (kind == FD_KIND_PIPE_READ || kind == FD_KIND_PIPE_WRITE) {
+        if (object < 1 || object > MAX_PIPES || k_pipes[object - 1].id == 0) return -1;
+    } else return -1;
+    if (target->fd_kind[fd] == FD_KIND_PIPE_READ)
+        k_pipes[target->fd_object[fd] - 1].readers--;
+    else if (target->fd_kind[fd] == FD_KIND_PIPE_WRITE)
+        k_pipes[target->fd_object[fd] - 1].writers--;
+    target->fd_kind[fd] = (uint8_t)kind;
+    target->fd_object[fd] = object;
+    if (kind == FD_KIND_PIPE_READ) k_pipes[object - 1].readers++;
+    else if (kind == FD_KIND_PIPE_WRITE) k_pipes[object - 1].writers++;
     return 0;
 }
 #define MAX_ALARMS 32
@@ -1070,6 +1239,21 @@ void k_syscall_entry(struct InterruptRegisters *regs) {
         regs->eax = 0;
         break;
     }
+    case 87:
+        regs->eax = (uint32_t)sys_tty_read((int)regs->ebx,
+                                           (void *)(uintptr_t)regs->ecx, regs->edx);
+        break;
+    case 88:
+        regs->eax = (uint32_t)sys_tty_write((int)regs->ebx,
+                                            (const void *)(uintptr_t)regs->ecx, regs->edx);
+        break;
+    case 89:
+        regs->eax = (uint32_t)sys_tty_input((int)regs->ebx);
+        break;
+    case 91:
+        regs->eax = (uint32_t)sys_fd_set((int)regs->ebx, (int)(regs->ecx & 0xff),
+                                         (int)regs->edx, (int)((regs->ecx >> 8) & 0xff));
+        break;
     case 80: {
         extern int virtio_blk_transfer_disk(int idx, uint64_t sector, uint32_t count, void *buf,
                                             int write);

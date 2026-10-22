@@ -255,6 +255,24 @@ int qk_pipe_read(int pipe_id, uint8_t *buf, uint32_t len) {
 int qk_pipe_close(int pipe_id) {
     return syscall(69, pipe_id, 0, 0);
 }
+int qk_read(int fd, void *buf, uint32_t count) {
+    return (int)syscall(87, fd, (long)buf, count);
+}
+int qk_write(int fd, const void *buf, uint32_t count) {
+    return (int)syscall(88, fd, (long)buf, count);
+}
+int qk_tty_input(uint8_t ch) {
+    return (int)syscall(89, ch, 0, 0);
+}
+int qk_fd_set(int pid, int fd, int object, int kind) {
+    return (int)syscall(91, pid, (fd & 0xff) | ((kind & 0xff) << 8), object);
+}
+int read(int fd, void *buf, unsigned int count) {
+    return qk_read(fd, buf, count);
+}
+int write(int fd, const void *buf, unsigned int count) {
+    return qk_write(fd, buf, count);
+}
 int qk_set_alarm(uint32_t ms) {
     return syscall(70, (long)ms, 0, 0);
 }

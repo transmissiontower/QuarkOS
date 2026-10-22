@@ -664,6 +664,8 @@ static char sc_to_char(uint8_t code, uint32_t mods) {
         return shift ? shift_digits[code - 0x02] : digits[code - 0x02];
     if (code >= 0x10 && code <= 0x1B)
         return upper ? shift_q[code - 0x10] : row_q[code - 0x10];
+    if (code == 0x2B)
+        return shift ? '|' : '\\';
     if (code >= 0x1E && code <= 0x29)
         return (code <= 0x26 ? upper : shift) ? shift_a[code - 0x1E] : row_a[code - 0x1E];
     if (code >= 0x2C && code <= 0x35)

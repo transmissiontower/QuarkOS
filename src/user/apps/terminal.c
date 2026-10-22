@@ -24,22 +24,6 @@ static const uint32_t ansi_pal[16] = {
 #define PAD_X 10
 #define PAD_Y 4
 
-static int str_eq(const char *a, const char *b) {
-    while (*a && *b) {
-        char ca = *a;
-        char cb = *b;
-        if (ca >= 'a' && ca <= 'z')
-            ca -= 'a' - 'A';
-        if (cb >= 'a' && cb <= 'z')
-            cb -= 'a' - 'A';
-        if (ca != cb)
-            return 0;
-        a++;
-        b++;
-    }
-    return *a == *b;
-}
-
 static char lbuf[MAX_LINES][MAX_COLS];
 static uint8_t lcol[MAX_LINES][MAX_COLS];
 static int ltotal = 0;
@@ -137,6 +121,16 @@ static void term_put(char c) {
             esc_buf[esc_len] = 0;
             ansi_sgr();
             esc_state = 0;
+        } else if (c == 'J') {
+            int mode = esc_len ? (esc_buf[0] - '0') : 0;
+            if (mode == 2 || mode == 3) {
+                ltotal = 0;
+                lcur_len = 0;
+                memset(lbuf, 0, sizeof(lbuf));
+            }
+            esc_state = 0;
+        } else if (c == 'H' || c == 'f') {
+            esc_state = 0;
         } else if (esc_len < 15) {
             esc_buf[esc_len++] = c;
         } else {
@@ -156,7 +150,13 @@ static void term_put(char c) {
         if (lcur_len > 0)
             lcur_len--;
     } else if (c == '\r') {
-    } else {
+    } else if (c == '\t') {
+        int spaces = 8 - (lcur_len % 8);
+        while (spaces-- > 0 && lcur_len < MAX_COLS - 1) {
+            lcur[lcur_len] = ' ';
+            lcur_col[lcur_len++] = cur_col_idx;
+        }
+    } else if ((uint8_t)c >= 32 && (uint8_t)c != 127) {
         if (lcur_len < MAX_COLS - 1) {
             lcur[lcur_len] = c;
             lcur_col[lcur_len] = cur_col_idx;
@@ -180,6 +180,17 @@ static int cell_h = 16;
 static int vis_rows = 20;
 static int output_rows = 19;
 static int scroll_up = 0;
+
+static int max_scroll_up(void) {
+    int retained = ltotal < MAX_LINES ? ltotal : MAX_LINES;
+    return retained > 0 ? retained - 1 : 0;
+}
+
+static void clamp_scroll_up(void) {
+    int max = max_scroll_up();
+    if (scroll_up < 0) scroll_up = 0;
+    if (scroll_up > max) scroll_up = max;
+}
 
 static int sel_line0 = -1, sel_col0 = 0;
 static int sel_line1 = -1, sel_col1 = 0;
@@ -366,6 +377,22 @@ static void term_render(void) {
     }
     vis_map_n = row;
 
+    /* Keep the scroll position visible even when the wheel or Page keys are used. */
+    int track_top = PAD_Y;
+    int track_bottom = input_y - 2;
+    int track_h = track_bottom - track_top;
+    int retained = ltotal < MAX_LINES ? ltotal : MAX_LINES;
+    if (track_h > 8 && retained > max_out) {
+        int thumb_h = track_h * max_out / retained;
+        if (thumb_h < 8) thumb_h = 8;
+        if (thumb_h > track_h) thumb_h = track_h;
+        int travel = track_h - thumb_h;
+        int max_scroll = max_scroll_up();
+        int thumb_y = track_top + (max_scroll ? travel * (max_scroll - scroll_up) / max_scroll : travel);
+        fill_rect(gfx_w - 4, track_top, 2, track_h, 0xFF444444u);
+        fill_rect(gfx_w - 4, thumb_y, 2, thumb_h, 0xFFBBBBBBu);
+    }
+
     qk_win_dirty(comp_pid);
 }
 
@@ -504,7 +531,6 @@ int main(void) {
     if (comp_pid < 0)
         return 1;
 
-    void *font_addr = 0;
     font_atlas_load_from_disk("/SYS/DAT/INTER.TTF");
 
     cell_h = get_font_height();
@@ -543,7 +569,13 @@ int main(void) {
         qk_ipc_recv(&msg);
 
         if (msg.sender_pid == ttysh_pid && msg.type == MSG_WIN_PRINT) {
-            term_put_str((const char *)msg.payload);
+            uint32_t len = msg.data1;
+            if (len > sizeof(msg.payload)) len = sizeof(msg.payload);
+            if (len) {
+                for (uint32_t i = 0; i < len; i++) term_put((char)msg.payload[i]);
+            } else {
+                term_put_str((const char *)msg.payload);
+            }
             scroll_up = 0;
             sel_line0 = -1;
             term_render();
@@ -571,11 +603,7 @@ int main(void) {
             int mx = ev->x, my = ev->y - TITLE_BAR_HEIGHT;
             if (ev->type == EVENT_MOUSE_SCROLL) {
                 scroll_up += ev->scroll;
-                if (scroll_up < 0)
-                    scroll_up = 0;
-                int max_s = ltotal + (lcur_len > 0 ? 1 : 0);
-                if (scroll_up > max_s)
-                    scroll_up = max_s;
+                clamp_scroll_up();
                 sel_line0 = -1;
                 term_render();
             } else if (ev->type == EVENT_MOUSE_DOWN && ev->button == MOUSE_BTN_LEFT) {
@@ -627,14 +655,11 @@ int main(void) {
             awaiting_ext = 0;
             if (code == 0x49) {
                 scroll_up += vis_rows / 2;
-                int max = ltotal + (lcur_len > 0 ? 1 : 0);
-                if (scroll_up > max)
-                    scroll_up = max;
+                clamp_scroll_up();
                 term_render();
             } else if (code == 0x51) {
                 scroll_up -= vis_rows / 2;
-                if (scroll_up < 0)
-                    scroll_up = 0;
+                clamp_scroll_up();
                 term_render();
             } else if (ttysh_pid > 0) {
                 qk_sys_ipc_send(ttysh_pid, &msg);
@@ -644,16 +669,13 @@ int main(void) {
 
         if (code == 0x49) {
             scroll_up += vis_rows / 2;
-            int max = ltotal + (lcur_len > 0 ? 1 : 0);
-            if (scroll_up > max)
-                scroll_up = max;
+            clamp_scroll_up();
             term_render();
             continue;
         }
         if (code == 0x51) {
             scroll_up -= vis_rows / 2;
-            if (scroll_up < 0)
-                scroll_up = 0;
+            clamp_scroll_up();
             term_render();
             continue;
         }

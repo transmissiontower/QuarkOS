@@ -11,6 +11,9 @@ typedef enum {
     PROCESS_IPC_WAIT,
     PROCESS_WAIT_PID
 } process_state_t;
+#define FD_KIND_TTY 1
+#define FD_KIND_PIPE_READ 2
+#define FD_KIND_PIPE_WRITE 3
 typedef struct process {
     int pid;
     int parent_pid;
@@ -32,6 +35,8 @@ typedef struct process {
     uint32_t shared_virt_bump;
     int exit_code;
     int waitpid_target;
+    uint8_t fd_kind[3];
+    int fd_object[3];
     char env[256];
 } process_t;
 typedef struct {

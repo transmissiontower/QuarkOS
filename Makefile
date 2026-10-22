@@ -70,7 +70,21 @@ AARCH64_USER_START_OBJ = $(AARCH64_USER_DIR)/start.o
 AARCH64_USER_LIB_OBJ = $(addprefix $(AARCH64_USER_DIR)/,libapi.o lib.o gfx.o window.o font_atlas.o math.o stdlib.o path.o storage_client.o app_registry.o)
 USER_APP_SRCS := $(wildcard src/user/apps/*.c) src/user/init/init.c
 USER_APP_NAMES := $(basename $(notdir $(USER_APP_SRCS)))
+USER_COMMAND_NAMES := help guide ls list cat beam hex dump touch spawn mkdir hatch exec run procs uptime clear purge kill env setenv getenv echo pwd quill nano mnt mount unmnt unmount
+COMMAND_IMPL_guide := help
+COMMAND_IMPL_list := ls
+COMMAND_IMPL_beam := cat
+COMMAND_IMPL_dump := hex
+COMMAND_IMPL_spawn := touch
+COMMAND_IMPL_hatch := mkdir
+COMMAND_IMPL_run := exec
+COMMAND_IMPL_purge := clear
+COMMAND_IMPL_nano := quill
+COMMAND_IMPL_mnt := mount
+COMMAND_IMPL_unmnt := unmount
 USER_SERVICE_NAMES := compositor input_server time_server storage_server
+USER_COMMAND_BINS := $(foreach n,$(USER_COMMAND_NAMES),build/bin_$(n).bin)
+USER_BIN_QEXES := $(foreach n,$(filter-out init,$(USER_APP_NAMES)),build/$(n).qex)
 USER_APP_QEXES := $(foreach n,$(USER_APP_NAMES) $(USER_SERVICE_NAMES),build/$(n).qex) build/comp.qex
 AARCH64_USER_LIBGCC = $(shell $(CC) -mcpu=cortex-a57 -print-libgcc-file-name)
 
@@ -129,10 +143,26 @@ endef
 $(foreach app,$(USER_APP_NAMES),$(eval $(call USER_APP_template,$(app))))
 $(foreach service,$(USER_SERVICE_NAMES),$(eval $(call USER_APP_template,$(service))))
 
+$(AARCH64_USER_DIR)/command_runtime.o: src/user/bin/runtime.c src/user/bin/command.h
+	@mkdir -p $(AARCH64_USER_DIR)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+define USER_COMMAND_template
+$(AARCH64_USER_DIR)/command_$(1).o: src/user/bin/$(if $(COMMAND_IMPL_$(1)),$(COMMAND_IMPL_$(1)),$(1)).c src/user/bin/command.h
+	@mkdir -p $(AARCH64_USER_DIR)
+	$$(CC) $$(USER_CFLAGS) -c $$< -o $$@
+$(AARCH64_USER_DIR)/command_$(1).elf: $(AARCH64_USER_START_OBJ) $(AARCH64_USER_LIB_OBJ) $(AARCH64_USER_DIR)/command_runtime.o $(AARCH64_USER_DIR)/command_$(1).o src/user/linker.ld
+	$$(LD) $$(USER_LDFLAGS) -o $$@ $$(AARCH64_USER_START_OBJ) $$(AARCH64_USER_LIB_OBJ) $$(AARCH64_USER_DIR)/command_runtime.o $$(AARCH64_USER_DIR)/command_$(1).o $$(AARCH64_USER_LIBGCC)
+build/bin_$(1).bin: $(AARCH64_USER_DIR)/command_$(1).elf
+	$$(OBJCOPY) -O binary $$< $(AARCH64_USER_DIR)/command_$(1).bin
+	cp $(AARCH64_USER_DIR)/command_$(1).bin $$@
+endef
+$(foreach command,$(USER_COMMAND_NAMES),$(eval $(call USER_COMMAND_template,$(command))))
+
 build/comp.qex: build/compositor.qex
 	cp $< $@
 
-user_bin: $(USER_APP_QEXES)
+user_bin: $(USER_APP_QEXES) $(USER_COMMAND_BINS)
 
 build/logo.bmp: assets/images/logo.bmp
 	@mkdir -p build
@@ -160,6 +190,7 @@ disk: $(KERNEL_BIN) $(BOOT_SCRIPT) user_bin
 	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) $(KERNEL_BIN) ::SODIUM.BIN
 	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) $(BOOT_SCRIPT) ::BOOT.SCR
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::PRG
+	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::BIN
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::SYS
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::SYS/BIN
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::SYS/DAT
@@ -170,6 +201,8 @@ disk: $(KERNEL_BIN) $(BOOT_SCRIPT) user_bin
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::USR/DEFAULT/DOCS
 	mmd -i $(DISK)@@$(DISK_FAT_OFFSET) ::TMP
 	$(foreach n,$(USER_APP_NAMES),$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) build/$(n).qex ::PRG/$(shell echo $(n) | tr '[:lower:]' '[:upper:]').QEX ;)
+	$(foreach n,$(filter-out init,$(USER_APP_NAMES)),$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) build/$(n).qex ::BIN/$(shell echo $(n) | tr '[:lower:]' '[:upper:]').QEX ;)
+	$(foreach n,$(USER_COMMAND_NAMES),$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) build/bin_$(n).bin ::BIN/$(shell echo $(n) | tr '[:lower:]' '[:upper:]') ;)
 	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) assets/images/wallpaper.bmp ::SYS/DAT/BG.BMP
 	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) assets/fonts/inter.ttf ::SYS/DAT/INTER.TTF
 	$(MCOPY) -i $(DISK)@@$(DISK_FAT_OFFSET) assets/fonts/lucide.ttf ::SYS/DAT/LUCIDE.TTF

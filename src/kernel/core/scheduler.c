@@ -141,6 +141,7 @@ void k_scheduler_init() {
     kernel_proc->ipc_reply_ready = 0;
     kernel_proc->exit_code = 0;
     kernel_proc->waitpid_target = -1;
+    for (int i = 0; i < 3; i++) { kernel_proc->fd_kind[i] = FD_KIND_TTY; kernel_proc->fd_object[i] = 0; }
     kernel_proc->env[0] = 0;
     strncpy(kernel_proc->name, "kernel", 15);
     kernel_proc->name[15] = 0;
@@ -253,6 +254,10 @@ process_t *k_proc_spawn(uint8_t *code, uint32_t size) {
     proc->ipc_reply_ready = 0;
     proc->exit_code = 0;
     proc->waitpid_target = -1;
+    for (int i = 0; i < 3; i++) {
+        proc->fd_kind[i] = current_process ? current_process->fd_kind[i] : FD_KIND_TTY;
+        proc->fd_object[i] = current_process ? current_process->fd_object[i] : 0;
+    }
     if (current_process)
         memcpy(proc->env, current_process->env, 256);
     else
@@ -372,6 +377,8 @@ void k_proc_terminate(int pid) {
         if (curr->pid == pid) {
             KLOG_PROC(LOG_WARN, "TERMINATE pid=%d name='%s' state=%d by=%d", pid, curr->name,
                       (int)curr->state, current_process ? current_process->pid : -1);
+            void k_pipe_process_exit(process_t *proc);
+            k_pipe_process_exit(curr);
             void k_notify_server_proc_exit(int pid);
             k_notify_server_proc_exit(pid);
             {

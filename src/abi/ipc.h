@@ -51,6 +51,8 @@ typedef struct {
 #define MSG_ALARM 500
 #define MSG_SIGNAL 501
 #define MSG_TERM_ATTACH 600
+#define MSG_CLI_START 601
+#define MSG_TTY_OUTPUT 603
 #define MSG_PICKER_OPEN 700
 #define MSG_PICKER_RESULT 701
 #define MSG_CLIP_SET 710
